@@ -1,0 +1,52 @@
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+@layer base {
+  :root {
+    /* Override shadcn tokens with Formation warm grey palette */
+    --background: 240 5% 93%;        /* #F0EEEB approx */
+    --foreground: 30 3% 12%;         /* #1E1C1A near black */
+    --card: 240 5% 93%;
+    --card-foreground: 30 3% 12%;
+    --popover: 240 5% 93%;
+    --popover-foreground: 30 3% 12%;
+    --primary: 0 0% 16%;             /* #292929 */
+    --primary-foreground: 240 5% 93%;
+    --secondary: 30 4% 90%;          /* #E8E5E1 */
+    --secondary-foreground: 30 3% 53%;
+    --muted: 30 4% 90%;
+    --muted-foreground: 30 4% 63%;   /* #A09A94 */
+    --accent: 30 4% 90%;
+    --accent-foreground: 30 3% 53%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 30 5% 76%;             /* #C5C0BB */
+    --input: 30 5% 76%;
+    --ring: 30 4% 63%;
+    --radius: 0.25rem;
+  }
+
+  body {
+    @apply bg-fg-bg text-fg-muted;
+    font-weight: 300;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-fg-heading;
+    font-weight: 300;
+    letter-spacing: 0.04em;
+    line-height: 1.3;
+  }
+}
