@@ -126,7 +126,7 @@ The following outlines our proposed design process and associated fees.`
   if (preview) {
     return (
       <div className="max-w-[1200px] mx-auto px-6 lg:px-10 py-12">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-4xl mx-auto">
           <button
             onClick={() => setPreview(false)}
             className="text-xs font-light tracking-wide uppercase text-fg-muted hover:text-fg-heading transition-colors mb-8"
