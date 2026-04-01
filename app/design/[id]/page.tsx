@@ -437,7 +437,7 @@ export default function ProposalDetailPage() {
 
       {/* ── Preview tab ── */}
       {tab === 'preview' && (
-        <div className="max-w-2xl">
+        <div className="max-w-4xl">
           <ProposalPreview
             clientName={proposal.clientName}
             projectAddress={proposal.projectAddress}
