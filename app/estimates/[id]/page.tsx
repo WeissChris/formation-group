@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { loadEstimates, saveEstimate, saveProject } from '@/lib/storage'
+import { loadEstimates, saveEstimate, saveProject, loadProposals } from '@/lib/storage'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, getMarginSummary, getEstimateTotals } from '@/lib/estimateCalculations'
 import { getAllLibraryItems, getCategories } from '@/lib/itemLibrary'
@@ -335,10 +335,23 @@ export default function EstimateBuilderPage() {
   const [showPicker, setShowPicker] = useState(false)
   const [pickerCategory, setPickerCategory] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
   const [addingCategory, setAddingCategory] = useState(false)
   const [parentEstimate, setParentEstimate] = useState<Estimate | null>(null)
   const [activeTab, setActiveTab] = useState<'estimate' | 'takeoff'>('estimate')
+
+  // Warn user about unsaved changes before leaving
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [hasUnsavedChanges])
 
   useEffect(() => {
     const all = loadEstimates()
@@ -354,6 +367,7 @@ export default function EstimateBuilderPage() {
 
   const updateEstimate = useCallback((patch: Partial<Estimate>) => {
     setEstimate(prev => prev ? { ...prev, ...patch, updatedAt: new Date().toISOString() } : prev)
+    setHasUnsavedChanges(true)
   }, [])
 
   const updateLineItem = useCallback((itemId: string, updated: EstimateLineItem) => {
@@ -365,6 +379,7 @@ export default function EstimateBuilderPage() {
         updatedAt: new Date().toISOString(),
       }
     })
+    setHasUnsavedChanges(true)
   }, [])
 
   const deleteLineItem = useCallback((itemId: string) => {
@@ -411,7 +426,14 @@ export default function EstimateBuilderPage() {
 
   const addBlankRow = useCallback((category: string) => {
     if (!estimate) return
-    const markup = estimate.defaultMarkupFormation
+    // Determine dominant crew type in this category to pick the right default markup
+    const catItems = estimate.lineItems.filter(i => i.category === category)
+    const subCount = catItems.filter(i => i.crewType === 'Subcontractor').length
+    const formCount = catItems.filter(i => i.crewType === 'Formation').length
+    const defaultCrew: 'Formation' | 'Subcontractor' = subCount > formCount ? 'Subcontractor' : 'Formation'
+    const markup = defaultCrew === 'Subcontractor'
+      ? estimate.defaultMarkupSubcontractor
+      : estimate.defaultMarkupFormation
     const newItem: EstimateLineItem = {
       id: generateId(),
       estimateId: estimate.id,
@@ -425,7 +447,7 @@ export default function EstimateBuilderPage() {
       total: 0,
       markupPercent: markup,
       revenue: 0,
-      crewType: 'Formation',
+      crewType: defaultCrew,
     }
     setEstimate(prev => prev ? {
       ...prev,
@@ -453,6 +475,7 @@ export default function EstimateBuilderPage() {
     if (!estimate) return
     saveEstimate(estimate)
     setSaved(true)
+    setHasUnsavedChanges(false)
     setTimeout(() => setSaved(false), 2000)
   }
 
@@ -463,8 +486,13 @@ export default function EstimateBuilderPage() {
     const totals = getEstimateTotals(estimate)
     const categories = Array.from(new Set(estimate.lineItems.map(i => i.category).filter(Boolean)))
 
-    // Derive project name from estimate projectName
+    // Derive project name and client name — prefer linked proposal if available
     const projectName = estimate.projectName || estimate.name || 'New Project'
+    const linkedProposal = estimate.proposalId
+      ? loadProposals().find(p => p.id === estimate.proposalId)
+      : null
+    const clientName = linkedProposal?.clientName || projectName
+    const projectAddress = linkedProposal?.projectAddress || ''
 
     // Build baseline from estimate
     const categoryMap: Record<string, { revenue: number; cost: number }> = {}
@@ -494,8 +522,8 @@ export default function EstimateBuilderPage() {
       id: generateId(),
       entity,
       name: projectName,
-      clientName: projectName,
-      address: '',
+      clientName,
+      address: projectAddress,
       contractValue: baselineRevenue,
       startDate: new Date().toISOString().split('T')[0],
       plannedCompletion: '',
@@ -540,9 +568,16 @@ export default function EstimateBuilderPage() {
     if (!newName.trim() || newName === oldName) return
     setEstimate(prev => {
       if (!prev) return prev
+      // Move category notes to the new key
+      const updatedNotes = { ...(prev.categoryNotes || {}) }
+      if (updatedNotes[oldName] !== undefined) {
+        updatedNotes[newName] = updatedNotes[oldName]
+        delete updatedNotes[oldName]
+      }
       return {
         ...prev,
         lineItems: prev.lineItems.map(i => i.category === oldName ? { ...i, category: newName } : i),
+        categoryNotes: updatedNotes,
         updatedAt: new Date().toISOString(),
       }
     })
@@ -550,19 +585,24 @@ export default function EstimateBuilderPage() {
 
   const moveCategoryUp = (category: string) => {
     if (!estimate) return
-    const categories = Array.from(new Set(estimate.lineItems.map(i => i.category)))
-    const idx = categories.indexOf(category)
+    const cats = Array.from(new Set(estimate.lineItems.map(i => i.category)))
+    const idx = cats.indexOf(category)
     if (idx <= 0) return
-    const [prev, curr] = [categories[idx - 1], categories[idx]]
+    // Reorder by swapping items' positions — move all items of this category before the previous category
+    const prevCat = cats[idx - 1]
     setEstimate(prev2 => {
       if (!prev2) return prev2
+      const prevItems = prev2.lineItems.filter(i => i.category === prevCat)
+      const currItems = prev2.lineItems.filter(i => i.category === category)
+      const otherItems = prev2.lineItems.filter(i => i.category !== prevCat && i.category !== category)
+      // Rebuild: everything before prevCat, then curr, then prev, then everything after
+      const beforeIdx = prev2.lineItems.findIndex(i => i.category === prevCat)
+      const before = prev2.lineItems.slice(0, beforeIdx).filter(i => i.category !== category)
+      const afterLastPrev = prev2.lineItems.slice(beforeIdx).filter(i => i.category !== prevCat && i.category !== category)
+      const reordered = [...before, ...currItems, ...prevItems, ...afterLastPrev]
       return {
         ...prev2,
-        lineItems: prev2.lineItems.map(i => {
-          if (i.category === curr) return { ...i, category: prev }
-          if (i.category === prev) return { ...i, category: curr }
-          return i
-        }),
+        lineItems: reordered,
         updatedAt: new Date().toISOString(),
       }
     })
@@ -578,19 +618,23 @@ export default function EstimateBuilderPage() {
 
   const moveCategoryDown = (category: string) => {
     if (!estimate) return
-    const categories = Array.from(new Set(estimate.lineItems.map(i => i.category)))
-    const idx = categories.indexOf(category)
-    if (idx >= categories.length - 1) return
-    const [curr, next] = [categories[idx], categories[idx + 1]]
-    setEstimate(prev => {
-      if (!prev) return prev
+    const cats = Array.from(new Set(estimate.lineItems.map(i => i.category)))
+    const idx = cats.indexOf(category)
+    if (idx >= cats.length - 1) return
+    // Reorder by swapping items' positions — move all items of this category after the next category
+    const nextCat = cats[idx + 1]
+    setEstimate(prev2 => {
+      if (!prev2) return prev2
+      const currItems = prev2.lineItems.filter(i => i.category === category)
+      const nextItems = prev2.lineItems.filter(i => i.category === nextCat)
+      // Rebuild: everything before curr, then next, then curr, then everything after
+      const beforeIdx = prev2.lineItems.findIndex(i => i.category === category)
+      const before = prev2.lineItems.slice(0, beforeIdx)
+      const afterBoth = prev2.lineItems.filter(i => i.category !== category && i.category !== nextCat).slice(before.length)
+      const reordered = [...before, ...nextItems, ...currItems, ...afterBoth]
       return {
-        ...prev,
-        lineItems: prev.lineItems.map(i => {
-          if (i.category === curr) return { ...i, category: next }
-          if (i.category === next) return { ...i, category: curr }
-          return i
-        }),
+        ...prev2,
+        lineItems: reordered,
         updatedAt: new Date().toISOString(),
       }
     })
@@ -701,7 +745,9 @@ export default function EstimateBuilderPage() {
             <option value="draft">Draft</option>
             <option value="sent">Sent</option>
             <option value="accepted">Accepted</option>
-            <option value="variation">Variation</option>
+            <option value="declined">Declined</option>
+            {/* Variation status is set automatically when creating a variation — not manually selectable */}
+            {estimate.status === 'variation' && <option value="variation">Variation</option>}
           </select>
         </div>
       </div>
@@ -833,7 +879,7 @@ export default function EstimateBuilderPage() {
                 {/* Totals row */}
                 {estimate.lineItems.length > 0 && (
                   <tr className="border-t-2 border-fg-heading bg-fg-card/30">
-                    <td colSpan={6} className="py-3 px-2 text-xs font-medium text-fg-heading text-right uppercase tracking-wide">
+                    <td colSpan={7} className="py-3 px-2 text-xs font-medium text-fg-heading text-right uppercase tracking-wide">
                       Total
                     </td>
                     <td className="py-3 px-1 text-right text-sm font-semibold text-fg-heading tabular-nums">

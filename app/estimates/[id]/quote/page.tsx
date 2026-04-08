@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { loadEstimates, loadProjects } from '@/lib/storage'
+import { loadEstimates, loadProjects, loadProposals } from '@/lib/storage'
 import { formatCurrency } from '@/lib/utils'
 import { getEstimateTotals, calculateLineItemRevenue } from '@/lib/estimateCalculations'
 import type { Estimate, Project } from '@/types'
@@ -16,6 +16,8 @@ export default function QuotePage() {
 
   const [estimate, setEstimate] = useState<Estimate | null>(null)
   const [project, setProject] = useState<Project | null>(null)
+  const [clientName, setClientName] = useState('')
+  const [clientAddress, setClientAddress] = useState('')
 
   useEffect(() => {
     const all = loadEstimates()
@@ -26,6 +28,13 @@ export default function QuotePage() {
     const projects = loadProjects()
     const p = projects.find(p => p.id === found.projectId)
     if (p) setProject(p)
+
+    // Resolve client details: project > linked proposal > estimate name
+    const linkedProposal = found.proposalId
+      ? loadProposals().find(pr => pr.id === found.proposalId)
+      : null
+    setClientName(p?.clientName || linkedProposal?.clientName || found.projectName || 'Client')
+    setClientAddress(p?.address || linkedProposal?.projectAddress || found.projectName || '')
   }, [id, router])
 
   if (!estimate) return (
@@ -46,7 +55,11 @@ export default function QuotePage() {
 
   const today = new Date()
   const validUntil = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
-  const quoteNumber = `FG-${estimate.projectId.slice(-4).toUpperCase()}-${estimate.version.toString().padStart(2, '0')}`
+  // Use estimate ID for uniqueness when no project is linked, project ID + version otherwise
+  const quoteRef = estimate.projectId
+    ? `${estimate.projectId.slice(-4).toUpperCase()}-${estimate.version.toString().padStart(2, '0')}`
+    : `${estimate.id.slice(-6).toUpperCase()}`
+  const quoteNumber = `FG-${quoteRef}`
 
   return (
     <div className="min-h-screen bg-white">
@@ -79,8 +92,12 @@ export default function QuotePage() {
               onError={(e) => {
                 const t = e.target as HTMLImageElement
                 t.style.display = 'none'
+                // Show text fallback when logo is unavailable
+                const fallback = t.nextElementSibling as HTMLElement
+                if (fallback) fallback.style.display = 'block'
               }}
             />
+            <p className="text-lg font-light tracking-wide text-gray-900 mb-1 hidden">FORMATION</p>
             <p className="text-xs text-gray-400 font-light mt-2">Formation Landscapes Pty Ltd</p>
             <p className="text-xs text-gray-400 font-light">Melbourne, Victoria</p>
           </div>
@@ -99,8 +116,8 @@ export default function QuotePage() {
         {/* Client details */}
         <div className="mb-10 border-t border-gray-200 pt-6">
           <p className="text-2xs font-light tracking-widest uppercase text-gray-400 mb-3">Prepared for</p>
-          <p className="text-base font-light text-gray-900">{project?.clientName || '—'}</p>
-          <p className="text-sm font-light text-gray-500">{project?.address || estimate.projectName}</p>
+          <p className="text-base font-light text-gray-900">{clientName}</p>
+          <p className="text-sm font-light text-gray-500">{clientAddress}</p>
         </div>
 
         {/* Line items by category */}
@@ -146,7 +163,12 @@ export default function QuotePage() {
             <li>· Council permits and approvals</li>
             <li>· Structural engineering (unless specified)</li>
             <li>· Electrical works beyond scope</li>
-            <li>· Pool construction (quoted separately)</li>
+            {estimate.projectType !== 'pool_only' && estimate.projectType !== 'landscape_and_pool' && (
+              <li>· Pool construction (quoted separately)</li>
+            )}
+            {estimate.projectType === 'pool_only' && (
+              <li>· Landscape works (quoted separately)</li>
+            )}
             <li>· Any works not specifically listed above</li>
           </ul>
         </div>

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { loadEstimates, deleteEstimate } from '@/lib/storage'
 import { formatCurrency } from '@/lib/utils'
-import { getEstimateTotals } from '@/lib/estimateCalculations'
+import { getEstimateTotals, calculateLineItemRevenue } from '@/lib/estimateCalculations'
 import type { Estimate } from '@/types'
 import { Plus, Trash2, FileText, Search, GitBranch } from 'lucide-react'
 
@@ -29,16 +29,27 @@ export default function EstimatesPage() {
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.preventDefault()
-    if (!confirm('Delete this estimate?')) return
+    const est = estimates.find(est => est.id === id)
+    if (est?.isBaseline) {
+      alert('This estimate is locked as a project baseline and cannot be deleted.')
+      return
+    }
+    if (est?.status === 'accepted') {
+      if (!confirm('This estimate has been accepted. Are you sure you want to delete it? This cannot be undone.')) return
+    } else {
+      if (!confirm('Delete this estimate?')) return
+    }
     deleteEstimate(id)
     setEstimates(loadEstimates())
   }
 
   const tabs: { label: string; value: FilterStatus }[] = [
-    { label: 'All',       value: 'all' },
-    { label: 'Draft',     value: 'draft' },
-    { label: 'Sent',      value: 'sent' },
-    { label: 'Accepted',  value: 'accepted' },
+    { label: 'All',        value: 'all' },
+    { label: 'Draft',      value: 'draft' },
+    { label: 'Sent',       value: 'sent' },
+    { label: 'Accepted',   value: 'accepted' },
+    { label: 'Declined',   value: 'declined' },
+    { label: 'Variations', value: 'variation' },
   ]
 
   const statusCount = (status: FilterStatus) => {
@@ -130,12 +141,12 @@ export default function EstimatesPage() {
 
       {/* Metrics bar */}
       {estimates.length > 0 && (() => {
-        const totalEstimateValue = estimates.reduce((s, e) => s + e.lineItems.reduce((ls, li) => ls + li.revenue, 0), 0)
+        const totalEstimateValue = estimates.reduce((s, e) => s + e.lineItems.reduce((ls, li) => ls + calculateLineItemRevenue(li), 0), 0)
         const acceptedCount = estimates.filter(e => e.status === 'accepted').length
         const avgMargin = estimates.length > 0
           ? estimates.reduce((s, e) => {
               const cost = e.lineItems.reduce((ls, li) => ls + li.total, 0)
-              const rev = e.lineItems.reduce((ls, li) => ls + li.revenue, 0)
+              const rev = e.lineItems.reduce((ls, li) => ls + calculateLineItemRevenue(li), 0)
               return s + (rev > 0 ? (rev - cost) / rev * 100 : 0)
             }, 0) / estimates.length
           : 0

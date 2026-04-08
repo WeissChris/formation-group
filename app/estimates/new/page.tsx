@@ -152,7 +152,9 @@ function NewEstimateForm() {
     const existingVersions = form.projectId
       ? loadEstimates().filter(e => e.projectId === form.projectId)
       : loadEstimates()
-    const nextVersion = existingVersions.length + 1
+    const nextVersion = existingVersions.length > 0
+      ? Math.max(...existingVersions.map(e => e.version)) + 1
+      : 1
 
     const estimateId = generateId()
 
@@ -205,22 +207,6 @@ function NewEstimateForm() {
         </div>
       )}
 
-      {projects.length === 0 ? (
-        /* ── No projects empty state ── */
-        <div className="border border-fg-border py-20 text-center max-w-md">
-          <FolderOpen className="w-10 h-10 text-fg-muted/30 mx-auto mb-5" />
-          <p className="text-sm font-light text-fg-heading mb-2">No projects yet</p>
-          <p className="text-xs font-light text-[#8A8580] mb-6">
-            You need to create a project before adding an estimate.
-          </p>
-          <Link
-            href="/projects/new"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-fg-dark text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-fg-darker transition-colors"
-          >
-            Create a Project
-          </Link>
-        </div>
-      ) : (
         <div className="max-w-md space-y-6">
           {/* Import section */}
           <div className="mb-8 p-5 border border-fg-border bg-fg-card/20">
@@ -237,7 +223,24 @@ function NewEstimateForm() {
             )}
           </div>
 
-
+          {/* Optional project assignment */}
+          {projects.length > 0 && (
+            <div>
+              <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">
+                Link to Project <span className="text-fg-muted/50">(optional)</span>
+              </label>
+              <select
+                value={form.projectId}
+                onChange={e => setForm(f => ({ ...f, projectId: e.target.value }))}
+                className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors appearance-none"
+              >
+                <option value="">No project — standalone estimate</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Project Type — required */}
           <div>
@@ -329,7 +332,6 @@ function NewEstimateForm() {
             </Link>
           </div>
         </div>
-      )}
     </div>
   )
 }

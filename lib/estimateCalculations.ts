@@ -21,7 +21,18 @@ export function getMarginSummary(estimate: Estimate): CategoryMargin[] {
       formationItems.length > 0 && subItems.length > 0 ? 'Mixed'
       : subItems.length > 0 ? 'Subcontractor' : 'Formation'
 
-    const targetMargin = crewType === 'Subcontractor' ? TARGET_MARGINS.Subcontractor : TARGET_MARGINS.Formation
+    // For mixed categories, use a cost-weighted blended target margin
+    let targetMargin: number
+    if (crewType === 'Mixed') {
+      const formCost = formationItems.reduce((s, i) => s + i.total, 0)
+      const subCostTotal = subItems.reduce((s, i) => s + i.total, 0)
+      const totalMixed = formCost + subCostTotal
+      targetMargin = totalMixed > 0
+        ? (formCost / totalMixed) * TARGET_MARGINS.Formation + (subCostTotal / totalMixed) * TARGET_MARGINS.Subcontractor
+        : TARGET_MARGINS.Formation
+    } else {
+      targetMargin = crewType === 'Subcontractor' ? TARGET_MARGINS.Subcontractor : TARGET_MARGINS.Formation
+    }
 
     return {
       category,
