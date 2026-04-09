@@ -360,6 +360,7 @@ export interface TakeoffMeasurement {
   value: number                        // calculated quantity in real units (m², lm, count)
   planId: string
   label?: string
+  isDeduction?: boolean                // if true, value is subtracted from item raw qty
 }
 
 export interface TakeoffItem {
@@ -371,6 +372,31 @@ export interface TakeoffItem {
   wastagePercent: number              // default 0; finalQty = rawQty × (1 + wastage/100)
   linkedLineItemId?: string
   manualOverride?: number             // overrides rawQty (before wastage)
+  layerId?: string                    // references TakeoffLayer; undefined = default layer
+}
+
+export interface TakeoffLayer {
+  id: string
+  name: string
+  color: string    // hex, used for measurement stroke/fill tint
+  visible: boolean
+}
+
+export interface TakeoffTemplateItem {
+  name: string
+  unit: string
+  wastagePercent: number
+  layerColor?: string   // resolved by name at apply time, with colour as fallback
+  layerName?: string
+}
+
+export interface TakeoffTemplate {
+  id: string
+  name: string
+  description?: string
+  items: TakeoffTemplateItem[]
+  createdAt: string
+  builtin?: boolean
 }
 
 export interface TakeoffGroup {
@@ -395,6 +421,7 @@ export interface TakeoffData {
   plans: TakeoffPlan[]
   groups: TakeoffGroup[]
   activePlanId?: string
+  layers?: TakeoffLayer[]    // optional for backward compat with older saved takeoffs
 }
 
 // ── COST ACTUALS ──────────────────────────────────────────────────────────────

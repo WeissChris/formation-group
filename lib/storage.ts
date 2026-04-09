@@ -1,4 +1,4 @@
-﻿import type { Project, WeeklyRevenue, DesignProposal, Estimate, GanttEntry, WeeklyActual, ProgressPaymentStage, DesignProject, ProgressClaim, TakeoffData, ProposalInvoiceStage, SubcontractorPackage } from '@/types'
+﻿import type { Project, WeeklyRevenue, DesignProposal, Estimate, GanttEntry, WeeklyActual, ProgressPaymentStage, DesignProject, ProgressClaim, TakeoffData, TakeoffTemplate, ProposalInvoiceStage, SubcontractorPackage } from '@/types'
 
 // IndexedDB backup - runs silently after every localStorage write
 async function backupToIndexedDB(key: string, data: unknown[]): Promise<void> {
@@ -276,6 +276,84 @@ export function loadTakeoff(estimateId: string): TakeoffData | null {
 function loadAllTakeoffs(): TakeoffData[] {
   if (typeof window === 'undefined') return []
   try { return JSON.parse(localStorage.getItem('fg_takeoffs') || '[]') } catch { return [] }
+}
+
+// ── Takeoff templates ────────────────────────────────────────────────────────
+const BUILTIN_TAKEOFF_TEMPLATES: TakeoffTemplate[] = [
+  {
+    id: 'builtin-new-garden-bed',
+    name: 'New Garden Bed',
+    description: 'Edging, mulch, soil and plants for a planted garden bed',
+    builtin: true,
+    createdAt: '2026-04-09',
+    items: [
+      { name: 'Steel edging', unit: 'lm', wastagePercent: 5, layerName: 'Edging', layerColor: '#F59E0B' },
+      { name: 'Garden mix (100mm)', unit: 'm3', wastagePercent: 10, layerName: 'Soil', layerColor: '#8B5CF6' },
+      { name: 'Mulch (75mm)', unit: 'm2', wastagePercent: 10, layerName: 'Mulch', layerColor: '#84CC16' },
+      { name: 'Small shrubs', unit: 'ea', wastagePercent: 0, layerName: 'Planting', layerColor: '#10B981' },
+      { name: 'Feature trees', unit: 'ea', wastagePercent: 0, layerName: 'Planting', layerColor: '#10B981' },
+    ],
+  },
+  {
+    id: 'builtin-paved-area',
+    name: 'Paved Area',
+    description: 'Excavation, base, sand bedding, pavers and cutting allowance',
+    builtin: true,
+    createdAt: '2026-04-09',
+    items: [
+      { name: 'Excavation (150mm)', unit: 'm2', wastagePercent: 0, layerName: 'Excavation', layerColor: '#EF4444' },
+      { name: 'Road base (100mm compacted)', unit: 'm2', wastagePercent: 10, layerName: 'Base', layerColor: '#F97316' },
+      { name: 'Bedding sand (30mm)', unit: 'm2', wastagePercent: 10, layerName: 'Base', layerColor: '#F97316' },
+      { name: 'Pavers', unit: 'm2', wastagePercent: 10, layerName: 'Pavers', layerColor: '#3B82F6' },
+      { name: 'Edge restraint', unit: 'lm', wastagePercent: 5, layerName: 'Pavers', layerColor: '#3B82F6' },
+    ],
+  },
+  {
+    id: 'builtin-turfed-area',
+    name: 'Turfed Area',
+    description: 'Topsoil, turf, and bulk material deliveries',
+    builtin: true,
+    createdAt: '2026-04-09',
+    items: [
+      { name: 'Topsoil (100mm)', unit: 'm3', wastagePercent: 10, layerName: 'Soil', layerColor: '#8B5CF6' },
+      { name: 'Turf', unit: 'm2', wastagePercent: 8, layerName: 'Turf', layerColor: '#10B981' },
+      { name: 'Lawn fertiliser', unit: 'm2', wastagePercent: 0, layerName: 'Turf', layerColor: '#10B981' },
+    ],
+  },
+]
+
+export function loadTakeoffTemplates(): TakeoffTemplate[] {
+  if (typeof window === 'undefined') return BUILTIN_TAKEOFF_TEMPLATES
+  try {
+    const custom = JSON.parse(localStorage.getItem('fg_takeoff_templates') || '[]') as TakeoffTemplate[]
+    // Merge: built-ins first, then custom. If user has saved a custom template with
+    // the same id as a built-in (shouldn't happen), the custom one wins.
+    const customIds = new Set(custom.map(t => t.id))
+    const merged = BUILTIN_TAKEOFF_TEMPLATES.filter(t => !customIds.has(t.id)).concat(custom)
+    return merged
+  } catch {
+    return BUILTIN_TAKEOFF_TEMPLATES
+  }
+}
+
+export function saveTakeoffTemplate(template: TakeoffTemplate): void {
+  if (typeof window === 'undefined') return
+  const raw = localStorage.getItem('fg_takeoff_templates')
+  let custom: TakeoffTemplate[] = []
+  try { custom = raw ? JSON.parse(raw) : [] } catch { custom = [] }
+  const idx = custom.findIndex(t => t.id === template.id)
+  if (idx >= 0) custom[idx] = template
+  else custom.push(template)
+  localStorage.setItem('fg_takeoff_templates', JSON.stringify(custom))
+}
+
+export function deleteTakeoffTemplate(templateId: string): void {
+  if (typeof window === 'undefined') return
+  const raw = localStorage.getItem('fg_takeoff_templates')
+  let custom: TakeoffTemplate[] = []
+  try { custom = raw ? JSON.parse(raw) : [] } catch { custom = [] }
+  const filtered = custom.filter(t => t.id !== templateId)
+  localStorage.setItem('fg_takeoff_templates', JSON.stringify(filtered))
 }
 
 // Generate invoice stages from an accepted design proposal
