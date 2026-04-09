@@ -1157,14 +1157,15 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     e.target.value = ''
 
     if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-      // Render PDF pages to canvases using PDF.js v5 (ESM/.mjs)
+      // Load PDF.js from CDN at runtime (bypasses webpack bundling issues entirely)
+      const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155'
       try {
         const arrayBuffer = await file.arrayBuffer()
-        // Dynamically import pdfjs-dist (v5 ships ESM only)
-        const pdfjsLib: any = await import('pdfjs-dist')
-        // pdfjs-dist v5 only ships a .mjs worker — point at unpkg with the matching version
-        const ver = pdfjsLib.version as string
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${ver}/build/pdf.worker.min.mjs`
+
+        // Dynamic import from CDN — the webpackIgnore comment prevents webpack from processing it
+        const cdnUrl = `${PDFJS_CDN}/pdf.min.mjs`
+        const pdfjsLib: any = await import(/* webpackIgnore: true */ cdnUrl)
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `${PDFJS_CDN}/pdf.worker.min.mjs`
 
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
         const pdf = await loadingTask.promise
@@ -1173,21 +1174,21 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
         // Render each page as a separate plan (cap at 20 to keep things sane)
         for (let pageNum = 1; pageNum <= Math.min(totalPages, 20); pageNum++) {
           const page = await pdf.getPage(pageNum)
-          const viewport = page.getViewport({ scale: 2.0 }) // 2x for quality
+          const vp = page.getViewport({ scale: 2.0 }) // 2x for quality
 
           const canvas = document.createElement('canvas')
-          canvas.width = viewport.width
-          canvas.height = viewport.height
+          canvas.width = vp.width
+          canvas.height = vp.height
           const ctx = canvas.getContext('2d')!
 
-          await page.render({ canvasContext: ctx, viewport, canvas } as any).promise
+          await page.render({ canvasContext: ctx, viewport: vp }).promise
 
           const dataUrl = canvas.toDataURL('image/png')
           const planName = totalPages > 1
             ? `${file.name} — Page ${pageNum}`
             : file.name
 
-          addPlan(planName, dataUrl, viewport.width, viewport.height)
+          addPlan(planName, dataUrl, vp.width, vp.height)
         }
       } catch (err) {
         console.error('PDF render error:', err)
