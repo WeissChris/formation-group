@@ -1,4 +1,4 @@
-﻿﻿export type EntityType = 'design' | 'formation' | 'lume'
+﻿export type EntityType = 'design' | 'formation' | 'lume'
 
 export type ProjectStage = 
   | 'design'
@@ -203,6 +203,8 @@ export interface DesignProposal {
   acceptedAt?: string
   acceptedByName?: string
   introText?: string           // Personalised introduction paragraph for proposal
+  welcomeVideoUrl?: string     // Video shown under the opening letter (YouTube or Vimeo)
+  processVideoUrl?: string     // Video shown under the Design Process section (YouTube or Vimeo)
   notes?: string
   createdAt: string
   updatedAt?: string

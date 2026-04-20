@@ -11,6 +11,45 @@ interface Props {
   phase3Scope?: string
   phase3Fee?: number
   validUntil: string
+  welcomeVideoUrl?: string
+  processVideoUrl?: string
+}
+
+// ── Video helpers ────────────────────────────────────────────────────────────
+function toEmbedUrl(url: string): string | null {
+  if (!url) return null
+  const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]+)/)
+  if (yt) return `https://www.youtube.com/embed/${yt[1]}`
+  const vm = url.match(/vimeo\.com\/(?:video\/)?(\d+)/)
+  if (vm) return `https://player.vimeo.com/video/${vm[1]}`
+  if (url.includes('/embed/') || url.includes('player.vimeo.com')) return url
+  return null
+}
+
+function ProposalVideo({ url, heading, caption }: { url?: string; heading: string; caption?: string }) {
+  const embed = url ? toEmbedUrl(url) : null
+  if (!embed) return null
+  return (
+    <div className="border-t p-8" style={{ borderColor: '#e5e7eb' }}>
+      <h3 className="font-light mb-4" style={{ fontSize: 20, color: '#1a1a1a' }}>
+        {heading}
+      </h3>
+      <div className="aspect-video w-full bg-black overflow-hidden rounded-sm">
+        <iframe
+          src={embed}
+          className="w-full h-full"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          title={heading}
+        />
+      </div>
+      {caption && (
+        <p className="text-xs font-light leading-relaxed mt-3" style={{ color: '#6b6b6b' }}>
+          {caption}
+        </p>
+      )}
+    </div>
+  )
 }
 
 // ── Brand colours ────────────────────────────────────────────────────────────
@@ -21,6 +60,10 @@ const MUTED = '#6b6b6b'
 const LIGHT_MUTED = '#8A8580'
 const BORDER = '#e5e7eb'
 const BG_WARM = '#F0EEEB'
+
+// ── Default videos (Formation-branded, shown on every proposal unless overridden) ──
+const DEFAULT_WELCOME_VIDEO_URL = 'https://vimeo.com/892469176'
+const DEFAULT_PROCESS_VIDEO_URL = 'https://vimeo.com/867802765'
 
 // ── Images ───────────────────────────────────────────────────────────────────
 const HERO_IMAGE = '/proposal-hero-8.jpg'
@@ -72,6 +115,8 @@ export default function ProposalPreview({
   phase2Scope, phase2Fee,
   phase3Scope, phase3Fee,
   validUntil,
+  welcomeVideoUrl,
+  processVideoUrl,
 }: Props) {
   const total = phase1Fee + phase2Fee + (phase3Fee ?? 0)
 
@@ -153,6 +198,14 @@ export default function ProposalPreview({
         </div>
       </div>
 
+      
+      {/* ── WELCOME VIDEO ── */}
+      <ProposalVideo
+        url={welcomeVideoUrl ?? DEFAULT_WELCOME_VIDEO_URL}
+        heading="Welcome to Formation"
+        caption="A brief introduction to our team and how we approach every project."
+      />
+
       {/* ── ABOUT FORMATION — Text left, image right ── */}
       <div className="grid grid-cols-2 gap-0">
         {/* Left: text */}
@@ -207,6 +260,14 @@ export default function ProposalPreview({
           </div>
         </div>
       </div>
+
+      
+      {/* ── PROCESS VIDEO ── */}
+      <ProposalVideo
+        url={processVideoUrl ?? DEFAULT_PROCESS_VIDEO_URL}
+        heading="Our Design Process"
+        caption="See how we bring your outdoor vision to life, from concept through to construction-ready plans."
+      />
 
       {/* ── PHASE DETAIL PAGES ── */}
       {phases.map((phase, i) => {

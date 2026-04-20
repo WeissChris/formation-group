@@ -59,6 +59,9 @@ function VideoEmbed({ url }: { url: string }) {
   )
 }
 
+const DEFAULT_WELCOME_VIDEO_URL = 'https://vimeo.com/892469176'
+const DEFAULT_PROCESS_VIDEO_URL = 'https://vimeo.com/867802765'
+
 function RenderBlock({ block }: { block: ProposalContentBlock }) {
   if (block.type === 'video') {
     return (
@@ -448,6 +451,20 @@ export default function ProposalAcceptancePage() {
           </div>
         </section>
 
+        
+        {/* ── WELCOME VIDEO ── */}
+        <section className="bg-white border-t border-[#e5e7eb]">
+          <div className="max-w-3xl mx-auto px-8 py-10">
+            <h2 className="text-xl font-light mb-4" style={{ color: '#1a1a1a' }}>Welcome to Formation</h2>
+            <div className="aspect-video w-full bg-black overflow-hidden rounded-sm">
+              <VideoEmbed url={proposal.welcomeVideoUrl ?? DEFAULT_WELCOME_VIDEO_URL} />
+            </div>
+            <p className="text-xs font-light leading-relaxed mt-3" style={{ color: '#6b6b6b' }}>
+              A brief introduction to our team and how we approach every project.
+            </p>
+          </div>
+        </section>
+
         {/* ── PAGE 3: ABOUT FORMATION — Text left, image right (full height) ── */}
         {proposal.includeAboutSection !== false && (
           <section className="bg-white">
@@ -564,6 +581,20 @@ export default function ProposalAcceptancePage() {
                 ))}
               </div>
             </div>
+          </div>
+        </section>
+
+        
+        {/* ── PROCESS VIDEO ── */}
+        <section className="bg-white border-t border-[#e5e7eb]">
+          <div className="max-w-3xl mx-auto px-8 py-10">
+            <h2 className="text-xl font-light mb-4" style={{ color: '#1a1a1a' }}>Our Design Process</h2>
+            <div className="aspect-video w-full bg-black overflow-hidden rounded-sm">
+              <VideoEmbed url={proposal.processVideoUrl ?? DEFAULT_PROCESS_VIDEO_URL} />
+            </div>
+            <p className="text-xs font-light leading-relaxed mt-3" style={{ color: '#6b6b6b' }}>
+              See how we bring your outdoor vision to life, from concept through to construction-ready plans.
+            </p>
           </div>
         </section>
 
