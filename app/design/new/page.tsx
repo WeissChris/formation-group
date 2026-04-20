@@ -65,6 +65,8 @@ The following outlines our proposed design process and associated fees.`
     phase3Fee: '',
     validUntil: defaultValidUntil.toISOString().split('T')[0],
     notes: '',
+    welcomeVideoUrl: '',
+    processVideoUrl: '',
   })
   const [preview, setPreview] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -100,6 +102,8 @@ The following outlines our proposed design process and associated fees.`
     validUntil: form.validUntil,
     acceptanceToken: generateId(),
     notes: form.notes,
+    welcomeVideoUrl: form.welcomeVideoUrl || undefined,
+    processVideoUrl: form.processVideoUrl || undefined,
     createdAt: new Date().toISOString(),
     contentBlocks: contentBlocks.length > 0 ? contentBlocks : undefined,
   })
@@ -144,6 +148,8 @@ The following outlines our proposed design process and associated fees.`
             phase3Scope={form.includePhase3 ? form.phase3Scope : undefined}
             phase3Fee={form.includePhase3 ? phase3Fee : undefined}
             validUntil={form.validUntil}
+            welcomeVideoUrl={form.welcomeVideoUrl}
+            processVideoUrl={form.processVideoUrl}
           />
         </div>
       </div>
@@ -267,6 +273,13 @@ The following outlines our proposed design process and associated fees.`
           {/* Validity + notes */}
           <div className="space-y-4">
             <Field label="Valid Until" value={form.validUntil} onChange={v => set('validUntil', v)} type="date" />
+            
+            {/* ── Proposal Videos ── */}
+            <div className="col-span-2 space-y-3 pt-2">
+              <h4 className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Proposal Videos</h4>
+              <Field label="Welcome Video URL" value={form.welcomeVideoUrl} onChange={v => set('welcomeVideoUrl', v)} placeholder="https://vimeo.com/... (leave blank for default)" />
+              <Field label="Process Video URL" value={form.processVideoUrl} onChange={v => set('processVideoUrl', v)} placeholder="https://vimeo.com/... (leave blank for default)" />
+            </div>
             <div>
               <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Internal Notes</label>
               <textarea
