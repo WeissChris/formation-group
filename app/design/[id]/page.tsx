@@ -317,7 +317,32 @@ export default function ProposalDetailPage() {
 
           {proposal.status === 'accepted' && (
             <div className="mt-8">
-              {/* Section header */}
+              
+            {/* Proposal Videos */}
+            <div className="space-y-3 mt-6">
+              <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block">Proposal Videos</label>
+              <input
+                defaultValue={proposal.welcomeVideoUrl ?? ''}
+                onBlur={(e) => {
+                  const updated: DesignProposal = { ...proposal, welcomeVideoUrl: e.target.value || undefined, updatedAt: new Date().toISOString() }
+                  saveProposal(updated)
+                  setProposal(updated)
+                }}
+                className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors placeholder-fg-muted/40"
+                placeholder="Welcome video URL (leave blank for default)"
+              />
+              <input
+                defaultValue={proposal.processVideoUrl ?? ''}
+                onBlur={(e) => {
+                  const updated: DesignProposal = { ...proposal, processVideoUrl: e.target.value || undefined, updatedAt: new Date().toISOString() }
+                  saveProposal(updated)
+                  setProposal(updated)
+                }}
+                className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors placeholder-fg-muted/40"
+                placeholder="Process video URL (leave blank for default)"
+              />
+            </div>
+            {/* Section header */}
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-0.5">
@@ -449,6 +474,8 @@ export default function ProposalDetailPage() {
             phase3Scope={proposal.phase3Scope}
             phase3Fee={proposal.phase3Fee}
             validUntil={proposal.validUntil}
+            welcomeVideoUrl={proposal.welcomeVideoUrl}
+            processVideoUrl={proposal.processVideoUrl}
           />
           <div className="mt-4">
             <button
