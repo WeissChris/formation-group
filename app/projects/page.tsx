@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { loadProjects } from '@/lib/storage'
+import { loadProjects, loadGanttEntries } from '@/lib/storage'
 import { STAGE_LABELS, STAGE_COLOURS } from '@/lib/stageConfig'
-import { scheduleStatus, healthColour, healthBg } from '@/lib/projectHealth'
-import type { ProjectStage } from '@/types'
+import { scheduleStatus, healthColour, healthBg, getForecastCompletion } from '@/lib/projectHealth'
+import type { ProjectStage, GanttEntry } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 import type { Project, EntityType } from '@/types'
 import EntityBadge from '@/components/EntityBadge'
@@ -39,11 +39,18 @@ function ProjectsInner() {
   const entityParam = searchParams.get('entity') as EntityType | null
 
   const [projects, setProjects] = useState<Project[]>([])
+  // Per-project gantt entries — only used for forecast-completion derivation, so we cache once on load
+  // rather than calling loadGanttEntries(p.id) inside every render.
+  const [ganttByProject, setGanttByProject] = useState<Record<string, GanttEntry[]>>({})
   const [search, setSearch] = useState('')
   const [entityFilter, setEntityFilter] = useState<EntityType | 'all'>(entityParam ?? 'all')
 
   useEffect(() => {
-    setProjects(loadProjects())
+    const loaded = loadProjects()
+    setProjects(loaded)
+    const map: Record<string, GanttEntry[]> = {}
+    for (const p of loaded) map[p.id] = loadGanttEntries(p.id)
+    setGanttByProject(map)
   }, [])
 
   const filtered = projects
@@ -164,9 +171,10 @@ function ProjectsInner() {
                 </div>
                 <div className="text-right w-40">
                   {(() => {
-                    const { status, daysSlippage } = scheduleStatus(p)
+                    const pGantt = ganttByProject[p.id] || []
+                    const { status, daysSlippage } = scheduleStatus(p, pGantt)
                     const planned = p.baseline?.plannedCompletion
-                    const expected = p.forecastCompletion || p.plannedCompletion
+                    const expected = getForecastCompletion(p, pGantt)
                     const dot = healthBg(status)
                     const col = healthColour(status)
                     if (planned) {

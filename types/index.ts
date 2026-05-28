@@ -30,10 +30,24 @@ export interface Project {
   scopes?: ProjectScope[]
   // Baseline — locked at estimate conversion, never overwritten
   baseline?: ProjectBaseline
-  // Live forecast — updated as project evolves
-  forecastCompletion?: string   // ISO date — updated from Gantt or manually
-  forecastCost?: number         // updated from actuals + committed costs
+  // Live forecast — explicit manual overrides only. By default, forecastCompletion is derived from
+  // the latest Gantt segment end via `getForecastCompletion(project, ganttEntries)` in
+  // `lib/projectHealth.ts`, and forecastCost is derived from gantt budgetedCost in calcProjectHealth.
+  // These fields exist so a user can override the derived value if needed; if unset, derivation wins.
+  /** @deprecated Prefer `getForecastCompletion(project, ganttEntries)` — only set as a manual override. */
+  forecastCompletion?: string
+  /** @deprecated Derived from gantt in calcProjectHealth — only set as a manual override. */
+  forecastCost?: number
+  /**
+   * Per-project target gross margin %, e.g. 40 for landscape, 33 for subbie-heavy.
+   * Drives the Live Jobs dashboard status thresholds (on_target / watch / below_target)
+   * and the fade calculation (forecastGP% − targetMarginPct). NULL = fall back to 40%
+   * for legacy projects created before this field existed.
+   */
+  targetMarginPct?: number
   createdAt: string
+  /** ISO timestamp set automatically by save helpers — drives Supabase conflict resolution. */
+  updatedAt?: string
 }
 
 export interface SubcontractorPackage {
@@ -182,6 +196,8 @@ export interface WeeklyRevenue {
   isDeposit: boolean
   scheduledCost?: number   // cost budgeted for this week from Gantt
   notes?: string
+  /** ISO timestamp set automatically by save helpers — drives Supabase conflict resolution. */
+  updatedAt?: string
 }
 
 export interface DesignProposal {

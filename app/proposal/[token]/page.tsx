@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
-import { loadProposals, saveProposal, generateRevenueFromProposal, saveDesignProject, loadDesignProjectByProposalId } from '@/lib/storage'
+import { saveProposal, generateRevenueFromProposal, saveDesignProject, loadDesignProjectByProposalId } from '@/lib/storage'
+import { getProposalByToken, acceptProposalByToken } from '@/lib/publicData'
 import { formatCurrency, generateId } from '@/lib/utils'
 import type { DesignProposal, ProposalContentBlock, DesignProject } from '@/types'
 import { ChevronDown, Check, Play } from 'lucide-react'
@@ -217,26 +218,36 @@ export default function ProposalAcceptancePage() {
   const acceptSectionRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const all = loadProposals()
-    const p = all.find(pp => pp.acceptanceToken === token)
-    if (!p) {
-      setNotFound(true)
-    } else {
-      setProposal(p)
-      if (p.status === 'accepted') setAccepted(true)
-    }
+    let cancelled = false
+    // Public route — a client opening this link on THEIR browser has empty localStorage.
+    // getProposalByToken uses the get_proposal_by_token RPC (SECURITY DEFINER) so the
+    // anon role can read just this one row by its secret token without needing direct
+    // table access. Falls back to localStorage on the admin's browser when Supabase
+    // isn't configured. Required for RLS lockdown — direct SELECT on fg_proposals is denied.
+    ;(async () => {
+      const p = await getProposalByToken(token)
+      if (cancelled) return
+      if (!p) {
+        setNotFound(true)
+      } else {
+        setProposal(p)
+        if (p.status === 'accepted') setAccepted(true)
+      }
+    })()
+    return () => { cancelled = true }
   }, [token])
 
-  const handleAccept = () => {
+  const handleAccept = async () => {
     if (!acceptorName.trim()) return setError('Please enter your name')
     if (!proposal) return
-    const updated: DesignProposal = {
-      ...proposal,
-      status: 'accepted',
-      acceptedAt: new Date().toISOString(),
-      acceptedByName: acceptorName.trim(),
+    // acceptProposalByToken hits the accept_proposal_by_token RPC which is the only path
+    // anon has to mutate fg_proposals under locked RLS. The server stamps acceptedAt; we
+    // use what comes back as the source of truth. Falls back to localStorage for admin tests.
+    const updated = await acceptProposalByToken(token, acceptorName.trim())
+    if (!updated) {
+      setError('Could not record acceptance — please try again or contact us directly.')
+      return
     }
-    saveProposal(updated)
     generateRevenueFromProposal(updated)
 
     // Create design project if doesn't exist

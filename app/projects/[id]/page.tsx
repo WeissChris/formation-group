@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { ProjectCostsTab } from '@/components/ProjectCostsTab'
+import { getTargetMarginPct } from '@/lib/projectHealth'
 import Link from 'next/link'
 import {
   loadProjects, loadWeeklyRevenue, loadEstimates, saveEstimate,
@@ -14,7 +16,7 @@ import type { Project, Estimate, WeeklyRevenue, GanttEntry, WeeklyActual, Progre
 import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, PROGRESSION_WARNINGS, buildChecklist, defaultStageForStatus } from '@/lib/stageConfig'
 import type { ProjectScope } from '@/types'
 import type { ProjectStage } from '@/types'
-import { calcProjectHealth, scheduleStatus, healthColour, healthBg, healthBorder } from '@/lib/projectHealth'
+import { calcProjectHealth, scheduleStatus, healthColour, healthBg, healthBorder, getForecastCompletion } from '@/lib/projectHealth'
 import FinancialOperations from '@/components/FinancialOperations'
 import EntityBadge from '@/components/EntityBadge'
 import { Pencil, Trash2, ChevronRight, Plus, ExternalLink, Copy, Check } from 'lucide-react'
@@ -335,16 +337,28 @@ function ProjectFinancialPosition({
   // Actual cost from actuals
   const actualCost = actuals.reduce((sum, a) => sum + a.supplyCost + a.labourCost, 0)
 
-  // Invoiced to date from revenue
-  const totalInvoiced = revenueEntries.reduce((sum, r) => sum + r.actualInvoiced, 0)
+  // Invoiced to date — prefer progress claims when the project uses that model (Operations tab writes claims),
+  // fall back to WeeklyRevenue.actualInvoiced (hand-typed in the Revenue calendar) for projects with no claims.
+  // sent + paid = issued to client; drafts and pending haven't gone out yet.
+  const claimsInvoiced = progressClaims
+    .filter(c => c.status === 'sent' || c.status === 'paid')
+    .reduce((sum, c) => sum + c.subtotalEx, 0)
+  // Defensive `?? 0` — legacy WeeklyRevenue rows in localStorage can lack actualInvoiced;
+  // a single missing field cascades NaN through currentGP and silently disables alerts.
+  const manualInvoiced = revenueEntries.reduce((sum, r) => sum + (r.actualInvoiced ?? 0), 0)
+  const totalInvoiced = claimsInvoiced > 0 ? claimsInvoiced : manualInvoiced
   const plannedRevenue = revenueEntries.reduce((sum, r) => sum + r.plannedRevenue, 0)
+
+  // Effective contract value — revised (incl. approved variations) where available, original otherwise.
+  // budgetCost includes variation line items, so the forecast must use the same revenue basis or GP drifts.
+  const effectiveContract = revisedContract || contractValue
 
   // GP calculations
   const currentGP = totalInvoiced > 0
     ? ((totalInvoiced - actualCost) / totalInvoiced) * 100
     : 0
-  const forecastGP = contractValue > 0 && budgetCost > 0
-    ? ((contractValue - budgetCost) / contractValue) * 100
+  const forecastGP = effectiveContract > 0 && budgetCost > 0
+    ? ((effectiveContract - budgetCost) / effectiveContract) * 100
     : 0
 
   // Forecast cost from gantt
@@ -353,9 +367,14 @@ function ProjectFinancialPosition({
   // Progress claims
   const totalClaimed = progressClaims.reduce((sum, c) => sum + c.subtotalEx, 0)
 
-  // WIP
-  const wipPercent = contractValue > 0 ? Math.min(100, (totalInvoiced / contractValue) * 100) : 0
-  const costPercent = budgetCost > 0 ? Math.min(100, (actualCost / budgetCost) * 100) : 0
+  // WIP — keep the unclamped ratio so over-invoicing/over-budget can show a red flag,
+  // and a clamped value for the bar width (CSS can't render > 100%).
+  const wipRatio = effectiveContract > 0 ? (totalInvoiced / effectiveContract) * 100 : 0
+  const costRatio = budgetCost > 0 ? (actualCost / budgetCost) * 100 : 0
+  const wipPercent = Math.min(100, wipRatio)
+  const costPercent = Math.min(100, costRatio)
+  const isOverInvoiced = wipRatio > 100
+  const isOverBudget = costRatio > 100
 
   const hasData = estimates.length > 0 || ganttEntries.length > 0
 
@@ -397,7 +416,7 @@ function ProjectFinancialPosition({
           {/* Programme */}
           {(project.baseline.plannedStart || project.baseline.plannedCompletion) && (() => {
             const baselineDate = project.baseline.plannedCompletion
-            const forecastDate = project.forecastCompletion || project.plannedCompletion
+            const forecastDate = getForecastCompletion(project, ganttEntries)
             const today = new Date()
             const baselineMs = baselineDate ? new Date(baselineDate).getTime() : null
             const forecastMs = forecastDate ? new Date(forecastDate).getTime() : null
@@ -600,7 +619,7 @@ function ProjectFinancialPosition({
               <td className="py-2 text-fg-muted">Revenue</td>
               <td className="py-2 text-right text-fg-heading">{formatCurrency(plannedRevenue)}</td>
               <td className="py-2 text-right text-fg-heading">{formatCurrency(totalInvoiced)}</td>
-              <td className="py-2 text-right text-fg-heading">{formatCurrency(contractValue)}</td>
+              <td className="py-2 text-right text-fg-heading">{formatCurrency(effectiveContract)}</td>
             </tr>
             <tr>
               <td className="py-2 text-fg-muted">Cost</td>
@@ -610,9 +629,9 @@ function ProjectFinancialPosition({
             </tr>
             <tr>
               <td className="py-2 text-fg-muted">GP</td>
-              <td className="py-2 text-right text-fg-heading">{formatCurrency((plannedRevenue || contractValue) - budgetCost)}</td>
+              <td className="py-2 text-right text-fg-heading">{formatCurrency((plannedRevenue || effectiveContract) - budgetCost)}</td>
               <td className="py-2 text-right text-fg-heading">{formatCurrency(totalInvoiced - actualCost)}</td>
-              <td className="py-2 text-right text-fg-heading">{formatCurrency(contractValue - (forecastCost || budgetCost))}</td>
+              <td className="py-2 text-right text-fg-heading">{formatCurrency(effectiveContract - (forecastCost || budgetCost))}</td>
             </tr>
           </tbody>
         </table>
@@ -635,7 +654,7 @@ function ProjectFinancialPosition({
               </div>
               <div className="flex justify-between text-sm font-light border-t border-fg-border pt-2">
                 <span className="text-fg-muted">Remaining</span>
-                <span className="text-fg-heading">{formatCurrency(contractValue - totalInvoiced)}</span>
+                <span className="text-fg-heading">{formatCurrency(effectiveContract - totalInvoiced)}</span>
               </div>
             </div>
           </div>
@@ -668,11 +687,13 @@ function ProjectFinancialPosition({
           <div>
             <div className="flex justify-between text-xs font-light text-fg-muted mb-1">
               <span>Revenue invoiced vs contract</span>
-              <span>{wipPercent.toFixed(1)}%</span>
+              <span className={isOverInvoiced ? 'text-red-400' : ''}>
+                {wipRatio.toFixed(1)}%{isOverInvoiced ? ' · OVER' : ''}
+              </span>
             </div>
             <div className="h-1.5 bg-fg-border rounded-full overflow-hidden">
               <div
-                className="h-full bg-fg-heading/60 rounded-full transition-all"
+                className={`h-full rounded-full transition-all ${isOverInvoiced ? 'bg-red-400/60' : 'bg-fg-heading/60'}`}
                 style={{ width: `${wipPercent}%` }}
               />
             </div>
@@ -680,11 +701,13 @@ function ProjectFinancialPosition({
           <div>
             <div className="flex justify-between text-xs font-light text-fg-muted mb-1">
               <span>Cost actual vs budget</span>
-              <span>{costPercent.toFixed(1)}%</span>
+              <span className={isOverBudget ? 'text-red-400' : ''}>
+                {costRatio.toFixed(1)}%{isOverBudget ? ' · OVER' : ''}
+              </span>
             </div>
             <div className="h-1.5 bg-fg-border rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all ${costPercent > 90 ? 'bg-red-400/60' : 'bg-emerald-400/60'}`}
+                className={`h-full rounded-full transition-all ${isOverBudget ? 'bg-red-400/60' : costPercent > 90 ? 'bg-amber-400/60' : 'bg-emerald-400/60'}`}
                 style={{ width: `${costPercent}%` }}
               />
             </div>
@@ -693,35 +716,44 @@ function ProjectFinancialPosition({
       </div>
 
       {/* Alerts */}
-      {(currentGP < 15 || costPercent > 90) && (
+      {/* GP alert is only meaningful once enough has been invoiced — early-stage jobs almost always show
+          a large negative currentGP because supplier costs hit before claims do. Gate at 20% of contract. */}
+      {(() => {
+        const invoicedShare = effectiveContract > 0 ? totalInvoiced / effectiveContract : 0
+        const gpAlertActive = currentGP < 15 && currentGP !== 0 && invoicedShare >= 0.2
+        const costAlertActive = costPercent > 90
+        if (!gpAlertActive && !costAlertActive) return null
+        return (
         <div>
           <h3 className="text-xs font-light tracking-widest uppercase text-fg-muted mb-3">Alerts</h3>
           <div className="space-y-2">
-            {currentGP < 15 && currentGP !== 0 && (
+            {gpAlertActive && (
               <div className="bg-red-900/20 border border-red-400/30 rounded-sm px-4 py-3">
                 <p className="text-xs font-light text-red-400">GP% is below 15% threshold ({currentGP.toFixed(1)}%)</p>
               </div>
             )}
-            {costPercent > 90 && (
+            {costAlertActive && (
               <div className="bg-amber-900/20 border border-amber-400/30 rounded-sm px-4 py-3">
                 <p className="text-xs font-light text-amber-400">Cost tracking at {costPercent.toFixed(0)}% of budget</p>
               </div>
             )}
           </div>
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-type TabId = 'overview' | 'operations' | 'position' | 'revenue' | 'estimates' | 'notes' | 'gantt' | 'costtracker' | 'subcontractors'
+type TabId = 'overview' | 'operations' | 'position' | 'costs' | 'revenue' | 'estimates' | 'notes' | 'gantt' | 'costtracker' | 'subcontractors'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview',     label: 'Overview' },
   { id: 'operations',   label: 'Invoicing' },
   { id: 'position',     label: 'Position' },
+  { id: 'costs',        label: 'Costs (Xero)' },  // Live Xero cost feed + per-account forecast override
   { id: 'revenue',      label: 'Revenue' },
   { id: 'estimates',    label: 'Estimates' },
   { id: 'notes',        label: 'Notes' },
@@ -733,6 +765,7 @@ const TABS: { id: TabId; label: string }[] = [
 export default function ProjectDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const id = typeof params.id === 'string' ? params.id : Array.isArray(params.id) ? params.id[0] : ''
 
   const [project, setProject] = useState<Project | null>(null)
@@ -742,7 +775,11 @@ export default function ProjectDetailPage() {
   const [actuals, setActuals] = useState<WeeklyActual[]>([])
   const [progressClaims, setProgressClaims] = useState<ProgressClaim[]>([])
   const [stages, setStages] = useState<ProgressPaymentStage[]>([])
-  const [activeTab, setActiveTab] = useState<TabId>('overview')
+  // Seed from ?tab= so deep links from the dashboard Live Jobs row land on the right tab.
+  // Falls back to 'overview' if no/invalid tab param.
+  const tabFromUrl = searchParams?.get('tab') as TabId | null
+  const validInitialTab: TabId = TABS.some(t => t.id === tabFromUrl) ? (tabFromUrl as TabId) : 'overview'
+  const [activeTab, setActiveTab] = useState<TabId>(validInitialTab)
   const [notesValue, setNotesValue] = useState('')
   const [notesSaved, setNotesSaved] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -887,8 +924,8 @@ export default function ProjectDetailPage() {
     variationsByParent[v.parentEstimateId!].push(v)
   })
 
-  const totalRevenuePlanned = revenueEntries.reduce((sum, r) => sum + r.plannedRevenue, 0)
-  const totalInvoiced = revenueEntries.reduce((sum, r) => sum + r.actualInvoiced, 0)
+  const totalRevenuePlanned = revenueEntries.reduce((sum, r) => sum + (r.plannedRevenue ?? 0), 0)
+  const totalInvoiced = revenueEntries.reduce((sum, r) => sum + (r.actualInvoiced ?? 0), 0)
 
   return (
     <div className="min-h-screen bg-fg-bg">
@@ -1340,6 +1377,40 @@ export default function ProjectDetailPage() {
           />
         )}
 
+        {/* ── Tab: Costs (Xero) ─────────────────────────────────────────────── */}
+        {activeTab === 'costs' && (() => {
+          // Compute effective contract (incl. variations) so the GP line at the bottom
+          // of the costs tab matches the Position tab and the dashboard Live Jobs row.
+          const acceptedBase = estimates.filter(e => e.status === 'accepted' && !e.parentEstimateId)
+          const acceptedVariations = estimates.filter(e => e.status === 'accepted' && !!e.parentEstimateId)
+          const baseContract = acceptedBase.reduce(
+            (s, e) => s + e.lineItems.reduce((ls, li) => ls + (li.revenue ?? 0), 0), 0,
+          )
+          const variationsTotal = acceptedVariations.reduce(
+            (s, e) => s + (e.variationAmount || e.lineItems.reduce((ls, li) => ls + (li.revenue ?? 0), 0)),
+            0,
+          )
+          const revisedContract = baseContract + variationsTotal
+          const effectiveContract = revisedContract > 0 ? revisedContract : (project.contractValue || 0)
+          // Flatten all accepted estimate line items so labour-allowance + pace can read them.
+          // We pass all accepted (base + variations) so labour added by a variation is included.
+          const allLineItems = estimates
+            .filter(e => e.status === 'accepted')
+            .flatMap(e => e.lineItems)
+          return (
+            <ProjectCostsTab
+              projectId={id}
+              projectName={project.name}
+              forecastRevenue={effectiveContract}
+              quotedMarginPct={project.baseline?.gpPercent}
+              targetMarginPct={getTargetMarginPct(project)}
+              estimateLineItems={allLineItems}
+              foremanActuals={actuals}
+              projectStartDate={project.startDate}
+            />
+          )
+        })()}
+
         {/* ── Tab: Revenue ──────────────────────────────────────────────────── */}
         {activeTab === 'revenue' && (
           <div>
@@ -1375,8 +1446,8 @@ export default function ProjectDetailPage() {
                         <tr key={entry.id}>
                           <td className="py-2 text-fg-heading">{formatProjectDate(entry.weekEnding)}</td>
                           <td className="py-2 text-fg-muted">{entry.projectName}</td>
-                          <td className="py-2 text-right text-fg-heading">{formatCurrency(entry.plannedRevenue)}</td>
-                          <td className="py-2 text-right text-fg-heading">{formatCurrency(entry.actualInvoiced)}</td>
+                          <td className="py-2 text-right text-fg-heading">{formatCurrency(entry.plannedRevenue ?? 0)}</td>
+                          <td className="py-2 text-right text-fg-heading">{formatCurrency(entry.actualInvoiced ?? 0)}</td>
                           <td className="py-2 text-center">
                             {entry.isDeposit ? <span className="text-2xs text-fg-muted border border-fg-border rounded-sm px-1.5 py-0.5 uppercase tracking-wide">Deposit</span> : '—'}
                           </td>

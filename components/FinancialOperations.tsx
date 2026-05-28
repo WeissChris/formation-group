@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -8,7 +8,7 @@ import {
   loadProgressClaims, saveProgressClaim, deleteProgressClaim,
 } from '@/lib/storage'
 import { formatCurrency, generateId } from '@/lib/utils'
-import { getEstimateTotals } from '@/lib/estimateCalculations'
+import { getEstimateTotals, readLineItemRevenue } from '@/lib/estimateCalculations'
 import type { ProgressPaymentStage, Estimate, WeeklyActual, ProgressClaim, ProgressClaimLineItem } from '@/types'
 import { Plus, X, FileText, Receipt, GitBranch, Eye, Check, ChevronRight, ArrowLeft } from 'lucide-react'
 
@@ -122,7 +122,9 @@ function buildActivityFeed(
 
 // ── Progress Claim Builder ────────────────────────────────────────────────────
 
-// Local-state input — only fires onCommit on blur, prevents per-keystroke re-renders
+// Local-state input — only fires onCommit on blur, prevents per-keystroke re-renders.
+// Syncs to external `value` whenever it changes from outside (e.g. "fill remaining" chevron,
+// group allocations) unless the user currently has the field focused, in which case typing wins.
 function ClaimInput({ value, placeholder, className, onCommit }: {
   value: number
   placeholder?: string
@@ -130,19 +132,23 @@ function ClaimInput({ value, placeholder, className, onCommit }: {
   onCommit: (v: number) => void
 }) {
   const [local, setLocal] = useState(value === 0 ? '' : String(value))
-  // Keep in sync if external value changes (e.g. when filling from % or $)
-  const prevValue = useState(value)[0]
-  if (value !== prevValue && value === 0 && local !== '') {
-    // don't reset while typing
-  }
+  const focusedRef = useRef(false)
+
+  useEffect(() => {
+    if (focusedRef.current) return // don't yank text out from under the user
+    setLocal(value === 0 ? '' : String(value))
+  }, [value])
+
   return (
     <input
       type="text"
       inputMode="decimal"
       value={local}
       placeholder={placeholder}
+      onFocus={() => { focusedRef.current = true }}
       onChange={e => setLocal(e.target.value)}
       onBlur={() => {
+        focusedRef.current = false
         const parsed = parseFloat(local.replace(/[^0-9.]/g, '')) || 0
         setLocal(parsed === 0 ? '' : String(parsed))
         onCommit(parsed)
@@ -189,7 +195,7 @@ function ProgressClaimBuilder({
           categoryKeys.push(cat)
           categoryAmounts[cat] = 0
         }
-        categoryAmounts[cat] += li.revenue
+        categoryAmounts[cat] += readLineItemRevenue(li)
       }
 
       // Calculate claimed to date for each category from previous claims
@@ -354,49 +360,6 @@ function ProgressClaimBuilder({
       paidAt: editingClaim?.paidAt,
     }
     onSave(claim)
-  }
-
-  const LineItemRow = ({
-    item,
-    idx,
-    globalIdx,
-    rowNum,
-  }: {
-    item: ProgressClaimLineItem
-    idx: number
-    globalIdx: number
-    rowNum: number
-  }) => {
-    const isIncluded = item.claimAmount > 0 || item.claimPercent > 0
-    return (
-      <tr className={`border-b border-fg-border/30 transition-colors ${isIncluded ? 'bg-fg-card/20' : ''}`}>
-        <td className="py-2 pr-3 text-xs font-light text-fg-muted tabular-nums w-8">{rowNum}</td>
-        <td className={`py-2 pr-3 text-xs font-light ${isIncluded ? 'text-fg-heading font-normal' : 'text-fg-muted/70'}`}>{item.description}</td>
-        <td className="py-2 pr-3 text-xs font-light text-fg-heading tabular-nums whitespace-nowrap">{formatCurrency(item.contractAmount)}</td>
-        <td className="py-2 pr-3 text-xs font-light text-fg-muted tabular-nums whitespace-nowrap">{formatCurrency(item.claimedToDate)}</td>
-        <td className="py-2 pr-3 text-xs font-light text-fg-muted tabular-nums whitespace-nowrap">{formatCurrency(item.remaining)}</td>
-        <td className="py-2 pr-2 whitespace-nowrap">
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-fg-muted">$</span>
-            <ClaimInput
-              value={item.claimAmount}
-              placeholder="0.00"
-              className="w-24"
-              onCommit={v => updateLineItem(globalIdx, { claimAmount: v, claimPercent: item.remaining > 0 ? (v / item.remaining) * 100 : 0 })}
-            />
-            <button onClick={() => fillRemaining(globalIdx)} title="Fill remaining" className="p-1 text-fg-muted hover:text-fg-heading border border-fg-border transition-colors">
-              <ChevronRight className="w-3 h-3" />
-            </button>
-          </div>
-        </td>
-        <td className="py-2 pr-2 whitespace-nowrap">
-          <div className="flex items-center gap-1">
-            <ClaimInput value={item.claimPercent} placeholder="0" className="w-20" onCommit={v => updateLineItem(globalIdx, { claimPercent: v, claimAmount: (v / 100) * item.remaining })} />
-            <span className="text-xs text-fg-muted">%</span>
-          </div>
-        </td>
-      </tr>
-    )
   }
 
   const colHeaders = ['#', 'Description', 'Contract (Ex)', 'Claimed to Date', 'Remaining', 'Claim Amount', 'Claim %']
@@ -800,10 +763,23 @@ function InvoicesSubTab({
   }
 
   const handleMarkPaid = (claim: ProgressClaim) => {
+    // Prompt for actual paid date so historic backfills aren't stamped "today".
+    // Defaults to today (the common case). Empty input → cancel. Invalid input → also cancel.
+    const todayIso = new Date().toISOString().slice(0, 10)
+    const entered = window.prompt(`Paid date (YYYY-MM-DD)`, todayIso)
+    if (entered === null) return
+    const trimmed = entered.trim()
+    if (!trimmed) return
+    // Validate as a date; reject NaN
+    const ms = Date.parse(trimmed.length === 10 ? `${trimmed}T12:00:00` : trimmed)
+    if (Number.isNaN(ms)) {
+      window.alert('Could not parse that date — leaving claim unchanged.')
+      return
+    }
     const updated: ProgressClaim = {
       ...claim,
       status: 'paid',
-      paidAt: new Date().toISOString(),
+      paidAt: new Date(ms).toISOString(),
     }
     saveProgressClaim(updated)
     refreshClaims()
@@ -838,7 +814,11 @@ function InvoicesSubTab({
   return (
     <>
       {showBuilder && (
+        // `key` forces a fresh mount when switching between editingClaim values; without it
+        // the builder's internal useState would keep the previously-edited claim's line items
+        // and you'd silently overwrite the wrong invoice.
         <ProgressClaimBuilder
+          key={editingClaim?.id ?? 'new'}
           projectId={projectId}
           projectName={projectName}
           estimates={estimates}

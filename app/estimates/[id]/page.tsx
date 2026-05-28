@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { loadEstimates, saveEstimate, saveProject, loadProposals } from '@/lib/storage'
 import { formatCurrency, generateId } from '@/lib/utils'
-import { calculateLineItemRevenue, getMarginSummary, getEstimateTotals } from '@/lib/estimateCalculations'
+import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals } from '@/lib/estimateCalculations'
 import { getAllLibraryItems, getCategories } from '@/lib/itemLibrary'
 import type { Estimate, EstimateLineItem, LibraryItem } from '@/types'
 import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch } from 'lucide-react'
@@ -746,8 +746,12 @@ export default function EstimateBuilderPage() {
             <option value="sent">Sent</option>
             <option value="accepted">Accepted</option>
             <option value="declined">Declined</option>
-            {/* Variation status is set automatically when creating a variation — not manually selectable */}
-            {estimate.status === 'variation' && <option value="variation">Variation</option>}
+            {/* "Variation" is always selectable for any estimate that's a variation (has a parent),
+                or when status is already 'variation' — prevents the option silently disappearing on a
+                re-save and dropping the variation marker. */}
+            {(estimate.status === 'variation' || estimate.parentEstimateId) && (
+              <option value="variation">Variation</option>
+            )}
           </select>
         </div>
       </div>
@@ -807,7 +811,7 @@ export default function EstimateBuilderPage() {
                 {categories.map(category => {
                   const catItems = estimate.lineItems.filter(i => i.category === category)
                   const catTotal = catItems.reduce((s, i) => s + i.total, 0)
-                  const catRevenue = catItems.reduce((s, i) => s + calculateLineItemRevenue(i), 0)
+                  const catRevenue = catItems.reduce((s, i) => s + readLineItemRevenue(i), 0)
                   const catIdx = categories.indexOf(category)
 
                   return [
@@ -887,7 +891,7 @@ export default function EstimateBuilderPage() {
                     </td>
                     <td />
                     <td className="py-3 px-1 text-right text-sm font-semibold text-fg-heading tabular-nums">
-                      {fmtCurrency(estimate.lineItems.reduce((s, i) => s + calculateLineItemRevenue(i), 0))}
+                      {fmtCurrency(estimate.lineItems.reduce((s, i) => s + readLineItemRevenue(i), 0))}
                     </td>
                     <td />
                   </tr>

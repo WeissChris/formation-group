@@ -2,9 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
-import { loadProjects } from '@/lib/storage'
-import { loadGanttEntries, loadWeeklyActuals, saveWeeklyActual } from '@/lib/storage'
-import { generateId, toISODate, snapToFriday, formatCurrency } from '@/lib/utils'
+import {
+  getProjectByForemanPin,
+  getGanttByForemanPin,
+  getActualsByForemanPin,
+  insertForemanActual,
+} from '@/lib/publicData'
+import { toISODate, snapToFriday, formatCurrency } from '@/lib/utils'
 import type { Project, GanttEntry, GanttSegment, WeeklyActual } from '@/types'
 import { RefreshCw, Calendar, DollarSign, ClipboardList } from 'lucide-react'
 
@@ -96,17 +100,22 @@ export default function ForemanPage() {
   const [costInputs, setCostInputs] = useState<Record<string, { supply: string; labour: string }>>({})
   const [saved, setSaved] = useState(false)
 
-  const load = useCallback(() => {
-    const projects = loadProjects()
-    const found = projects.find(p => p.foremanPin && p.foremanPin.toUpperCase() === pin)
+  const load = useCallback(async () => {
+    // Foreman's browser is empty localStorage — must read via the SECURITY DEFINER RPCs
+    // so the anon role can fetch just this project's data without direct table access.
+    // Admin's browser falls through to localStorage if Supabase isn't configured.
+    const found = await getProjectByForemanPin(pin)
     if (!found) {
       setNotFound(true)
       return
     }
     setProject(found)
-    const entries = loadGanttEntries(found.id)
+    const [entries, weeklyActuals] = await Promise.all([
+      getGanttByForemanPin(pin),
+      getActualsByForemanPin(pin),
+    ])
     setGanttEntries(entries)
-    setActuals(loadWeeklyActuals(found.id))
+    setActuals(weeklyActuals)
   }, [pin])
 
   useEffect(() => { load() }, [load, refreshKey])
@@ -155,25 +164,26 @@ export default function ForemanPage() {
       .reduce((s, a) => s + a.supplyCost + a.labourCost, 0)
   }
 
-  function handleSaveCosts() {
+  async function handleSaveCosts() {
     if (!project) return
-    for (const entry of activeThisWeek) {
-      const inputs = costInputs[entry.category] || { supply: '0', labour: '0' }
-      const supplyCost = parseFloat(inputs.supply) || 0
-      const labourCost = parseFloat(inputs.labour) || 0
-      if (supplyCost === 0 && labourCost === 0) continue
-
-      const actual: WeeklyActual = {
-        id: generateId(),
-        projectId: project.id,
-        category: entry.category,
-        weekEnding,
-        supplyCost,
-        labourCost,
-      }
-      saveWeeklyActual(actual)
-    }
-    setActuals(loadWeeklyActuals(project.id))
+    // insertForemanActual hits insert_foreman_actual RPC which is the only path anon has
+    // to write fg_actuals under locked RLS. Each call validates the PIN server-side.
+    await Promise.all(
+      activeThisWeek.map(entry => {
+        const inputs = costInputs[entry.category] || { supply: '0', labour: '0' }
+        const supplyCost = parseFloat(inputs.supply) || 0
+        const labourCost = parseFloat(inputs.labour) || 0
+        if (supplyCost === 0 && labourCost === 0) return Promise.resolve(true)
+        return insertForemanActual(pin, {
+          category: entry.category,
+          weekEnding,
+          supplyCost,
+          labourCost,
+        })
+      }),
+    )
+    // Refresh actuals from the server-side source of truth
+    setActuals(await getActualsByForemanPin(pin))
     setCostInputs({})
     setSaved(true)
     setTimeout(() => setSaved(false), 4000)

@@ -42,6 +42,7 @@ export default function NewProjectPage() {
     clientName: '',
     address: '',
     contractValue: '',
+    targetMarginPct: '40',  // default landscape margin; subbie-heavy jobs override to ~33
     startDate: '',
     plannedCompletion: '',
     foreman: '',
@@ -74,6 +75,7 @@ export default function NewProjectPage() {
       clientName: form.clientName,
       address: form.address,
       contractValue: parseFloat(form.contractValue.replace(/[^0-9.]/g, '')) || 0,
+      targetMarginPct: parseFloat(form.targetMarginPct) || 40,
       startDate: form.startDate,
       plannedCompletion: form.plannedCompletion,
       foreman: form.foreman,
@@ -139,8 +141,14 @@ export default function NewProjectPage() {
 
           <Field label="Address" value={form.address} onChange={v => set('address', v)} placeholder="16 Samara Rd, Burnside" />
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <Field label="Contract Value ($)" value={form.contractValue} onChange={v => set('contractValue', v)} error={errors.contractValue} placeholder="450000" />
+            <Field
+              label="Target GP %"
+              value={form.targetMarginPct}
+              onChange={v => set('targetMarginPct', v)}
+              placeholder="40"
+            />
             <div>
               <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Status</label>
               <select

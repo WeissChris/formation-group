@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { saveTokens } from '@/lib/serverXero'
+
+export const runtime = 'nodejs'
+
+const STATE_COOKIE = 'xero_oauth_state'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
+  const state = searchParams.get('state')
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://formation-group.vercel.app'
 
@@ -10,46 +16,82 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${appUrl}/settings?xero=error`)
   }
 
+  // CSRF guard — state must match the cookie set at init.
+  const expectedState = request.cookies.get(STATE_COOKIE)?.value
+  if (!state || !expectedState || state !== expectedState) {
+    const reject = NextResponse.redirect(`${appUrl}/settings?xero=error&reason=csrf`)
+    reject.cookies.delete(STATE_COOKIE)
+    return reject
+  }
+
   try {
-    // Exchange code for tokens
+    const clientId = process.env.NEXT_PUBLIC_XERO_CLIENT_ID
+    const clientSecret = process.env.XERO_CLIENT_SECRET
+    const redirectUri = process.env.NEXT_PUBLIC_XERO_REDIRECT_URI
+      || 'https://formation-group.vercel.app/api/xero/callback'
+
+    if (!clientId || !clientSecret) {
+      const reject = NextResponse.redirect(`${appUrl}/settings?xero=error&reason=misconfigured`)
+      reject.cookies.delete(STATE_COOKIE)
+      return reject
+    }
+
     const tokenResponse = await fetch('https://identity.xero.com/connect/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${Buffer.from(`${process.env.NEXT_PUBLIC_XERO_CLIENT_ID}:${process.env.XERO_CLIENT_SECRET}`).toString('base64')}`,
+        'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
       },
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         code,
-        redirect_uri: process.env.NEXT_PUBLIC_XERO_REDIRECT_URI || 'https://formation-group.vercel.app/settings/xero/callback',
+        redirect_uri: redirectUri,
       }),
     })
 
     if (!tokenResponse.ok) {
-      return NextResponse.redirect(`${appUrl}/settings?xero=error`)
+      const reject = NextResponse.redirect(`${appUrl}/settings?xero=error`)
+      reject.cookies.delete(STATE_COOKIE)
+      return reject
     }
 
     const tokenData = await tokenResponse.json()
 
-    // Get tenant info
     const connectionsResponse = await fetch('https://api.xero.com/connections', {
       headers: { 'Authorization': `Bearer ${tokenData.access_token}` },
     })
     const connections = await connectionsResponse.json()
-    const tenant = connections[0] // First connected org
+    const tenant = Array.isArray(connections) ? connections[0] : undefined
 
-    // Pass token data back to client via query params (client will store in localStorage)
-    const params = new URLSearchParams({
-      xero: 'success',
-      access_token: tokenData.access_token,
-      refresh_token: tokenData.refresh_token,
-      expires_in: String(tokenData.expires_in),
-      tenant_id: tenant?.tenantId || '',
-      tenant_name: tenant?.tenantName || 'Formation Landscapes',
+    if (!tenant?.tenantId) {
+      const reject = NextResponse.redirect(`${appUrl}/settings?xero=error&reason=no_tenant`)
+      reject.cookies.delete(STATE_COOKIE)
+      return reject
+    }
+
+    // Persist tokens server-side. Previous version embedded tokens in the redirect URL
+    // (history/referrer/log leakage) AND stored them in localStorage (XSS-readable).
+    // Now tokens never touch the client — only connection status is exposed.
+    const saved = await saveTokens({
+      accessToken: tokenData.access_token,
+      refreshToken: tokenData.refresh_token,
+      expiresAt: Date.now() + (Number(tokenData.expires_in) * 1000),
+      tenantId: tenant.tenantId,
+      tenantName: tenant.tenantName || 'Formation Landscapes',
     })
 
-    return NextResponse.redirect(`${appUrl}/settings?${params.toString()}`)
+    if (!saved) {
+      const reject = NextResponse.redirect(`${appUrl}/settings?xero=error&reason=storage`)
+      reject.cookies.delete(STATE_COOKIE)
+      return reject
+    }
+
+    const success = NextResponse.redirect(`${appUrl}/settings?xero=success`)
+    success.cookies.delete(STATE_COOKIE)
+    return success
   } catch {
-    return NextResponse.redirect(`${appUrl}/settings?xero=error`)
+    const reject = NextResponse.redirect(`${appUrl}/settings?xero=error`)
+    reject.cookies.delete(STATE_COOKIE)
+    return reject
   }
 }

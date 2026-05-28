@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { loadEstimates, loadProjects, loadProposals } from '@/lib/storage'
 import { formatCurrency } from '@/lib/utils'
-import { getEstimateTotals, calculateLineItemRevenue } from '@/lib/estimateCalculations'
+import { getEstimateTotals, readLineItemRevenue } from '@/lib/estimateCalculations'
 import type { Estimate, Project } from '@/types'
 import { Printer, ArrowLeft } from 'lucide-react'
 
@@ -49,7 +49,7 @@ export default function QuotePage() {
   const categories = Array.from(new Set(estimate.lineItems.map(i => i.category)))
   const categoryTotals = categories.map(category => {
     const items = estimate.lineItems.filter(i => i.category === category)
-    const totalRevenue = items.reduce((s, i) => s + calculateLineItemRevenue(i), 0)
+    const totalRevenue = items.reduce((s, i) => s + readLineItemRevenue(i), 0)
     return { category, totalRevenue }
   })
 

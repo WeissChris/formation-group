@@ -6,7 +6,7 @@ import { loadProjects, loadGanttEntries } from '@/lib/storage'
 import { formatCurrency, SHORT_MONTH_NAMES, generateId, toISODate } from '@/lib/utils'
 import type { Project, GanttEntry } from '@/types'
 import EntityBadge from '@/components/EntityBadge'
-import { scheduleStatus, healthColour, healthBg } from '@/lib/projectHealth'
+import { scheduleStatus, healthColour, healthBg, getForecastCompletion } from '@/lib/projectHealth'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -198,11 +198,11 @@ export default function ProgrammePage() {
             {filtered.map(p => {
               const entries = ganttByProject[p.id] || []
               const milestones = milestonesByProject[p.id] || []
-              const { status, daysSlippage } = scheduleStatus(p)
+              const { status, daysSlippage } = scheduleStatus(p, entries)
               const dot = healthBg(status)
               const col = healthColour(status)
               const planned = p.baseline?.plannedCompletion
-              const expected = p.forecastCompletion || p.plannedCompletion
+              const expected = getForecastCompletion(p, entries)
               const barColour = p.entity === 'lume' ? '#6BA5C8' : p.entity === 'design' ? '#C8A870' : '#8A8580'
 
               // Collect all segments across all entries

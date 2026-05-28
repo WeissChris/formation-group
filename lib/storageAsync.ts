@@ -11,6 +11,49 @@ import {
 } from './storage'
 import type { DesignProposal, Project, Estimate, WeeklyRevenue } from '@/types'
 
+/**
+ * Conflict-aware upsert primitive. Reads `updated_at` for the row currently in Supabase, and
+ * skips the write if the remote is newer than the local `updatedAt` we're trying to push.
+ *
+ * Real-world failure mode this prevents:
+ *   - Edit on device A → upsert (succeeds, sets remote.updated_at = T1)
+ *   - Open device B before its auto-sync pulls
+ *   - Edit on device B (its local copy doesn't have the A edit)
+ *   - Device B upserts → would silently overwrite the A edit
+ *
+ * With this guard, device B's upsert is refused because remote.updated_at (T1, from A) is
+ * newer than B's local.updatedAt (T0, before the auto-sync). B should pull then re-edit.
+ *
+ * Returns { wrote: boolean, skippedReason?: string } so the caller can log/surface.
+ *
+ * Note: this is best-effort optimistic concurrency, not transactional. Two clients writing in
+ * the same millisecond can still race. For our single-user-but-multi-device pattern that's fine.
+ */
+async function safeUpsert<T extends Record<string, unknown> & { id: string; updated_at?: string }>(
+  table: string,
+  row: T,
+): Promise<{ wrote: boolean; skippedReason?: string }> {
+  if (!supabase) return { wrote: false, skippedReason: 'no_supabase' }
+  // Read remote stamp first
+  const { data: remote } = await supabase
+    .from(table)
+    .select('updated_at')
+    .eq('id', row.id)
+    .maybeSingle()
+
+  const remoteStamp = remote?.updated_at as string | undefined
+  const localStamp = row.updated_at
+
+  if (remoteStamp && localStamp && remoteStamp > localStamp) {
+    // Remote is strictly newer — don't clobber. Caller should pull and merge before retrying.
+    return { wrote: false, skippedReason: 'remote_newer' }
+  }
+
+  const { error } = await supabase.from(table).upsert(row)
+  if (error) return { wrote: false, skippedReason: error.message }
+  return { wrote: true }
+}
+
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
 
 export async function getProjects(): Promise<Project[]> {
@@ -22,25 +65,28 @@ export async function getProjects(): Promise<Project[]> {
 }
 
 export async function upsertProject(project: Project): Promise<void> {
-  saveProject(project) // always save to localStorage
+  saveProject(project) // always save to localStorage (this also stamps updatedAt)
   if (isSupabaseConfigured() && supabase) {
-    await supabase.from('fg_projects').upsert({
-      id: project.id,
-      entity: project.entity,
-      name: project.name,
-      address: project.address,
-      client_name: project.clientName,
-      status: project.status,
-      contract_value: project.contractValue,
-      start_date: project.startDate,
-      planned_completion: project.plannedCompletion,
-      foreman: project.foreman,
-      notes: project.notes,
-      stage: project.stage || null,
-      stage_checklist: project.stageChecklist || null,
-      next_action: project.nextAction || null,
-      invoice_model: project.invoiceModel || null,
-      updated_at: new Date().toISOString(),
+    // Re-read so we use the freshly-stamped updatedAt
+    const fresh = loadProjects().find(p => p.id === project.id) ?? project
+    await safeUpsert('fg_projects', {
+      id: fresh.id,
+      entity: fresh.entity,
+      name: fresh.name,
+      address: fresh.address,
+      client_name: fresh.clientName,
+      status: fresh.status,
+      contract_value: fresh.contractValue,
+      start_date: fresh.startDate,
+      planned_completion: fresh.plannedCompletion,
+      foreman: fresh.foreman,
+      notes: fresh.notes,
+      stage: fresh.stage || null,
+      stage_checklist: fresh.stageChecklist || null,
+      next_action: fresh.nextAction || null,
+      invoice_model: fresh.invoiceModel || null,
+      target_margin_pct: fresh.targetMarginPct ?? null,
+      updated_at: fresh.updatedAt ?? new Date().toISOString(),
     })
   }
 }
@@ -58,26 +104,27 @@ export async function getProposals(): Promise<DesignProposal[]> {
 export async function upsertProposal(proposal: DesignProposal): Promise<void> {
   saveProposal(proposal)
   if (isSupabaseConfigured() && supabase) {
-    await supabase.from('fg_proposals').upsert({
-      id: proposal.id,
-      client_name: proposal.clientName,
-      client_email: proposal.clientEmail,
-      client_phone: proposal.clientPhone,
-      project_address: proposal.projectAddress,
-      status: proposal.status,
-      phase1_fee: proposal.phase1Fee,
-      phase1_scope: proposal.phase1Scope,
-      phase2_fee: proposal.phase2Fee,
-      phase2_scope: proposal.phase2Scope,
-      phase3_fee: proposal.phase3Fee,
-      phase3_scope: proposal.phase3Scope,
-      valid_until: proposal.validUntil,
-      notes: proposal.notes,
-      acceptance_token: proposal.acceptanceToken,
-      accepted_at: proposal.acceptedAt,
-      accepted_by_name: proposal.acceptedByName,
-      content_blocks: proposal.contentBlocks || [],
-      updated_at: new Date().toISOString(),
+    const fresh = loadProposals().find(p => p.id === proposal.id) ?? proposal
+    await safeUpsert('fg_proposals', {
+      id: fresh.id,
+      client_name: fresh.clientName,
+      client_email: fresh.clientEmail,
+      client_phone: fresh.clientPhone,
+      project_address: fresh.projectAddress,
+      status: fresh.status,
+      phase1_fee: fresh.phase1Fee,
+      phase1_scope: fresh.phase1Scope,
+      phase2_fee: fresh.phase2Fee,
+      phase2_scope: fresh.phase2Scope,
+      phase3_fee: fresh.phase3Fee,
+      phase3_scope: fresh.phase3Scope,
+      valid_until: fresh.validUntil,
+      notes: fresh.notes,
+      acceptance_token: fresh.acceptanceToken,
+      accepted_at: fresh.acceptedAt,
+      accepted_by_name: fresh.acceptedByName,
+      content_blocks: fresh.contentBlocks || [],
+      updated_at: fresh.updatedAt ?? new Date().toISOString(),
     })
   }
 }
@@ -95,22 +142,23 @@ export async function getEstimates(): Promise<Estimate[]> {
 export async function upsertEstimate(estimate: Estimate): Promise<void> {
   saveEstimate(estimate)
   if (isSupabaseConfigured() && supabase) {
-    await supabase.from('fg_estimates').upsert({
-      id: estimate.id,
-      project_id: estimate.projectId,
-      project_name: estimate.projectName,
-      name: estimate.name,
-      version: estimate.version,
-      status: estimate.status,
-      default_markup_formation: estimate.defaultMarkupFormation,
-      default_markup_subcontractor: estimate.defaultMarkupSubcontractor,
-      line_items: estimate.lineItems,
-      category_notes: estimate.categoryNotes || {},
-      parent_estimate_id: estimate.parentEstimateId,
-      variation_number: estimate.variationNumber,
-      variation_reason: estimate.variationReason,
-      notes: estimate.notes,
-      updated_at: new Date().toISOString(),
+    const fresh = loadEstimates().find(e => e.id === estimate.id) ?? estimate
+    await safeUpsert('fg_estimates', {
+      id: fresh.id,
+      project_id: fresh.projectId,
+      project_name: fresh.projectName,
+      name: fresh.name,
+      version: fresh.version,
+      status: fresh.status,
+      default_markup_formation: fresh.defaultMarkupFormation,
+      default_markup_subcontractor: fresh.defaultMarkupSubcontractor,
+      line_items: fresh.lineItems,
+      category_notes: fresh.categoryNotes || {},
+      parent_estimate_id: fresh.parentEstimateId,
+      variation_number: fresh.variationNumber,
+      variation_reason: fresh.variationReason,
+      notes: fresh.notes,
+      updated_at: fresh.updatedAt ?? new Date().toISOString(),
     })
   }
 }
@@ -128,17 +176,19 @@ export async function getRevenue(): Promise<WeeklyRevenue[]> {
 export async function upsertRevenue(entry: WeeklyRevenue): Promise<void> {
   saveWeeklyRevenue(entry)
   if (isSupabaseConfigured() && supabase) {
-    await supabase.from('fg_revenue').upsert({
-      id: entry.id,
-      project_id: entry.projectId,
-      project_name: entry.projectName,
-      entity: entry.entity,
-      week_ending: entry.weekEnding,
-      week_number: entry.weekNumber,
-      planned_revenue: entry.plannedRevenue,
-      actual_invoiced: entry.actualInvoiced,
-      is_deposit: entry.isDeposit,
-      notes: entry.notes,
+    const fresh = loadWeeklyRevenue().find(r => r.id === entry.id) ?? entry
+    await safeUpsert('fg_revenue', {
+      id: fresh.id,
+      project_id: fresh.projectId,
+      project_name: fresh.projectName,
+      entity: fresh.entity,
+      week_ending: fresh.weekEnding,
+      week_number: fresh.weekNumber,
+      planned_revenue: fresh.plannedRevenue,
+      actual_invoiced: fresh.actualInvoiced,
+      is_deposit: fresh.isDeposit,
+      notes: fresh.notes,
+      updated_at: fresh.updatedAt ?? new Date().toISOString(),
     })
   }
 }
@@ -162,7 +212,9 @@ function mapProject(row: Record<string, unknown>): Project {
     stageChecklist: (row.stage_checklist as Project['stageChecklist']) || undefined,
     nextAction: (row.next_action as string) || undefined,
     invoiceModel: (row.invoice_model as 'stage_based' | 'progress_claim') || undefined,
+    targetMarginPct: row.target_margin_pct != null ? Number(row.target_margin_pct) : undefined,
     createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string | undefined,
   }
 }
 
@@ -187,6 +239,7 @@ function mapProposal(row: Record<string, unknown>): DesignProposal {
     acceptedByName: row.accepted_by_name as string | undefined,
     contentBlocks: (row.content_blocks as DesignProposal['contentBlocks']) || [],
     createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string | undefined,
   }
 }
 
@@ -223,5 +276,6 @@ function mapRevenue(row: Record<string, unknown>): WeeklyRevenue {
     actualInvoiced: row.actual_invoiced as number,
     isDeposit: row.is_deposit as boolean,
     notes: (row.notes as string) || '',
+    updatedAt: row.updated_at as string | undefined,
   }
 }

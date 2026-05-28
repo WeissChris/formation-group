@@ -79,8 +79,11 @@ CREATE TABLE IF NOT EXISTS fg_revenue (
   scheduled_cost NUMERIC DEFAULT 0,
   is_deposit BOOLEAN DEFAULT false,
   notes TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()  -- required by safeUpsert conflict-resolution
 );
+-- If you applied this schema before updated_at was added, run:
+--   ALTER TABLE fg_revenue ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
 
 -- Gantt Entries
 CREATE TABLE IF NOT EXISTS fg_gantt (
@@ -127,6 +130,24 @@ CREATE TABLE IF NOT EXISTS fg_payment_stages (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Xero OAuth tokens — singleton row, accessed only via SUPABASE_SERVICE_ROLE_KEY (server-side).
+-- The `id = 'singleton'` check ensures only one row ever exists. RLS is enabled with NO public
+-- policy, which means the anon key cannot read or write tokens; only the service role can.
+-- Note: requires SUPABASE_SERVICE_ROLE_KEY env var on the server. Without it the Xero integration
+-- gracefully degrades to "not configured" rather than falling back to the old client-side storage.
+CREATE TABLE IF NOT EXISTS fg_xero_tokens (
+  id TEXT PRIMARY KEY DEFAULT 'singleton',
+  access_token TEXT NOT NULL,
+  refresh_token TEXT NOT NULL,
+  expires_at BIGINT NOT NULL,
+  tenant_id TEXT NOT NULL,
+  tenant_name TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (id = 'singleton')
+);
+ALTER TABLE fg_xero_tokens ENABLE ROW LEVEL SECURITY;
+-- NO POLICY — that's the point. Service role bypasses RLS; anon role has no access.
+
 -- Enable Row Level Security (permissive for single user)
 ALTER TABLE fg_projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fg_proposals ENABLE ROW LEVEL SECURITY;
@@ -136,7 +157,13 @@ ALTER TABLE fg_gantt ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fg_actuals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fg_payment_stages ENABLE ROW LEVEL SECURITY;
 
--- Allow all operations (single user app)
+-- Allow all operations (single user app) — WIDE OPEN to anyone with the published anon key.
+-- This is the known gap flagged in the CTO audit. Replace with role-based or auth.uid()-scoped
+-- policies once the auth-to-RLS bridge is in place.
+--
+-- See `supabase/migrations/02-rls-lockdown.sql` for the lockdown migration. Run it AFTER
+-- NEXT_PUBLIC_AUTH_PROVIDER=supabase is the active flow — running it before will deny
+-- every write and lock you out.
 CREATE POLICY "Allow all" ON fg_projects FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON fg_proposals FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all" ON fg_estimates FOR ALL USING (true) WITH CHECK (true);

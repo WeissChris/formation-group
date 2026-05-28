@@ -2,7 +2,9 @@
 
 import { useState, useEffect, ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
-import { checkPassword, setAuth, isAuthenticated } from '@/lib/auth'
+import { loginRemote, isAuthenticatedRemote, getLastAuthError } from '@/lib/auth'
+import { isSupabaseAuthEnabled } from '@/lib/supabaseBrowser'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import {
   seedDemoData,
   seedAllDesignProposals,
@@ -18,6 +20,7 @@ import {
   seedQ1266Estimate,
   seedQ1320Estimate,
   migrateProjectNames,
+  migrateForemanPins,
 } from '@/lib/seed'
 import { recoverFromIndexedDB } from '@/lib/storage'
 import { autoBackup } from '@/lib/backup'
@@ -31,18 +34,30 @@ export default function LoginGate({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const [authed, setAuthed] = useState(false)
   const [checking, setChecking] = useState(true)
+  const [email, setEmail] = useState(process.env.NEXT_PUBLIC_DEFAULT_EMAIL || '')
   const [password, setPassword] = useState('')
   const [error, setError] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  // Email field only appears in Supabase Auth mode. Custom-auth mode stays password-only.
+  const showEmailField = isSupabaseAuthEnabled()
 
   const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p))
 
   useEffect(() => {
-    setAuthed(isAuthenticated())
-    setChecking(false)
+    let cancelled = false
+    isAuthenticatedRemote().then(ok => {
+      if (cancelled) return
+      setAuthed(ok)
+      setChecking(false)
+    })
+    return () => { cancelled = true }
   }, [])
 
-  // Public routes skip auth entirely
-  if (isPublic) return <>{children}</>
+  // Public routes skip auth entirely — still wrapped so a render crash on /proposal/[token]
+  // (e.g. malformed proposal data) shows the recoverable fallback rather than a blank page
+  // to the actual client.
+  if (isPublic) return <ErrorBoundary label="public-route">{children}</ErrorBoundary>
 
   if (checking) {
     return (
@@ -55,9 +70,11 @@ export default function LoginGate({ children }: { children: ReactNode }) {
   if (!authed) {
     const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault()
-      if (checkPassword(password)) {
-        setAuth()
-
+      // In Supabase mode, pass `email:password` so loginRemote can split it.
+      // In custom mode, pass password only.
+      const input = showEmailField ? `${email}:${password}` : password
+      const ok = await loginRemote(input)
+      if (ok) {
         // Recover from IndexedDB if localStorage is empty
         const projectsExist = localStorage.getItem('fg_projects')
         if (!projectsExist) {
@@ -84,6 +101,9 @@ export default function LoginGate({ children }: { children: ReactNode }) {
 
         // Auto-backup after seeds complete
         migrateProjectNames()
+        // One-time rotation of legacy `SUBURB-FOREMAN-YEAR` foreman PINs to crypto-random tokens.
+        // Idempotent — only writes when a legacy PIN is found. Old foreman URLs 404 after this.
+        migrateForemanPins()
         setTimeout(() => {
           autoBackup()
         }, 2000)
@@ -122,8 +142,10 @@ export default function LoginGate({ children }: { children: ReactNode }) {
 
         setAuthed(true)
         setError(false)
+        setErrorMsg(null)
       } else {
         setError(true)
+        setErrorMsg(getLastAuthError())
         setPassword('')
       }
     }
@@ -148,12 +170,29 @@ export default function LoginGate({ children }: { children: ReactNode }) {
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-3">
+              {showEmailField && (
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={email}
+                  onChange={e => { setEmail(e.target.value); setError(false); setErrorMsg(null) }}
+                  autoFocus
+                  autoComplete="email"
+                  className={[
+                    'w-full px-4 py-3 bg-transparent border text-fg-heading placeholder-fg-muted/50',
+                    'font-light text-sm tracking-wide rounded-none outline-none',
+                    'focus:border-fg-heading transition-colors',
+                    error ? 'border-red-400/50' : 'border-fg-border',
+                  ].join(' ')}
+                />
+              )}
               <input
                 type="password"
                 placeholder="Password"
                 value={password}
-                onChange={e => { setPassword(e.target.value); setError(false) }}
-                autoFocus
+                onChange={e => { setPassword(e.target.value); setError(false); setErrorMsg(null) }}
+                autoFocus={!showEmailField}
+                autoComplete="current-password"
                 className={[
                   'w-full px-4 py-3 bg-transparent border text-fg-heading placeholder-fg-muted/50',
                   'font-light text-sm tracking-wide rounded-none outline-none',
@@ -162,7 +201,9 @@ export default function LoginGate({ children }: { children: ReactNode }) {
                 ].join(' ')}
               />
               {error && (
-                <p className="text-xs text-red-400/70 font-light tracking-wide">Incorrect password</p>
+                <p className="text-xs text-red-400/70 font-light tracking-wide">
+                  {errorMsg || 'Incorrect password'}
+                </p>
               )}
               <button
                 type="submit"
@@ -177,5 +218,8 @@ export default function LoginGate({ children }: { children: ReactNode }) {
     )
   }
 
-  return <>{children}</>
+  // Authenticated children wrapped in a top-level boundary so a render crash in any page
+  // (TakeoffTab, estimates, financial ops, etc) shows the recoverable fallback instead of
+  // blanking the whole app. Per-route app/error.tsx still scopes failures to the route.
+  return <ErrorBoundary label="app">{children}</ErrorBoundary>
 }

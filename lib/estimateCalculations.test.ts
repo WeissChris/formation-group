@@ -1,0 +1,176 @@
+import { describe, it, expect } from 'vitest'
+import {
+  calculateLineItemRevenue,
+  readLineItemRevenue,
+  getMarginSummary,
+  getEstimateTotals,
+} from './estimateCalculations'
+import type { Estimate, EstimateLineItem } from '@/types'
+
+// Helper to build a line item with sensible defaults.
+function line(overrides: Partial<EstimateLineItem> = {}): EstimateLineItem {
+  return {
+    id: 'li-1',
+    estimateId: 'est-1',
+    displayOrder: '1',
+    category: 'General',
+    description: 'Test item',
+    type: 'Material',
+    units: 1,
+    uom: 'ea',
+    unitCost: 100,
+    total: 100,
+    markupPercent: 40,
+    revenue: 140,
+    crewType: 'Formation',
+    ...overrides,
+  }
+}
+
+function estimate(lineItems: EstimateLineItem[], overrides: Partial<Estimate> = {}): Estimate {
+  return {
+    id: 'est-1',
+    projectId: 'proj-1',
+    projectName: 'Test Project',
+    version: 1,
+    status: 'draft',
+    defaultMarkupFormation: 40,
+    defaultMarkupSubcontractor: 35,
+    lineItems,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  }
+}
+
+describe('calculateLineItemRevenue', () => {
+  it('derives revenue from total × (1 + markup/100)', () => {
+    const item = line({ total: 100, markupPercent: 40 })
+    expect(calculateLineItemRevenue(item)).toBe(140)
+  })
+
+  it('handles zero markup', () => {
+    const item = line({ total: 250, markupPercent: 0 })
+    expect(calculateLineItemRevenue(item)).toBe(250)
+  })
+
+  it('handles fractional markups', () => {
+    const item = line({ total: 100, markupPercent: 33.33 })
+    expect(calculateLineItemRevenue(item)).toBeCloseTo(133.33, 2)
+  })
+})
+
+describe('readLineItemRevenue', () => {
+  it('returns stored revenue when set (does not recompute)', () => {
+    // Stored 200 even though total × (1+markup/100) would be 140 — the stored field wins.
+    // This is the core promise: aggregations read what's persisted, not what's derivable.
+    const item = line({ total: 100, markupPercent: 40, revenue: 200 })
+    expect(readLineItemRevenue(item)).toBe(200)
+  })
+
+  it('falls back to calculated value when revenue is undefined (legacy rows)', () => {
+    const item = line({ total: 100, markupPercent: 40 })
+    // Simulate an older localStorage row that pre-dated the `revenue` field
+    delete (item as Partial<EstimateLineItem>).revenue
+    expect(readLineItemRevenue(item)).toBe(140)
+  })
+
+  it('returns 0 when revenue is exactly 0 (does not fall through to calc)', () => {
+    const item = line({ total: 100, markupPercent: 40, revenue: 0 })
+    // 0 is a valid stored value — must not trigger the legacy fallback
+    expect(readLineItemRevenue(item)).toBe(0)
+  })
+})
+
+describe('getMarginSummary', () => {
+  it('groups by category and computes per-category margin & target', () => {
+    const e = estimate([
+      line({ id: 'a', category: 'Excavation', total: 1000, revenue: 1400, crewType: 'Formation' }),
+      line({ id: 'b', category: 'Excavation', total: 500, revenue: 700, crewType: 'Formation' }),
+      line({ id: 'c', category: 'Plumbing', total: 2000, revenue: 2680, crewType: 'Subcontractor' }),
+    ])
+    const summary = getMarginSummary(e)
+    const excavation = summary.find(s => s.category === 'Excavation')!
+    const plumbing = summary.find(s => s.category === 'Plumbing')!
+
+    expect(excavation.totalCost).toBe(1500)
+    expect(excavation.totalRevenue).toBe(2100)
+    expect(excavation.crewType).toBe('Formation')
+    expect(excavation.marginPercent).toBeCloseTo((2100 - 1500) / 2100, 4) // ratio 0-1
+    expect(excavation.targetMargin).toBe(0.40)
+    expect(excavation.meetsTarget).toBe(false) // 28.6% < 40%
+
+    expect(plumbing.crewType).toBe('Subcontractor')
+    expect(plumbing.targetMargin).toBe(0.34)
+    expect(plumbing.marginPercent).toBeCloseTo((2680 - 2000) / 2680, 4)
+    expect(plumbing.meetsTarget).toBe(false)
+  })
+
+  it('uses cost-weighted blended target for mixed-crew categories', () => {
+    // 1000 formation cost (target 0.40) + 1000 subcontractor cost (target 0.34)
+    // blended target = 0.5 × 0.40 + 0.5 × 0.34 = 0.37
+    const e = estimate([
+      line({ id: 'a', category: 'Hardscape', total: 1000, revenue: 1400, crewType: 'Formation' }),
+      line({ id: 'b', category: 'Hardscape', total: 1000, revenue: 1340, crewType: 'Subcontractor' }),
+    ])
+    const summary = getMarginSummary(e)
+    expect(summary[0].crewType).toBe('Mixed')
+    expect(summary[0].targetMargin).toBeCloseTo(0.37, 4)
+  })
+
+  it('returns marginPercent as a 0-1 ratio, not 0-100 percent', () => {
+    // Documented contract — the dashboard and revenue page elsewhere use 0-100, but this
+    // function returns ratio. Mixing scales has bitten us; pin the contract here.
+    const e = estimate([line({ total: 100, revenue: 140 })])
+    const summary = getMarginSummary(e)
+    expect(summary[0].marginPercent).toBeLessThan(1)
+    expect(summary[0].marginPercent).toBeCloseTo(0.2857, 4)
+  })
+
+  it('handles zero-revenue category without dividing by zero', () => {
+    const e = estimate([line({ total: 100, revenue: 0 })])
+    const summary = getMarginSummary(e)
+    expect(summary[0].marginPercent).toBe(0)
+    expect(summary[0].markupPercent).toBe(-1) // (0 - 100) / 100
+  })
+})
+
+describe('getEstimateTotals', () => {
+  it('sums costs and stored revenues; applies 10% GST', () => {
+    const e = estimate([
+      line({ total: 1000, revenue: 1400 }),
+      line({ total: 500, revenue: 700, crewType: 'Subcontractor' }),
+    ])
+    const totals = getEstimateTotals(e)
+    expect(totals.totalCost).toBe(1500)
+    expect(totals.totalRevenue).toBe(2100)
+    expect(totals.gst).toBeCloseTo(210, 4)
+    expect(totals.totalIncGst).toBeCloseTo(2310, 4)
+  })
+
+  it('splits cost and revenue by crewType', () => {
+    const e = estimate([
+      line({ total: 1000, revenue: 1400, crewType: 'Formation' }),
+      line({ total: 2000, revenue: 2680, crewType: 'Subcontractor' }),
+    ])
+    const totals = getEstimateTotals(e)
+    expect(totals.formationCost).toBe(1000)
+    expect(totals.subCost).toBe(2000)
+    expect(totals.formationRevenue).toBe(1400)
+    expect(totals.subRevenue).toBe(2680)
+  })
+
+  it('uses readLineItemRevenue (stored field) rather than recomputing', () => {
+    // Force a desync: total=100 markup=40 would compute revenue=140, but we store 999.
+    // The stored value MUST win, otherwise the project page (which reads li.revenue) and
+    // the estimate page (which goes through getEstimateTotals) disagree.
+    const e = estimate([line({ total: 100, markupPercent: 40, revenue: 999 })])
+    const totals = getEstimateTotals(e)
+    expect(totals.totalRevenue).toBe(999)
+  })
+
+  it('overallMargin returns 0 when revenue is zero (no divide by zero)', () => {
+    const e = estimate([line({ total: 100, revenue: 0 })])
+    expect(getEstimateTotals(e).overallMargin).toBe(0)
+  })
+})

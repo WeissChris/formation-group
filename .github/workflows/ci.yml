@@ -1,0 +1,35 @@
+name: CI
+
+# Runs on every push to any branch and on every PR targeting main.
+# Vercel's deploy preview only checks "does it build" — this catches logic regressions
+# (financial calcs, auth, date math) the tests pin, plus TS errors before they ship.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Typecheck + tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        # `npm ci` enforces the lockfile and is faster + more reproducible than `npm install`
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test

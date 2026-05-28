@@ -1,7 +1,7 @@
 ﻿import type { Project, WeeklyRevenue, Estimate, EstimateLineItem, DesignProposal, DesignProject } from '@/types'
 import type { ProjectStage } from '@/types'
 import { saveProject, saveEstimate, loadProjects, loadEstimates, saveProposal, loadProposals, generateRevenueFromProposal, saveDesignProject, loadDesignProjectByProposalId, loadDesignProjects, saveProgressPaymentStage, loadProgressPaymentStages } from '@/lib/storage'
-import { generateId } from '@/lib/utils'
+import { generateId, generateForemanPin, isLegacyForemanPin } from '@/lib/utils'
 
 export function seedDemoData(): void {
   const projects: Project[] = [
@@ -160,10 +160,17 @@ export function seedDemoData(): void {
 
   // Always update project names to match convention
   // Always update — merge with existing to preserve any extra fields (gantt, actuals etc)
+  // EXCEPT: existing `foremanPin` always wins so the migration to crypto-random PINs
+  // isn't undone on every login by the hardcoded seed value.
   const existingProjects = loadProjects()
   const mergedProjects = projects.map(newP => {
     const existing = existingProjects.find(e => e.id === newP.id)
-    return existing ? { ...existing, ...newP } : newP
+    if (!existing) return newP
+    return {
+      ...existing,
+      ...newP,
+      foremanPin: existing.foremanPin ?? newP.foremanPin,
+    }
   })
   // Keep any extra projects not in seed (user-created)
   const extraProjects = existingProjects.filter(e => !projects.find(p => p.id === e.id))
@@ -1699,6 +1706,37 @@ const NAME_MAP: Record<string, { name: string; clientName?: string; address?: st
   'q1362':    { name: 'Kew \u2013 Glenn Whittenbury', clientName: 'Glenn Whittenbury & Jenny Hatzis', address: '17 Uvadale Grove, Kew VIC' },
   'q1356':    { name: 'Richmond \u2013 James Blaufelder', clientName: 'James and Haley Blaufelder', address: '3 Kent St, Richmond VIC' },
   'q1369':    { name: 'Kew \u2013 Dedic', clientName: 'Dedic Residence', address: '22 Edward St, Kew VIC' },
+}
+
+/**
+ * One-time migration: replace any legacy `SUBURB-FOREMAN-YEAR` foreman PINs with
+ * crypto-random tokens. Idempotent — runs every login but only writes when there's
+ * actually a legacy PIN present.
+ *
+ * IMPORTANT: this breaks the old foreman links. After running, surface the new PINs
+ * via the project page and SMS them to the foreman.
+ */
+export function migrateForemanPins(): { changed: number; rotated: { projectId: string; oldPin: string; newPin: string }[] } {
+  if (typeof window === 'undefined') return { changed: 0, rotated: [] }
+  const projects = loadProjects()
+  const rotated: { projectId: string; oldPin: string; newPin: string }[] = []
+  let changed = 0
+  const updated = projects.map(p => {
+    if (!isLegacyForemanPin(p.foremanPin)) return p
+    const newPin = generateForemanPin()
+    rotated.push({ projectId: p.id, oldPin: p.foremanPin!, newPin })
+    changed++
+    return { ...p, foremanPin: newPin }
+  })
+  if (changed > 0) {
+    localStorage.setItem('fg_projects', JSON.stringify(updated))
+    console.warn(
+      `[Formation Group] Rotated ${changed} legacy foreman PIN${changed === 1 ? '' : 's'}. ` +
+      `Old foreman links will 404. New PINs are visible on each project's settings tab.`,
+      rotated,
+    )
+  }
+  return { changed, rotated }
 }
 
 export function migrateProjectNames(): void {

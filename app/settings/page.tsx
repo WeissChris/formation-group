@@ -16,7 +16,8 @@ import {
 } from '@/lib/seed'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { downloadBackup, restoreFromBackup } from '@/lib/backup'
-import { getXeroAuthUrl, getXeroTokens, isXeroConnected, clearXeroTokens, saveXeroTokens } from '@/lib/xero'
+import { getXeroAuthUrl, getXeroStatus, disconnectXero } from '@/lib/xero'
+import { XeroMappingSection } from '@/components/XeroMappingSection'
 import { Check } from 'lucide-react'
 
 export default function SettingsPage() {
@@ -28,37 +29,41 @@ export default function SettingsPage() {
   const [lastBackupText, setLastBackupText] = useState('No backup recorded')
   const [xeroConnected, setXeroConnected] = useState(false)
   const [xeroOrgName, setXeroOrgName] = useState('')
+  const [xeroConfigured, setXeroConfigured] = useState(true) // assume yes until status proves otherwise
   const supabaseConnected = isSupabaseConfigured()
+
+  // Pull connection status from the server (tokens are server-only now).
+  const refreshXeroStatus = async () => {
+    const status = await getXeroStatus()
+    setXeroConnected(status.connected)
+    setXeroOrgName(status.tenantName || '')
+    setXeroConfigured(status.configured)
+  }
 
   useEffect(() => {
     const lastBackup = localStorage.getItem('fg_last_backup')
     if (lastBackup) {
       setLastBackupText(`Last backup: ${new Date(lastBackup).toLocaleString('en-AU')}`)
     }
-    // Init Xero state
-    setXeroConnected(isXeroConnected())
-    const t = getXeroTokens()
-    if (t) setXeroOrgName(t.tenantName)
+    refreshXeroStatus()
   }, [])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    if (params.get('xero') === 'success') {
-      const tokens = {
-        accessToken: params.get('access_token') || '',
-        refreshToken: params.get('refresh_token') || '',
-        expiresAt: Date.now() + (parseInt(params.get('expires_in') || '1800') * 1000),
-        tenantId: params.get('tenant_id') || '',
-        tenantName: params.get('tenant_name') || 'Formation Landscapes',
-      }
-      saveXeroTokens(tokens)
-      // Clean URL
+    const flag = params.get('xero')
+    if (flag === 'success') {
+      // Server has already persisted the tokens; just clean the URL and refresh status.
       window.history.replaceState({}, '', '/settings')
-      setXeroConnected(true)
-      setXeroOrgName(tokens.tenantName)
-    } else if (params.get('xero') === 'error') {
+      refreshXeroStatus()
+    } else if (flag === 'error') {
+      const reason = params.get('reason')
       window.history.replaceState({}, '', '/settings')
-      alert('Xero connection failed. Please try again.')
+      const msg = reason === 'csrf' ? 'Xero connection rejected (CSRF check failed). Try again.'
+        : reason === 'no_tenant' ? 'Xero connection completed but no organisation was authorised. Re-run and select an org.'
+        : reason === 'storage' ? 'Xero tokens could not be saved. Check SUPABASE_SERVICE_ROLE_KEY env var.'
+        : reason === 'misconfigured' ? 'Xero is not fully configured on the server. Check Xero env vars.'
+        : 'Xero connection failed. Please try again.'
+      alert(msg)
     }
   }, [])
 
@@ -349,7 +354,11 @@ export default function SettingsPage() {
               Sync Now
             </button>
             <button
-              onClick={() => { clearXeroTokens(); setXeroConnected(false) }}
+              onClick={async () => {
+                if (!window.confirm('Disconnect Xero? Tokens will be deleted server-side.')) return
+                await disconnectXero()
+                await refreshXeroStatus()
+              }}
               className="px-4 py-2 border border-red-200 text-red-400 text-xs font-light tracking-wide uppercase hover:bg-red-50 transition-colors"
             >
               Disconnect
@@ -357,7 +366,11 @@ export default function SettingsPage() {
           </div>
         ) : (
           <button
-            onClick={() => { window.location.href = getXeroAuthUrl() }}
+            onClick={async () => {
+              const url = await getXeroAuthUrl()
+              if (url) window.location.href = url
+              else window.alert('Xero connect is not configured. Check NEXT_PUBLIC_XERO_CLIENT_ID.')
+            }}
             className="px-4 py-2 bg-[#13B5EA] text-white text-xs font-light tracking-wide uppercase hover:bg-[#0EA5D4] transition-colors"
             disabled={!process.env.NEXT_PUBLIC_XERO_CLIENT_ID}
           >
@@ -370,7 +383,16 @@ export default function SettingsPage() {
             Add NEXT_PUBLIC_XERO_CLIENT_ID and XERO_CLIENT_SECRET to Vercel environment variables to enable.
           </p>
         )}
+        {process.env.NEXT_PUBLIC_XERO_CLIENT_ID && !xeroConfigured && (
+          <p className="text-xs text-amber-600 mt-2">
+            Xero token storage requires SUPABASE_SERVICE_ROLE_KEY (server-only env var) and the
+            fg_xero_tokens table — see supabase/schema.sql.
+          </p>
+        )}
       </div>
+
+      {/* Project ↔ Xero mapping (only shows when Xero is connected) */}
+      {xeroConnected && <XeroMappingSection />}
 
       {/* Footer version */}
       <p className="text-2xs font-light text-fg-muted/40 mt-12">v1.0.0</p>

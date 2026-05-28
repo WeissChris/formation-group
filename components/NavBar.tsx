@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { signOut } from '@/lib/auth'
+import { signOutRemote } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 
 type NavItem = { label: string; href: string; external?: boolean }
@@ -23,8 +23,8 @@ export default function NavBar() {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
 
-  const handleSignOut = () => {
-    signOut()
+  const handleSignOut = async () => {
+    await signOutRemote()
     window.location.href = '/'
   }
 

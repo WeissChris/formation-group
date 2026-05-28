@@ -40,11 +40,15 @@ export function generateId(): string {
   return crypto.randomUUID()
 }
 
-// Snap date to nearest future Friday
+// Snap date to "this working week's Friday".
+// Sun-Thu → forward to upcoming Friday; Fri → stay; Sat → BACK one day to yesterday's Friday.
+// (Previously Sat jumped forward 6 days to NEXT Friday, which silently landed cost-tracker entries
+//  a week ahead of the user's intent.)
 export function snapToFriday(date: Date): Date {
   const d = new Date(date)
   const day = d.getDay()
-  const diff = day <= 5 ? 5 - day : 7 - day + 5
+  // 0=Sun, 1=Mon, ... 5=Fri, 6=Sat
+  const diff = day === 6 ? -1 : (5 - day)
   if (diff !== 0) d.setDate(d.getDate() + diff)
   return d
 }
@@ -54,9 +58,18 @@ export function formatDayMonth(date: Date): string {
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
-// Format a date as YYYY-MM-DD
+// Format a date as YYYY-MM-DD using LOCAL date components.
+//
+// The previous implementation `date.toISOString().split('T')[0]` produces a UTC-shifted date
+// string. For a midnight-local Date (which is what `new Date(year, month, day)` creates),
+// AEST (+10) shifts back 10h to the previous day. Net effect: every "day identifier" in dev
+// was off-by-one relative to what the user typed — and production (UTC) didn't show the bug.
+// Bugs that don't reproduce locally are the worst kind, so we use local components instead.
 export function toISODate(date: Date): string {
-  return date.toISOString().split('T')[0]
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
 // Month names
@@ -66,11 +79,28 @@ export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'Jun
 export const SHORT_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-export function generateForemanPin(projectName: string, foreman: string): string {
-  const name = projectName.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().substring(0, 8)
-  const fm = foreman.replace(/[^a-zA-Z]/g, '').toUpperCase().substring(0, 3)
-  const year = new Date().getFullYear()
-  return `${name}-${fm}-${year}`
+/**
+ * Generate a foreman PIN — a high-entropy URL-safe token (16 bytes / 128 bits, base32-ish).
+ *
+ * Previously this returned a guessable string like `BEACH-CAM-2026` derived from project + year.
+ * That's a brute-force vector — anyone who guesses the slug can read schedule + budget AND
+ * write cost rows that flow into P&L. The new format is unguessable in any reasonable time.
+ *
+ * Old links 404 once regenerated; that's the intended behaviour. Hand the new link to the
+ * foreman by SMS/email after rotating.
+ */
+export function generateForemanPin(): string {
+  // crypto.randomUUID() gives 122 bits of entropy; strip the dashes for a clean URL slug.
+  return crypto.randomUUID().replace(/-/g, '').toUpperCase()
+}
+
+/**
+ * Detect the legacy "SUBURB-FOREMAN-YEAR" PIN format so a one-time migration can replace it
+ * with a crypto-random token. Matches strings like `BEACH-CAM-2026` exactly.
+ */
+export function isLegacyForemanPin(pin: string | undefined): boolean {
+  if (!pin) return false
+  return /^[A-Z0-9]+-[A-Z]+-\d{4}$/.test(pin)
 }
 
 // Extract suburb from address string

@@ -1,4 +1,5 @@
 ﻿import type { Project, WeeklyRevenue, DesignProposal, Estimate, GanttEntry, WeeklyActual, ProgressPaymentStage, DesignProject, ProgressClaim, TakeoffData, TakeoffTemplate, ProposalInvoiceStage, SubcontractorPackage } from '@/types'
+import { notify } from './broadcast'
 
 // IndexedDB backup - runs silently after every localStorage write
 async function backupToIndexedDB(key: string, data: unknown[]): Promise<void> {
@@ -51,12 +52,16 @@ export async function recoverFromIndexedDB(): Promise<boolean> {
 
 // Projects
 export function saveProject(project: Project): void {
+  // Stamp updatedAt on every save — drives Supabase conflict resolution (a remote row newer
+  // than this stamp won't be clobbered on next sync). Callers don't need to set it themselves.
+  const stamped = { ...project, updatedAt: new Date().toISOString() }
   const all = loadProjects()
-  const idx = all.findIndex(p => p.id === project.id)
-  if (idx >= 0) all[idx] = project
-  else all.push(project)
+  const idx = all.findIndex(p => p.id === stamped.id)
+  if (idx >= 0) all[idx] = stamped
+  else all.push(stamped)
   localStorage.setItem('fg_projects', JSON.stringify(all))
   backupToIndexedDB('fg_projects', loadProjects())
+  notify({ key: 'projects' })
 }
 
 export function loadProjects(): Project[] {
@@ -68,16 +73,19 @@ export function deleteProject(id: string): void {
   const all = loadProjects().filter(p => p.id !== id)
   localStorage.setItem('fg_projects', JSON.stringify(all))
   backupToIndexedDB('fg_projects', all)
+  notify({ key: 'projects' })
 }
 
 // Weekly revenue entries
 export function saveWeeklyRevenue(entry: WeeklyRevenue): void {
+  const stamped = { ...entry, updatedAt: new Date().toISOString() }
   const all = loadWeeklyRevenue()
-  const idx = all.findIndex(w => w.id === entry.id)
-  if (idx >= 0) all[idx] = entry
-  else all.push(entry)
+  const idx = all.findIndex(w => w.id === stamped.id)
+  if (idx >= 0) all[idx] = stamped
+  else all.push(stamped)
   localStorage.setItem('fg_revenue', JSON.stringify(all))
   backupToIndexedDB('fg_revenue', loadWeeklyRevenue())
+  notify({ key: 'revenue' })
 }
 
 export function loadWeeklyRevenue(): WeeklyRevenue[] {
@@ -93,12 +101,14 @@ export function deleteWeeklyRevenue(id: string): void {
 
 // Design proposals
 export function saveProposal(proposal: DesignProposal): void {
+  const stamped = { ...proposal, updatedAt: new Date().toISOString() }
   const all = loadProposals()
-  const idx = all.findIndex(p => p.id === proposal.id)
-  if (idx >= 0) all[idx] = proposal
-  else all.push(proposal)
+  const idx = all.findIndex(p => p.id === stamped.id)
+  if (idx >= 0) all[idx] = stamped
+  else all.push(stamped)
   localStorage.setItem('fg_proposals', JSON.stringify(all))
   backupToIndexedDB('fg_proposals', loadProposals())
+  notify({ key: 'proposals' })
 }
 
 export function loadProposals(): DesignProposal[] {
@@ -114,12 +124,14 @@ export function deleteProposal(id: string): void {
 
 // Estimates
 export function saveEstimate(estimate: Estimate): void {
+  const stamped = { ...estimate, updatedAt: new Date().toISOString() }
   const all = loadEstimates()
-  const idx = all.findIndex(e => e.id === estimate.id)
-  if (idx >= 0) all[idx] = estimate
-  else all.push(estimate)
+  const idx = all.findIndex(e => e.id === stamped.id)
+  if (idx >= 0) all[idx] = stamped
+  else all.push(stamped)
   localStorage.setItem('fg_estimates', JSON.stringify(all))
   backupToIndexedDB('fg_estimates', loadEstimates())
+  notify({ key: 'estimates' })
 }
 
 export function loadEstimates(): Estimate[] {
@@ -179,9 +191,24 @@ export function deleteWeeklyActualsByProject(projectId: string): void {
   backupToIndexedDB('fg_actuals', all)
 }
 
-// Delete all WeeklyRevenue entries for a project (for Gantt forecast regeneration)
+// Delete all WeeklyRevenue entries for a project (for Gantt forecast regeneration).
+// Destructive — wipes hand-entered deposits/milestones too. Callers should generally prefer
+// `deleteGanttGeneratedRevenueByProject` to preserve manual entries.
 export function deleteWeeklyRevenueByProject(projectId: string): void {
   const all = loadWeeklyRevenue().filter(w => w.projectId !== projectId)
+  localStorage.setItem('fg_revenue', JSON.stringify(all))
+  backupToIndexedDB('fg_revenue', all)
+}
+
+// Delete only Gantt-originated WeeklyRevenue entries for a project (notes end with "(Gantt)").
+// Preserves manual entries (deposits, milestones, anything notes-tagged differently).
+// This is the non-destructive partner to use during Gantt forecast regeneration.
+export function deleteGanttGeneratedRevenueByProject(projectId: string): void {
+  const all = loadWeeklyRevenue().filter(w => {
+    if (w.projectId !== projectId) return true
+    // Keep anything that wasn't tagged as Gantt-generated.
+    return !(w.notes ?? '').trim().endsWith('(Gantt)')
+  })
   localStorage.setItem('fg_revenue', JSON.stringify(all))
   backupToIndexedDB('fg_revenue', all)
 }

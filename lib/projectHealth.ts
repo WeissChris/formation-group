@@ -19,11 +19,49 @@ export interface ProjectHealth {
   revenueVariancePct: number | null  // (forecast revenue - baseline revenue) / baseline revenue * 100
 }
 
-const GP_TARGET = 40
+const GP_TARGET = 40              // Legacy default — superseded by per-project targetMarginPct
 const COST_AMBER_THRESHOLD = 5    // 5% cost increase → amber
 const COST_RED_THRESHOLD = 10     // 10% cost increase → red
 const DAYS_AMBER_THRESHOLD = 7    // 1 week slip → amber
 const DAYS_RED_THRESHOLD = 21     // 3 week slip → red
+
+/**
+ * Resolve the project's target gross margin.
+ *
+ * Falls back to 40% for legacy projects that pre-date the `targetMarginPct` field. Lets
+ * existing code use a single number without each caller having to write `?? 40`.
+ *
+ * Per-project targets matter because subbie-heavy jobs run a lower margin (often 30-33%)
+ * and shouldn't be flagged as below-target against a generic 40% threshold.
+ */
+export function getTargetMarginPct(project: Project): number {
+  return project.targetMarginPct ?? 40
+}
+
+/**
+ * Resolve the project's forecast completion date.
+ * Precedence:
+ *   1. `project.forecastCompletion` — explicit manual override
+ *   2. latest Gantt segment end across all entries
+ *   3. `project.plannedCompletion` — fallback to the original plan
+ *
+ * Passing `undefined` for ganttEntries simply skips step 2.
+ */
+export function getForecastCompletion(project: Project, ganttEntries?: GanttEntry[]): string | undefined {
+  if (project.forecastCompletion) return project.forecastCompletion
+  if (ganttEntries && ganttEntries.length > 0) {
+    let latestMs = -Infinity
+    for (const entry of ganttEntries) {
+      for (const seg of entry.segments) {
+        if (!seg.endDate) continue
+        const ms = new Date(seg.endDate).getTime()
+        if (!isNaN(ms) && ms > latestMs) latestMs = ms
+      }
+    }
+    if (latestMs !== -Infinity) return new Date(latestMs).toISOString().slice(0, 10)
+  }
+  return project.plannedCompletion
+}
 
 export function calcProjectHealth(
   project: Project,
@@ -48,10 +86,13 @@ export function calcProjectHealth(
   const baselineGP = baseline?.gpPercent ?? null
   const gpVariance = forecastGP !== null && baselineGP !== null ? forecastGP - baselineGP : null
 
-  if (forecastGP !== null && forecastGP < GP_TARGET) {
+  // Use the project's own target if set; otherwise legacy 40%
+  const targetMarginPct = getTargetMarginPct(project)
+  if (forecastGP !== null && forecastGP < targetMarginPct) {
     flags.push({
-      reason: `Review Required – Forecast GP below target (${forecastGP.toFixed(1)}%)`,
-      status: forecastGP < 30 ? 'red' : 'amber',
+      reason: `Review Required – Forecast GP below target (${forecastGP.toFixed(1)}% vs ${targetMarginPct}% target)`,
+      // Red when more than 10ppts below target; amber otherwise
+      status: forecastGP < targetMarginPct - 10 ? 'red' : 'amber',
     })
   }
 
@@ -70,7 +111,7 @@ export function calcProjectHealth(
 
   // ── Programme slippage ────────────────────────────────────────────────────
   const baselineCompletion = baseline?.plannedCompletion
-  const forecastCompletion = project.forecastCompletion || project.plannedCompletion
+  const forecastCompletion = getForecastCompletion(project, ganttEntries)
   let daysSlippage: number | null = null
 
   if (baselineCompletion && forecastCompletion) {
@@ -117,10 +158,12 @@ export function calcProjectHealth(
   }
 }
 
-// Programme status only — based on planned vs expected completion
-export function scheduleStatus(project: Project): { status: HealthStatus; daysSlippage: number | null } {
+// Programme status only — based on planned vs expected completion.
+// Pass `ganttEntries` to derive the forecast from the latest Gantt segment when no explicit
+// override is set on the project. Without entries, falls back to plannedCompletion (same as before).
+export function scheduleStatus(project: Project, ganttEntries?: GanttEntry[]): { status: HealthStatus; daysSlippage: number | null } {
   const planned = project.baseline?.plannedCompletion
-  const expected = project.forecastCompletion || project.plannedCompletion
+  const expected = getForecastCompletion(project, ganttEntries)
   if (!planned || !expected) return { status: 'green', daysSlippage: null }
   const days = Math.round((new Date(expected).getTime() - new Date(planned).getTime()) / (1000 * 60 * 60 * 24))
   const status: HealthStatus = days <= 0 ? 'green' : days <= 7 ? 'amber' : 'red'

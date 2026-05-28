@@ -8,7 +8,8 @@ import {
   loadEstimatesByProject,
   loadGanttEntries,
   saveGanttEntries,
-  deleteWeeklyRevenueByProject,
+  deleteGanttGeneratedRevenueByProject,
+  loadWeeklyRevenue,
   saveWeeklyRevenue,
 } from '@/lib/storage'
 import {
@@ -694,7 +695,21 @@ export default function GanttPage() {
       return
     }
 
-    deleteWeeklyRevenueByProject(id)
+    // Count what will be regenerated vs what will be preserved so the user can decide.
+    const existing = loadWeeklyRevenue().filter(w => w.projectId === id)
+    const ganttRows = existing.filter(w => (w.notes ?? '').trim().endsWith('(Gantt)'))
+    const manualRows = existing.length - ganttRows.length
+    const summary =
+      `This will replace ${ganttRows.length} Gantt-generated revenue ${ganttRows.length === 1 ? 'row' : 'rows'} for this project.` +
+      (manualRows > 0
+        ? `\n${manualRows} hand-entered ${manualRows === 1 ? 'row will be preserved' : 'rows will be preserved'} (deposits, milestones, etc).`
+        : '') +
+      `\n\nContinue?`
+    if (existing.length > 0 && !window.confirm(summary)) return
+
+    // Only wipe Gantt-tagged rows — manual entries (deposits, milestones, anything not tagged
+    // "(Gantt)" in notes) survive regeneration.
+    deleteGanttGeneratedRevenueByProject(id)
 
     const newEntries: WeeklyRevenue[] = []
     let totalWeekly = 0

@@ -15,6 +15,8 @@ import { ChevronLeft, ChevronRight, X, Plus } from 'lucide-react'
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 const LUME_DEFAULT_GP = 28.6 // 40% markup = 28.6% GP margin
+const DESIGN_DEFAULT_GP = 70 // Industry standard for design fee services
+const DESIGN_DEFAULT_GP_DISPLAY = DESIGN_DEFAULT_GP // Keep caption and calc in sync
 const GP_TARGET = 40
 
 // ─── GP% Helpers ─────────────────────────────────────────────────────────────
@@ -243,6 +245,9 @@ export default function RevenuePage() {
   const [acceptedProposalCount, setAcceptedProposalCount] = useState(0)
   const [lumeGP, setLumeGP] = useState<number | null>(null)
   const [lumeJobCount, setLumeJobCount] = useState(0)
+  // True when the on-screen Lume GP is the LUME_DEFAULT_GP constant (no per-quote data was available)
+  // rather than a real revenue-weighted average. Drives the honest sub-caption on the KPI tile.
+  const [lumeGPIsFallback, setLumeGPIsFallback] = useState(false)
 
   type ProjectGPEntry = {
     projectId: string
@@ -263,37 +268,65 @@ export default function RevenuePage() {
 
     const allEstimates = loadEstimates()
     const allProposals = loadProposals()
+    const allLoadedProjectsForFilter = loadProjects()
+    const formationProjectIds = new Set(
+      allLoadedProjectsForFilter.filter(p => p.entity === 'formation').map(p => p.id)
+    )
 
-    // Formation GP% from accepted estimates
-    const formationEstimates = allEstimates.filter(e => e.status === 'accepted')
+    // Formation GP% from accepted estimates — restricted to formation-entity projects only.
+    // Estimates carry no entity field of their own; the parent project's entity is the source of truth.
+    const formationEstimates = allEstimates.filter(e =>
+      e.status === 'accepted' && formationProjectIds.has(e.projectId)
+    )
     const fmCost = formationEstimates.reduce((s, e) => s + e.lineItems.reduce((ls, li) => ls + li.total, 0), 0)
     const fmRevenue = formationEstimates.reduce((s, e) => s + e.lineItems.reduce((ls, li) => ls + li.revenue, 0), 0)
     const calcFormationGP = fmRevenue > 0 ? ((fmRevenue - fmCost) / fmRevenue) * 100 : null
 
     // Design GP% from accepted proposals
-    // Design is fee-based with minimal tracked costs — use industry-standard 70% GP for design services
+    // Design is fee-based with minimal tracked costs — uses the top-of-file DESIGN_DEFAULT_GP constant
+    // so the calc and the on-screen caption can never drift.
     const acceptedProposals = allProposals.filter(p => p.status === 'accepted')
     const designRevenue = acceptedProposals.reduce((s, p) => s + p.phase1Fee + p.phase2Fee + (p.phase3Fee || 0), 0)
-    const DESIGN_DEFAULT_GP = 70 // Industry standard for design fee services
     const calcDesignGP = designRevenue > 0 ? DESIGN_DEFAULT_GP : null
 
-    // Lume GP% — try to get from Supabase lume_quotes if available, else use 28.6% default
+    // Lume GP% — revenue-weighted average across accepted lume_quotes when available;
+    // otherwise the LUME_DEFAULT_GP constant. Track which source was used so the caption is honest.
     const allLoadedProjects = loadProjects()
     const lumeProjects = allLoadedProjects.filter(p => p.entity === 'lume' && p.status === 'active')
-    // Attempt to read _gpPercent stored on accepted lume quotes in localStorage
     let calcLumeGP: number | null = null
+    let calcLumeGPIsFallback = false
     if (lumeProjects.length > 0) {
       try {
         const lumeQuotes = JSON.parse(localStorage.getItem('lume_quotes') || '[]') as any[]
         const ACTIVE_LUME = ['accepted','deposit','excavation','steel_fixing','pre_plumb','spray','tiling','equipment','handover']
-        const activeWithGP = lumeQuotes.filter((q: any) => ACTIVE_LUME.includes(q.header?.status) && (q.header?._gpPercent ?? 0) > 0)
+        const activeWithGP = lumeQuotes.filter((q: any) =>
+          ACTIVE_LUME.includes(q.header?.status) && (q.header?._gpPercent ?? 0) > 0
+        )
         if (activeWithGP.length > 0) {
-          calcLumeGP = activeWithGP.reduce((s: number, q: any) => s + (q.header._gpPercent || 0), 0) / activeWithGP.length
+          // Revenue-weight by _totalIncGst (preferred) or _totalEx as fallback. A straight mean
+          // would let a $5k extra weight the same as a $200k pool — that's misleading.
+          let weightedNumerator = 0
+          let totalWeight = 0
+          for (const q of activeWithGP) {
+            const weight = Number(q.header._totalIncGst ?? q.header._totalEx ?? 0)
+            if (weight <= 0) continue
+            weightedNumerator += (Number(q.header._gpPercent) || 0) * weight
+            totalWeight += weight
+          }
+          if (totalWeight > 0) {
+            calcLumeGP = weightedNumerator / totalWeight
+          } else {
+            // Quotes had GP but no usable revenue weight — fall back rather than a misleading mean
+            calcLumeGP = LUME_DEFAULT_GP
+            calcLumeGPIsFallback = true
+          }
         } else {
           calcLumeGP = LUME_DEFAULT_GP
+          calcLumeGPIsFallback = true
         }
       } catch {
         calcLumeGP = LUME_DEFAULT_GP
+        calcLumeGPIsFallback = true
       }
     }
 
@@ -303,6 +336,7 @@ export default function RevenuePage() {
     setAcceptedProposalCount(acceptedProposals.length)
     setLumeGP(calcLumeGP)
     setLumeJobCount(lumeProjects.length)
+    setLumeGPIsFallback(calcLumeGPIsFallback)
 
     // GP% by Project
     // Stages where review is relevant: pre_start, active
@@ -444,7 +478,7 @@ export default function RevenuePage() {
           {[
             { label: 'Overall (Formation)', gp: overallFormationGP, sub: belowTargetJobs.length >= 2 ? `⚠ ${belowTargetJobs.length} jobs need review` : `From ${formationEstimateCount} estimates` },
             { label: 'Design',              gp: designGP,           sub: `${acceptedProposalCount} accepted proposals` },
-            { label: 'Lume Pools',          gp: lumeGP,             sub: `${lumeJobCount} pool jobs` },
+            { label: 'Lume Pools',          gp: lumeGP,             sub: lumeGPIsFallback ? `${lumeJobCount} pool jobs · default est.` : `${lumeJobCount} pool jobs · rev-weighted` },
             { label: 'GP% Target',          gp: 40,                 sub: 'Business target', isTarget: true },
           ].map(({ label, gp, sub, isTarget }) => {
             const variance = gp !== null ? gp - 40 : null
@@ -471,7 +505,7 @@ export default function RevenuePage() {
           })}
         </div>
         <p className="text-2xs text-fg-muted/60">
-          Design GP% estimated at 72% (fee-based). Lume GP% estimated at 28.6% (40% markup). Formation GP% from accepted estimates.
+          Design GP% estimated at {DESIGN_DEFAULT_GP_DISPLAY}% (fee-based). Lume GP% estimated at {LUME_DEFAULT_GP}% (40% markup). Formation GP% from accepted estimates.
         </p>
       </div>
 

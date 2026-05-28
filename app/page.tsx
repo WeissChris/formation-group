@@ -2,12 +2,16 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { loadProjects, loadWeeklyRevenue, loadDesignProjects, loadProgressPaymentStages, loadProposals, loadGanttEntries, loadWeeklyActuals, loadEstimates, loadEstimatesByProject } from '@/lib/storage'
+import { loadProjects, loadWeeklyRevenue, loadDesignProjects, loadProgressPaymentStages, loadProgressClaims, loadProposals, loadGanttEntries, loadWeeklyActuals, loadEstimates, loadEstimatesByProject } from '@/lib/storage'
+import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { seedDemoData } from '@/lib/seed'
 import { formatCurrency, getFinancialYear, MONTH_NAMES } from '@/lib/utils'
 import type { Project, WeeklyRevenue, GanttEntry, WeeklyActual } from '@/types'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { calcProjectHealth, scheduleStatus } from '@/lib/projectHealth'
+import { getLiveJobs, triggerXeroSync, triggerManualSnapshot, type LiveJobRow as LiveJobApiRow } from '@/lib/xero'
+import { computeLiveJobRow, computePortfolioTotals, type LiveJobRow } from '@/lib/liveJobs'
+import { LiveJobsTable } from '@/components/LiveJobsTable'
 
 function toTitleCase(str: string): string {
   return str.toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
@@ -38,17 +42,98 @@ export default function DashboardPage() {
   const [allDesignProjects, setAllDesignProjects] = useState<ReturnType<typeof loadDesignProjects>>([])
   const [allActuals, setAllActuals] = useState<WeeklyActual[]>([])
   const [allGantt, setAllGantt] = useState<GanttEntry[]>([])
+  // Estimates loaded once on mount and held in state. Previously the per-project forecastGP
+  // fallback called loadEstimates() inside .map(), re-parsing the entire estimates blob from
+  // localStorage for every project on every render — measurable jank on dashboards with N>10.
+  const [allEstimates, setAllEstimates] = useState<ReturnType<typeof loadEstimates>>([])
+  // Server-derived per-project cost data (from Xero via /api/xero/live-jobs).
+  // Indexed by projectId for the join. `configured` flag drives the empty state.
+  const [liveJobCosts, setLiveJobCosts] = useState<Map<string, LiveJobApiRow>>(new Map())
+  const [liveJobsConfigured, setLiveJobsConfigured] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+  const [snapshotting, setSnapshotting] = useState(false)
 
-  useEffect(() => {
+  // Hoisted into a callable so we can re-run from the cross-tab refresh handler below
+  const reload = () => {
     const projs = loadProjects()
     setProjects(projs)
     setRevenue(loadWeeklyRevenue())
     setAllDesignProjects(loadDesignProjects())
+    setAllEstimates(loadEstimates())
     const activeFormation = projs.filter(p => p.status === 'active' && p.entity === 'formation')
     setAllActuals(activeFormation.flatMap(p => loadWeeklyActuals(p.id)))
     setAllGantt(activeFormation.flatMap(p => loadGanttEntries(p.id)))
     setLoaded(true)
+  }
+
+  // Fetch the server-side live-job cost data. Separate from `reload` because it's a network
+  // call and doesn't share triggers with localStorage refreshes.
+  const reloadLiveJobs = async () => {
+    const { items, configured } = await getLiveJobs()
+    setLiveJobsConfigured(configured)
+    const map = new Map<string, LiveJobApiRow>()
+    for (const it of items) map.set(it.project_id, it)
+    setLiveJobCosts(map)
+  }
+
+  const handleSyncNow = async () => {
+    setSyncing(true)
+    try {
+      const result = await triggerXeroSync()
+      await reloadLiveJobs()
+      if (!result.ok && result.error) window.alert(`Sync failed: ${result.error}`)
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  // Freeze the current Live Jobs view into snapshot history. Browser computes the rows
+  // (because progress claims are localStorage-only) and POSTs them to the server.
+  const handleSnapshotNow = async () => {
+    if (liveJobRows.length === 0) {
+      window.alert('No active projects to snapshot.')
+      return
+    }
+    if (!window.confirm(`Snapshot ${liveJobRows.length} active project${liveJobRows.length === 1 ? '' : 's'} for today?`)) return
+    setSnapshotting(true)
+    try {
+      // Build the per-account cost map for each project so the snapshot freezes the breakdown
+      // (not just the totals). Future fade-tracking will read this back.
+      const inputs = liveJobRows.map(row => {
+        const apiRow = liveJobCosts.get(row.projectId)
+        const costByAccount: Record<string, number> = {}
+        // The current /api/xero/live-jobs response doesn't include per-account detail — only the
+        // totals. We pass an empty map here as a starting point. A future enhancement could call
+        // /api/projects/:id/costs per project to get the full breakdown into the snapshot JSONB.
+        return { row, costByAccount }
+      })
+      const result = await triggerManualSnapshot(inputs)
+      if (result.ok) {
+        const skipped = result.skipped_duplicate
+        window.alert(
+          `Snapshot saved for ${result.snapshot_date}.\n` +
+          `${result.snapshotted} written` +
+          (skipped > 0 ? ` · ${skipped} skipped (already snapshotted today)` : ''),
+        )
+      } else {
+        window.alert(`Snapshot failed: ${result.error ?? 'unknown error'}`)
+      }
+    } finally {
+      setSnapshotting(false)
+    }
+  }
+
+  useEffect(() => {
+    reload()
+    reloadLiveJobs()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // If another tab saves a project/estimate/revenue, refresh this dashboard's view too.
+  useCrossTabRefresh(
+    ['projects', 'estimates', 'revenue', 'proposals', 'gantt', 'actuals', 'all'],
+    () => reload(),
+  )
 
   const now = new Date()
   const activeProjects = projects.filter(p => p.status === 'active')
@@ -134,21 +219,23 @@ export default function DashboardPage() {
       // Fallback: if segments have no costAllocation, use budgetedCost from the GanttEntry
       return s + (segTotal > 0 ? segTotal : g.budgetedCost)
     }, 0)
-    const currentGP = p.contractValue > 0 && actualCost > 0
-      ? ((p.contractValue - actualCost) / p.contractValue) * 100
-      : null
+    // NB: A "currentGP" used to live here computed as (contractValue - actualCost) / contractValue.
+    // That math was structurally wrong — it compares cost-to-date against the full contract, not
+    // against what's been invoiced so far. Removed because the value was never rendered anywhere.
+    // If a dashboard tile ever wants current GP, base it on totalInvoiced (see Position tab).
     const forecastGP = p.contractValue > 0 && budgetCost > 0
       ? ((p.contractValue - budgetCost) / p.contractValue) * 100
       : (() => {
-          // Fallback: use estimate line item totals as budget cost proxy
-          const projectEstimates = loadEstimates().filter((e: any) => e.projectId === p.id)
-          const estimateCost = projectEstimates.reduce((s: number, e: any) => 
-            s + (e.lineItems || []).reduce((ls: number, li: any) => ls + (li.total || 0), 0), 0)
+          // Fallback: use estimate line item totals as budget cost proxy. Read from the
+          // hoisted `allEstimates` state — no per-render localStorage parse.
+          const projectEstimates = allEstimates.filter(e => e.projectId === p.id)
+          const estimateCost = projectEstimates.reduce((s, e) =>
+            s + (e.lineItems || []).reduce((ls, li) => ls + (li.total || 0), 0), 0)
           return p.contractValue > 0 && estimateCost > 0
             ? ((p.contractValue - estimateCost) / p.contractValue) * 100
             : null
         })()
-    return { project: p, currentGP, forecastGP }
+    return { project: p, forecastGP }
   })
 
   const projectGPWithForecast = projectGP.filter(p => p.forecastGP !== null)
@@ -187,11 +274,22 @@ export default function DashboardPage() {
     }
   }
 
-  // Outstanding invoices
+  // Outstanding invoices — union of both invoicing models so the KPI reflects whichever model the project uses.
+  // Stage-based projects write to fg_payment_stages via the schedule UI; progress-claim projects write to
+  // fg_progress_claims via the Operations tab. A project uses one model or the other, not both.
   const allStages = projects.flatMap(p => loadProgressPaymentStages(p.id))
   const invoicedUnpaidStages = allStages.filter(s => s.status === 'invoiced' && (s.paidToDate ?? 0) === 0)
-  const outstandingInvoicesTotal = invoicedUnpaidStages.reduce((sum, s) => sum + (s.invoicedAmount ?? s.quotedAmount), 0)
-  const outstandingInvoicesProjects = new Set(invoicedUnpaidStages.map(s => s.projectId)).size
+  const stagesOutstanding = invoicedUnpaidStages.reduce((sum, s) => sum + (s.invoicedAmount ?? s.quotedAmount), 0)
+  const stageProjectIds = invoicedUnpaidStages.map(s => s.projectId)
+
+  const allClaims = loadProgressClaims()
+  // "Sent" claims are issued but not yet paid; "paid" closes the loop. Drafts and pending are not yet billed.
+  const outstandingClaims = allClaims.filter(c => c.status === 'sent')
+  const claimsOutstanding = outstandingClaims.reduce((sum, c) => sum + c.subtotalEx, 0)
+  const claimProjectIds = outstandingClaims.map(c => c.projectId)
+
+  const outstandingInvoicesTotal = stagesOutstanding + claimsOutstanding
+  const outstandingInvoicesProjects = new Set([...stageProjectIds, ...claimProjectIds]).size
 
   // Projects without forecast (active formation projects with no gantt entries)
   const projectsMissingForecast = formationProjects.filter(p => {
@@ -211,6 +309,29 @@ export default function DashboardPage() {
   })
 
   const supabaseActive = isSupabaseConfigured()
+
+  // Live Jobs rows — combine local data (project, accepted estimates, progress claims) with
+  // server cost data (Xero feed). Only includes status != 'complete' per the design decision.
+  const liveJobRows: LiveJobRow[] = activeProjects.map(project => {
+    const acceptedEstimates = allEstimates.filter(
+      e => e.projectId === project.id && e.status === 'accepted',
+    )
+    const claims = loadProgressClaims(project.id)
+    const apiRow = liveJobCosts.get(project.id) ?? null
+    return computeLiveJobRow({
+      project,
+      acceptedEstimates,
+      progressClaims: claims,
+      costToDate: apiRow?.mapped ? apiRow.cost_to_date : null,
+      forecastFinalCost: apiRow?.mapped ? apiRow.forecast_final_cost : null,
+    })
+  })
+  const liveJobsLastSync = Array.from(liveJobCosts.values())
+    .map(r => r.last_pulled_at)
+    .filter((d): d is string => d !== null)
+    .sort()
+    .pop() ?? null
+  const liveJobsTotals = computePortfolioTotals(liveJobRows)
 
   const handleSeedData = () => {
     seedDemoData()
@@ -439,6 +560,20 @@ export default function DashboardPage() {
           ))}
         </div>
       </div>
+
+      <div className="border-t border-fg-border my-8" />
+
+      {/* ── BAND 1.5: LIVE JOBS (Xero-fed GP per project) ────────────── */}
+      <LiveJobsTable
+        rows={liveJobRows}
+        totals={liveJobsTotals}
+        lastSyncedAt={liveJobsLastSync}
+        configured={liveJobsConfigured}
+        syncing={syncing}
+        onSyncNow={handleSyncNow}
+        snapshotting={snapshotting}
+        onSnapshotNow={handleSnapshotNow}
+      />
 
       <div className="border-t border-fg-border my-8" />
 
