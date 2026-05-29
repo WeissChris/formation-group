@@ -19,16 +19,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Xero sync
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           set -euo pipefail
+
+          # Guard: if the GitHub repo secrets aren't set yet, exit 0 with a clear notice.
+          # Stops hourly failure emails until you finish setup.
+          if [[ -z "${APP_URL:-}" || -z "${CRON_SECRET:-}" ]]; then
+            echo "::notice::Required secrets not set yet (APP_URL or CRON_SECRET). Skipping. Set them at Settings → Secrets and variables → Actions."
+            exit 0
+          fi
+
           response=$(curl -sS -X POST \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
             -H "Content-Type: application/json" \
             -w "\n%{http_code}" \
-            "${{ secrets.APP_URL }}/api/cron/xero-sync")
+            "${APP_URL}/api/cron/xero-sync")
           body=$(echo "$response" | head -n -1)
           status=$(echo "$response" | tail -n 1)
           echo "HTTP $status"
           echo "$body"
-          # Exit non-zero on any non-2xx so the Actions UI shows the failure
-          [[ "$status" =~ ^2 ]] || exit 1
+
+          # 2xx = success (or 200 + skipped:true for known pre-setup states).
+          # The server returns 200 with {skipped:true} when Xero isn't connected yet —
+          # surface that as a notice rather than letting it look like a real result.
+          if [[ "$status" =~ ^2 ]]; then
+            if echo "$body" | grep -q '"skipped":true'; then
+              echo "::notice::Cron ran but skipped — see response body. Most likely 'no_xero_tokens' (Xero not connected via Settings) or 'supabase_admin_not_configured'."
+            fi
+            exit 0
+          fi
+
+          # 401 = secret mismatch between GitHub and Vercel
+          # 503 = CRON_SECRET not set on Vercel side
+          # 502 = real downstream failure (Xero API error, network, etc)
+          echo "::error::Cron failed with HTTP $status. Check Vercel env vars (CRON_SECRET, SUPABASE_SERVICE_ROLE_KEY) and the Xero connection."
+          exit 1

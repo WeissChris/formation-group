@@ -28,5 +28,17 @@ export async function POST(request: NextRequest) {
   }
 
   const result = await runFullSync('cron_hourly')
+
+  // Treat the "nothing to do yet" cases as 200-skipped, not 502-failed:
+  //   - no_xero_tokens                  → Xero not connected yet via Settings page
+  //   - supabase_admin_not_configured   → SUPABASE_SERVICE_ROLE_KEY not set
+  // These are normal pre-setup states. Returning 502 makes GitHub Actions email a failure
+  // notification every hour until setup is done — annoying and unactionable. A 200 with
+  // skipped:true keeps the run green while still surfacing the reason in the response body.
+  const KNOWN_SKIP_REASONS = new Set(['no_xero_tokens', 'supabase_admin_not_configured'])
+  if (!result.ok && result.error && KNOWN_SKIP_REASONS.has(result.error)) {
+    return NextResponse.json({ ...result, skipped: true }, { status: 200 })
+  }
+
   return NextResponse.json(result, { status: result.ok ? 200 : 502 })
 }
