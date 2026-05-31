@@ -90,8 +90,9 @@ export async function clearTokens(): Promise<boolean> {
 async function refreshTokens(): Promise<XeroTokenRow | null> {
   const prior = await getTokens()
   if (!prior) return null
-  const clientId = process.env.NEXT_PUBLIC_XERO_CLIENT_ID
-  const clientSecret = process.env.XERO_CLIENT_SECRET
+  // `.trim()` defends against trailing whitespace in env values — see init/callback for why.
+  const clientId = (process.env.NEXT_PUBLIC_XERO_CLIENT_ID || '').trim()
+  const clientSecret = (process.env.XERO_CLIENT_SECRET || '').trim()
   if (!clientId || !clientSecret) return null
 
   const response = await fetch(XERO_TOKEN_URL, {

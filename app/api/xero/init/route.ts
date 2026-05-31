@@ -12,10 +12,14 @@ const STATE_COOKIE = 'xero_oauth_state'
  * GET /api/xero/init  →  { url: string }
  */
 export async function GET(_request: NextRequest) {
-  const clientId = process.env.NEXT_PUBLIC_XERO_CLIENT_ID
-  const redirectUri =
+  // `.trim()` defends against trailing whitespace/newlines accidentally pasted into env
+  // values via the Vercel UI — those get URL-encoded as %0D%0A and Xero rejects the request
+  // with the unhelpful "unauthorized_client - Unknown client" error.
+  const clientId = (process.env.NEXT_PUBLIC_XERO_CLIENT_ID || '').trim()
+  const redirectUri = (
     process.env.NEXT_PUBLIC_XERO_REDIRECT_URI ||
     'https://formation-group.vercel.app/api/xero/callback'
+  ).trim()
 
   if (!clientId) {
     return NextResponse.json({ error: 'Xero not configured' }, { status: 500 })

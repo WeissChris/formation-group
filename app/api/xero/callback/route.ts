@@ -25,10 +25,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const clientId = process.env.NEXT_PUBLIC_XERO_CLIENT_ID
-    const clientSecret = process.env.XERO_CLIENT_SECRET
-    const redirectUri = process.env.NEXT_PUBLIC_XERO_REDIRECT_URI
-      || 'https://formation-group.vercel.app/api/xero/callback'
+    // `.trim()` on every env value — Vercel UI sometimes carries trailing whitespace/newlines
+    // through copy-paste; those get URL-encoded as %0D%0A and Xero rejects with the unhelpful
+    // "unauthorized_client - Unknown client" error.
+    const clientId = (process.env.NEXT_PUBLIC_XERO_CLIENT_ID || '').trim()
+    const clientSecret = (process.env.XERO_CLIENT_SECRET || '').trim()
+    const redirectUri = (
+      process.env.NEXT_PUBLIC_XERO_REDIRECT_URI
+        || 'https://formation-group.vercel.app/api/xero/callback'
+    ).trim()
 
     if (!clientId || !clientSecret) {
       const reject = NextResponse.redirect(`${appUrl}/settings?xero=error&reason=misconfigured`)
