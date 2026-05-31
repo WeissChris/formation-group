@@ -32,11 +32,12 @@ jobs:
             exit 0
           fi
 
-          response=$(curl -sS -X POST \
+          response=$(curl -sS -L -X POST \
             -H "Authorization: Bearer ${CRON_SECRET}" \
             -H "Content-Type: application/json" \
             -w "\n%{http_code}" \
             "${APP_URL}/api/cron/xero-sync")
+          # -L follows redirects (e.g. http→https 308); method preserved on 307/308
           body=$(echo "$response" | head -n -1)
           status=$(echo "$response" | tail -n 1)
           echo "HTTP $status"
