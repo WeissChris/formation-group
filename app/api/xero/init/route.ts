@@ -32,8 +32,12 @@ export async function GET(_request: NextRequest) {
     response_type: 'code',
     client_id: clientId,
     redirect_uri: redirectUri,
-    scope:
-      'accounting.transactions.read accounting.contacts.read accounting.settings.read offline_access',
+    // Minimal scopes for the cost puller:
+    //   accounting.transactions.read  — Bills (ACCPAY) + Spend Money + BankTransactions
+    //   accounting.reports.read       — required by some Xero orgs for full invoice access
+    //   offline_access                — refresh tokens (required for unattended hourly cron)
+    // Removed: accounting.contacts.read, accounting.settings.read (unused by cost sync)
+    scope: 'accounting.transactions.read accounting.reports.read offline_access',
     state,
   })
 
