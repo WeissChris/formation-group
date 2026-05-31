@@ -32,12 +32,13 @@ export async function GET(_request: NextRequest) {
     response_type: 'code',
     client_id: clientId,
     redirect_uri: redirectUri,
-    // Minimal scopes for the cost puller:
-    //   accounting.transactions.read  — Bills (ACCPAY) + Spend Money + BankTransactions
-    //   accounting.reports.read       — required by some Xero orgs for full invoice access
-    //   offline_access                — refresh tokens (required for unattended hourly cron)
-    // Removed: accounting.contacts.read, accounting.settings.read (unused by cost sync)
-    scope: 'accounting.transactions.read accounting.reports.read offline_access',
+    // New granular scopes (apps created after 2 March 2026 use these, not the broad scopes).
+    // All three are needed by the cost puller (xeroCostSync.ts):
+    //   accounting.settings.read        — /Accounts endpoint (classify DIRECTCOSTS vs EXPENSE)
+    //   accounting.invoices.read        — /Invoices?Type=ACCPAY (Bills from suppliers)
+    //   accounting.banktransactions.read — /BankTransactions?Type=SPEND (Spend Money)
+    //   offline_access                  — refresh tokens for unattended hourly cron
+    scope: 'accounting.settings.read accounting.invoices.read accounting.banktransactions.read offline_access',
     state,
   })
 
