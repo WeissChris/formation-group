@@ -120,6 +120,7 @@ async function fetchBills(
   const where = `Type=="ACCPAY"&&Date>=${xeroDate(since)}`
   const collected: XeroInvoice[] = []
   let page = 1
+  let retries = 0
   // Hard cap so a misconfig can't loop forever
   while (page <= 50) {
     const url = `${XERO_API_BASE}/Invoices?where=${encodeURIComponent(where)}&page=${page}&order=Date DESC`
@@ -130,6 +131,14 @@ async function fetchBills(
         Accept: 'application/json',
       },
     })
+    if (resp.status === 429) {
+      if (retries >= 2) throw new Error('rate_limited')  // give up cleanly after 2 retries
+      retries++
+      const retryAfter = parseInt(resp.headers.get('retry-after') || '60', 10)
+      await new Promise(r => setTimeout(r, (retryAfter + 5) * 1000))
+      continue  // retry the same page
+    }
+    retries = 0  // reset on success
     if (!resp.ok) throw new Error(`Xero Invoices page ${page} failed: ${resp.status}`)
     const data = await resp.json()
     const items = data.Invoices || []
@@ -137,8 +146,8 @@ async function fetchBills(
     collected.push(...items)
     if (items.length < 100) break  // last page (Xero pages of 100)
     page++
-    // Polite delay — Xero rate limit is 60/min. 1.1s between pages = safe.
-    await new Promise(r => setTimeout(r, 1100))
+    // Polite delay — Xero rate limit is 60 calls/min. 1.5s per page stays comfortably under.
+    await new Promise(r => setTimeout(r, 1500))
   }
   return collected
 }
@@ -152,6 +161,7 @@ async function fetchSpendMoney(
   const where = `Type=="SPEND"&&Date>=${xeroDate(since)}`
   const collected: XeroBankTransaction[] = []
   let page = 1
+  let retries = 0
   while (page <= 50) {
     const url = `${XERO_API_BASE}/BankTransactions?where=${encodeURIComponent(where)}&page=${page}&order=Date DESC`
     const resp = await fetch(url, {
@@ -161,6 +171,14 @@ async function fetchSpendMoney(
         Accept: 'application/json',
       },
     })
+    if (resp.status === 429) {
+      if (retries >= 2) throw new Error('rate_limited')
+      retries++
+      const retryAfter = parseInt(resp.headers.get('retry-after') || '60', 10)
+      await new Promise(r => setTimeout(r, (retryAfter + 5) * 1000))
+      continue
+    }
+    retries = 0
     if (!resp.ok) throw new Error(`Xero BankTransactions page ${page} failed: ${resp.status}`)
     const data = await resp.json()
     const items = data.BankTransactions || []
@@ -168,7 +186,7 @@ async function fetchSpendMoney(
     collected.push(...items)
     if (items.length < 100) break
     page++
-    await new Promise(r => setTimeout(r, 1100))
+    await new Promise(r => setTimeout(r, 1500))
   }
   return collected
 }
