@@ -230,8 +230,12 @@ async function fetchSpendMoney(
  *
  * Inputs:
  *   - transactions: bills + spend money already flattened to {date, lineItems}
- *   - projectByOptionId: map of TrackingOptionID → projectId (from fg_project_xero_mapping)
- *   - accountByCode: map of AccountCode → {name, class} (from Xero Accounts)
+ *   - projectByOptionId: map of TrackingOptionID → projectId
+ *   - accountByCode: map of AccountCode → account (from Xero Accounts)
+ *   - projectByCatOptName: map of `${categoryId}|${normalizedOptionName}` → projectId.
+ *       REQUIRED in practice — Xero's bulk GET /Invoices returns line-item tracking with the
+ *       category ID + option NAME but NOT the option UUID, so name-matching is the path that
+ *       actually fires. The option-ID map is kept as a fallback for endpoints that do return it.
  *
  * Output: { rows, diagnostics }. rows are ready to upsert into fg_xero_project_costs.
  *
@@ -242,10 +246,15 @@ async function fetchSpendMoney(
  *
  * Exported for testability.
  */
+function normOpt(s: string): string {
+  return s.trim().toLowerCase()
+}
+
 export function aggregateCosts(
   transactions: Array<{ date: string; lineItems: XeroLineItem[] }>,
   projectByOptionId: Map<string, string>,
   accountByCode: Map<string, XeroAccount>,
+  projectByCatOptName?: Map<string, string>,
 ): { rows: CostRollupRow[]; diagnostics: AggregateDiagnostics } {
   // {projectId|accountCode → {amount, count, lastDate}}
   const acc = new Map<string, {
@@ -292,9 +301,19 @@ export function aggregateCosts(
       }
       let projectId: string | undefined
       for (const t of tracking) {
+        // (a) Match by option UUID when Xero provides it.
         if (t.TrackingOptionID && projectByOptionId.has(t.TrackingOptionID)) {
           projectId = projectByOptionId.get(t.TrackingOptionID)
           break
+        }
+        // (b) Match by category ID + option NAME — the path that fires for bulk GET /Invoices,
+        // which omits the option UUID but includes TrackingCategoryID + Option (the name).
+        if (projectByCatOptName && t.TrackingCategoryID && t.Option) {
+          const key = `${t.TrackingCategoryID}|${normOpt(t.Option)}`
+          if (projectByCatOptName.has(key)) {
+            projectId = projectByCatOptName.get(key)
+            break
+          }
         }
       }
       if (!projectId) continue  // not tagged to any tracked project — skip silently
@@ -403,13 +422,23 @@ export async function runFullSync(
       return { ok: false, bills_processed: 0, spend_money_processed: 0, projects_updated: 0, error: 'no_xero_tokens' }
     }
 
-    // Load the project mapping table
+    // Load the project mapping table. We build two matchers:
+    //   - projectByOptionId        : option UUID → projectId (used when Xero returns the UUID)
+    //   - projectByCatOptName       : `${categoryId}|${normalizedOptionName}` → projectId
+    //                                 (the path that fires for bulk GET /Invoices, which omits
+    //                                  the option UUID but includes the category ID + option name)
     const { data: mappingRows } = await supabaseAdmin
       .from('fg_project_xero_mapping')
-      .select('project_id, tracking_option_id')
+      .select('project_id, tracking_category_id, tracking_option_id, tracking_option_name')
     const projectByOptionId = new Map<string, string>()
+    const projectByCatOptName = new Map<string, string>()
     for (const row of mappingRows || []) {
       projectByOptionId.set(row.tracking_option_id as string, row.project_id as string)
+      const cat = row.tracking_category_id as string | null
+      const name = row.tracking_option_name as string | null
+      if (cat && name) {
+        projectByCatOptName.set(`${cat}|${name.trim().toLowerCase()}`, row.project_id as string)
+      }
     }
     if (projectByOptionId.size === 0) {
       await finalize('ok', { bills_processed: 0, projects_updated: 0 })
@@ -435,7 +464,7 @@ export async function runFullSync(
       ...spend.map(s => ({ date: s.Date, lineItems: s.LineItems || [] })),
     ]
 
-    const { rows: rollup, diagnostics } = aggregateCosts(transactions, projectByOptionId, accountByCode)
+    const { rows: rollup, diagnostics } = aggregateCosts(transactions, projectByOptionId, accountByCode, projectByCatOptName)
 
     // Replace-per-project: delete old rollup rows for any project we have new data for,
     // then insert the new rows.

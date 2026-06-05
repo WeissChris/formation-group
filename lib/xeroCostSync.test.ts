@@ -131,6 +131,37 @@ describe('aggregateCosts — tracking filter', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0].project_id).toBe('project-x')
   })
+
+  it('matches by category ID + option NAME when the option UUID is absent (real GET /Invoices shape)', () => {
+    // Xero's bulk GET /Invoices returns tracking with TrackingCategoryID + Option (name) but
+    // NOT TrackingOptionID. This is the path that actually fires in production.
+    const accounts = new Map([COGS('311', 'Subs')])
+    const byOptionId = new Map<string, string>()  // empty — no UUID available
+    const byCatOptName = new Map([['cat-project|45 beach rd.', 'project-1']])
+    const txs = [tx('/Date(1716000000000+0000)/', [{
+      AccountCode: '311',
+      LineAmount: 4_500,
+      Tracking: [{ TrackingCategoryID: 'cat-project', Option: '45 Beach Rd.', Name: 'Project' } as any],
+    }])]
+    const { rows, diagnostics } = aggregateCosts(txs, byOptionId, accounts, byCatOptName)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].project_id).toBe('project-1')
+    expect(rows[0].amount_ex_gst).toBe(4_500)
+    expect(diagnostics.lineItemsTrackingMatched).toBe(1)
+  })
+
+  it('name match is case/whitespace-insensitive', () => {
+    const accounts = new Map([COGS('311', 'Subs')])
+    const byCatOptName = new Map([['cat-project|165 serpells road', 'project-2']])
+    const txs = [tx('/Date(1716000000000+0000)/', [{
+      AccountCode: '311',
+      LineAmount: 1_000,
+      Tracking: [{ TrackingCategoryID: 'cat-project', Option: '  165 Serpells Road  ', Name: 'Project' } as any],
+    }])]
+    const { rows } = aggregateCosts(txs, new Map(), accounts, byCatOptName)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].project_id).toBe('project-2')
+  })
 })
 
 describe('aggregateCosts — aggregation', () => {
