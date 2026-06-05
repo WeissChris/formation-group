@@ -98,10 +98,16 @@ interface CostRollupRow {
  */
 export interface AggregateDiagnostics {
   lineItemsTotal: number
+  lineItemsWithTracking: number      // line items that carry ANY Tracking entry at all
   lineItemsTrackingMatched: number   // tagged to a known project (before cost-account filter)
   lineItemsCostFiltered: number      // also passed the cost-of-sales filter (these get written)
-  /** For every tracking-matched line item, $ and count by account Type — reveals what
-   *  account types Chris's job costs actually use, so the allowlist can be tuned. */
+  /** Up to 12 distinct (categoryId → optionId) tracking pairs seen on line items — lets us
+   *  compare what's actually on the bills against the stored mapping IDs. */
+  sampleTrackingPairs: string[]
+  /** Raw JSON of the first line item that has an account code — reveals the exact field shape
+   *  Xero returns (esp. whether Tracking is present in the paged list response). */
+  sampleRawLineItem: string | null
+  /** For every tracking-matched line item, $ and count by account Type. */
   trackedTypeBreakdown: Record<string, { count: number; amount: number; sampleName: string }>
 }
 
@@ -253,10 +259,14 @@ export function aggregateCosts(
 
   const diag: AggregateDiagnostics = {
     lineItemsTotal: 0,
+    lineItemsWithTracking: 0,
     lineItemsTrackingMatched: 0,
     lineItemsCostFiltered: 0,
+    sampleTrackingPairs: [],
+    sampleRawLineItem: null,
     trackedTypeBreakdown: {},
   }
+  const seenTrackingPairs = new Set<string>()
 
   for (const tx of transactions) {
     for (const li of tx.lineItems || []) {
@@ -265,8 +275,21 @@ export function aggregateCosts(
       const amount = Number(li.LineAmount) || 0
       if (!code || amount === 0) continue
 
+      // Capture the raw shape of the first real line item, once.
+      if (diag.sampleRawLineItem === null) {
+        try { diag.sampleRawLineItem = JSON.stringify(li).slice(0, 800) } catch { /* ignore */ }
+      }
+
       // Stage 1 — must be tagged to a tracked project (the real GP-only signal)
       const tracking = li.Tracking || []
+      if (tracking.length > 0) {
+        diag.lineItemsWithTracking++
+        for (const t of tracking) {
+          if (seenTrackingPairs.size < 12 && (t.TrackingCategoryID || t.TrackingOptionID)) {
+            seenTrackingPairs.add(`${t.TrackingCategoryID || '?'}:${t.TrackingOptionID || '?'}`)
+          }
+        }
+      }
       let projectId: string | undefined
       for (const t of tracking) {
         if (t.TrackingOptionID && projectByOptionId.has(t.TrackingOptionID)) {
@@ -308,6 +331,8 @@ export function aggregateCosts(
       }
     }
   }
+
+  diag.sampleTrackingPairs = Array.from(seenTrackingPairs)
 
   const rows = Array.from(acc.values()).map(v => ({
     project_id: v.project_id,
