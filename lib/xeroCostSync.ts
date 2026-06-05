@@ -21,17 +21,30 @@ const XERO_API_BASE = 'https://api.xero.com/api.xro/2.0'
 const LOOKBACK_MONTHS = 24
 
 /**
- * Xero account classes that count as cost of sales for the GP calculation.
- * Anything outside this allowlist (EXPENSE, OVERHEAD, etc) is ignored at write time —
- * the guardrail that prevents NP / operating expense data leaking into the platform.
+ * GP-only guardrail: which Xero accounts count as cost of sales (job cost), so operating
+ * expenses / overheads / director comp can never reach the per-project rollup.
  *
- * Xero's account `Class` enum values:
- *   ASSET, EQUITY, EXPENSE, LIABILITY, REVENUE
- *   (and the subset Class.DIRECTCOSTS for COGS)
+ * IMPORTANT — Xero data model:
+ *   - account.Class is one of: ASSET, EQUITY, EXPENSE, LIABILITY, REVENUE
+ *   - account.Type is the granular kind: DIRECTCOSTS, OVERHEADS, EXPENSE, DEPRECIATN,
+ *     WAGESEXPENSE, SUPERANNUATIONEXPENSE, ...
  *
- * We allow DIRECTCOSTS only. EXPENSE = operating expenses = excluded.
+ * "Cost of Sales" on a Xero P&L = accounts with Type === 'DIRECTCOSTS'. (An earlier version
+ * of this code wrongly checked Class === 'DIRECTCOSTS', which is never true — so every line
+ * item was silently dropped and 0 cost rows were ever written.)
+ *
+ * `COST_OF_SALES_TYPES` is the allowlist of account Types we treat as job cost. It can be
+ * widened (e.g. to include production WAGESEXPENSE / SUPERANNUATIONEXPENSE) once we've
+ * confirmed from the diagnostic breakdown how Chris's chart of accounts is structured.
  */
-const ALLOWED_ACCOUNT_CLASSES = new Set(['DIRECTCOSTS'])
+const COST_OF_SALES_TYPES = new Set([
+  'DIRECTCOSTS',
+])
+
+function isCostOfSales(account: XeroAccount | undefined): boolean {
+  if (!account) return false
+  return COST_OF_SALES_TYPES.has(account.Type)
+}
 
 interface XeroLineItem {
   AccountCode?: string
@@ -65,7 +78,8 @@ interface XeroAccount {
   AccountID: string
   Code: string
   Name: string
-  Class: string  // 'EXPENSE', 'DIRECTCOSTS', 'REVENUE', etc.
+  Class: string  // ASSET | EQUITY | EXPENSE | LIABILITY | REVENUE
+  Type: string   // DIRECTCOSTS | OVERHEADS | EXPENSE | WAGESEXPENSE | ... (the granular kind)
 }
 
 /** Result row written to fg_xero_project_costs. */
@@ -78,12 +92,26 @@ interface CostRollupRow {
   last_bill_date: string | null
 }
 
+/**
+ * Diagnostic breakdown emitted by aggregateCosts so we can see WHY a pull produced the row
+ * count it did — isolates "tracking didn't match" from "account filter dropped everything".
+ */
+export interface AggregateDiagnostics {
+  lineItemsTotal: number
+  lineItemsTrackingMatched: number   // tagged to a known project (before cost-account filter)
+  lineItemsCostFiltered: number      // also passed the cost-of-sales filter (these get written)
+  /** For every tracking-matched line item, $ and count by account Type — reveals what
+   *  account types Chris's job costs actually use, so the allowlist can be tuned. */
+  trackedTypeBreakdown: Record<string, { count: number; amount: number; sampleName: string }>
+}
+
 export interface SyncResult {
   ok: boolean
   bills_processed: number
   spend_money_processed: number
   projects_updated: number
   error?: string
+  diagnostics?: AggregateDiagnostics
 }
 
 /**
@@ -199,11 +227,12 @@ async function fetchSpendMoney(
  *   - projectByOptionId: map of TrackingOptionID → projectId (from fg_project_xero_mapping)
  *   - accountByCode: map of AccountCode → {name, class} (from Xero Accounts)
  *
- * Output: array of CostRollupRow ready to upsert into fg_xero_project_costs.
+ * Output: { rows, diagnostics }. rows are ready to upsert into fg_xero_project_costs.
  *
- * Guardrail: a line item only contributes if its account class is in ALLOWED_ACCOUNT_CLASSES.
- * This is the layer that enforces "GP only, never NP" — operating expenses can never reach
- * the cost rollup even if mis-tagged with a project tracking option.
+ * Guardrail order (important): we first check the line item is tagged to a known project
+ * (the real GP signal — operating expenses like rent / director wages are never job-tagged),
+ * THEN apply the cost-of-sales account-Type filter as a backstop so a mis-tagged overhead
+ * can't leak into the rollup. Diagnostics record both stages so a 0-row result is debuggable.
  *
  * Exported for testability.
  */
@@ -211,7 +240,7 @@ export function aggregateCosts(
   transactions: Array<{ date: string; lineItems: XeroLineItem[] }>,
   projectByOptionId: Map<string, string>,
   accountByCode: Map<string, XeroAccount>,
-): CostRollupRow[] {
+): { rows: CostRollupRow[]; diagnostics: AggregateDiagnostics } {
   // {projectId|accountCode → {amount, count, lastDate}}
   const acc = new Map<string, {
     project_id: string
@@ -222,17 +251,21 @@ export function aggregateCosts(
     lastDate: string | null
   }>()
 
+  const diag: AggregateDiagnostics = {
+    lineItemsTotal: 0,
+    lineItemsTrackingMatched: 0,
+    lineItemsCostFiltered: 0,
+    trackedTypeBreakdown: {},
+  }
+
   for (const tx of transactions) {
     for (const li of tx.lineItems || []) {
+      diag.lineItemsTotal++
       const code = li.AccountCode
       const amount = Number(li.LineAmount) || 0
       if (!code || amount === 0) continue
 
-      // GP-only guardrail — drop anything that isn't a direct cost of sales
-      const account = accountByCode.get(code)
-      if (!account || !ALLOWED_ACCOUNT_CLASSES.has(account.Class)) continue
-
-      // Find the project this line item is tagged to (via Tracking[].TrackingOptionID)
+      // Stage 1 — must be tagged to a tracked project (the real GP-only signal)
       const tracking = li.Tracking || []
       let projectId: string | undefined
       for (const t of tracking) {
@@ -242,6 +275,20 @@ export function aggregateCosts(
         }
       }
       if (!projectId) continue  // not tagged to any tracked project — skip silently
+      diag.lineItemsTrackingMatched++
+
+      // Record the account-Type breakdown for ALL tracking-matched line items, so we can
+      // see what types real job costs use even if the filter below rejects some.
+      const account = accountByCode.get(code)
+      const acctType = account?.Type || 'UNKNOWN'
+      const b = diag.trackedTypeBreakdown[acctType] || { count: 0, amount: 0, sampleName: account?.Name || code }
+      b.count++
+      b.amount = Math.round((b.amount + amount) * 100) / 100
+      diag.trackedTypeBreakdown[acctType] = b
+
+      // Stage 2 — backstop: only cost-of-sales accounts are written (GP only, never NP)
+      if (!isCostOfSales(account)) continue
+      diag.lineItemsCostFiltered++
 
       const key = `${projectId}|${code}`
       const existing = acc.get(key)
@@ -253,7 +300,7 @@ export function aggregateCosts(
         acc.set(key, {
           project_id: projectId,
           account_code: code,
-          account_name: account.Name,
+          account_name: account!.Name,
           amount,
           count: 1,
           lastDate: tx.date || null,
@@ -262,7 +309,7 @@ export function aggregateCosts(
     }
   }
 
-  return Array.from(acc.values()).map(v => ({
+  const rows = Array.from(acc.values()).map(v => ({
     project_id: v.project_id,
     account_code: v.account_code,
     account_name: v.account_name,
@@ -271,6 +318,8 @@ export function aggregateCosts(
     // Xero's Date field comes as "/Date(1716115200000+0000)/" — parse and reformat
     last_bill_date: v.lastDate ? parseXeroDate(v.lastDate) : null,
   }))
+
+  return { rows, diagnostics: diag }
 }
 
 /** Convert Xero's "/Date(1716115200000+0000)/" wire format to "YYYY-MM-DD" local. */
@@ -361,7 +410,7 @@ export async function runFullSync(
       ...spend.map(s => ({ date: s.Date, lineItems: s.LineItems || [] })),
     ]
 
-    const rollup = aggregateCosts(transactions, projectByOptionId, accountByCode)
+    const { rows: rollup, diagnostics } = aggregateCosts(transactions, projectByOptionId, accountByCode)
 
     // Replace-per-project: delete old rollup rows for any project we have new data for,
     // then insert the new rows.
@@ -386,8 +435,11 @@ export async function runFullSync(
       bills_processed: bills.length,
       spend_money_processed: spend.length,
       projects_updated: projectsWithNewData.size,
+      diagnostics,
     }
-    await finalize('ok', result)
+    // Stash diagnostics in the run log's error_message field (it's null on success anyway)
+    // so we can read the account-type breakdown straight from fg_xero_pull_runs.
+    await finalize('ok', { ...result, error_message: JSON.stringify(diagnostics) })
     return result
   } catch (err) {
     const message = err instanceof Error ? err.message : 'unknown_error'

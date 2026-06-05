@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { runFullSync } from '@/lib/xeroCostSync'
 
 export const runtime = 'nodejs'
+// 24-month backfill can take ~90s; allow margin (matches the cron route).
+export const maxDuration = 300
 
 function isSameOrigin(request: NextRequest): boolean {
   const host = request.headers.get('host')
