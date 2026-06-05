@@ -14,6 +14,7 @@
 
 import { supabaseAdmin } from './supabaseAdmin'
 import { getValidTokens } from './serverXero'
+import { isLabourAccount } from './labour'
 
 const XERO_API_BASE = 'https://api.xero.com/api.xro/2.0'
 
@@ -109,6 +110,25 @@ export interface AggregateDiagnostics {
   sampleRawLineItem: string | null
   /** For every tracking-matched line item, $ and count by account Type. */
   trackedTypeBreakdown: Record<string, { count: number; amount: number; sampleName: string }>
+  /** Production-labour pull (separate P&L path — see fetchProfitAndLoss). Optional so the
+   *  pure aggregateCosts() tests don't have to construct it. */
+  labour?: LabourDiagnostics
+}
+
+/** Diagnostics for the production-labour pull (P&L-report path). */
+export interface LabourDiagnostics {
+  /** True once the P&L report came back without throwing. */
+  reportFetched: boolean
+  /** Soft-fail reason when labour couldn't be pulled (e.g. scope not yet granted → 403). */
+  error: string | null
+  /** Labour accounts resolved from the chart of accounts (by isLabourAccount on the name). */
+  accountsResolved: Array<{ code: string; name: string }>
+  /** How many report columns mapped to a known project. */
+  columnsMapped: number
+  /** Labour cost rows produced (one per project per labour account with non-zero spend). */
+  rowsWritten: number
+  totalAmount: number
+  byProject: Record<string, number>
 }
 
 export interface SyncResult {
@@ -116,8 +136,26 @@ export interface SyncResult {
   bills_processed: number
   spend_money_processed: number
   projects_updated: number
+  /** Count of production-labour rows written from the P&L path (0 before Xero is reconnected
+   *  with the reports scope). */
+  labour_rows?: number
   error?: string
   diagnostics?: AggregateDiagnostics
+}
+
+// ── Profit & Loss report shape (only the fields we read) ─────────────────────
+interface PnLCell {
+  Value?: string
+  Attributes?: Array<{ Id?: string; Value?: string }>
+}
+interface PnLRow {
+  RowType?: string          // 'Header' | 'Section' | 'Row' | 'SummaryRow'
+  Title?: string
+  Cells?: PnLCell[]
+  Rows?: PnLRow[]
+}
+interface PnLReport {
+  Reports?: Array<{ Rows?: PnLRow[] }>
 }
 
 /**
@@ -379,6 +417,169 @@ function parseXeroDate(xeroDateStr: string): string | null {
   return new Date(ms).toISOString().slice(0, 10)
 }
 
+// ── Production labour via the P&L report ─────────────────────────────────────
+//
+// Why a separate path: production wages + super post to Xero through PAYROLL, not supplier
+// bills or spend-money, so they never appear in the Invoices/BankTransactions feeds above.
+// The Journals API (the universal general ledger) is gated to Advanced/Enterprise tier plus a
+// Xero security review; ManualJournals only returns user-created journals (not the automatic
+// payroll ones). The Profit & Loss report IS GL-backed, so it captures payroll-posted wages
+// however they were entered — and run with a tracking category it returns one column per project.
+//
+// GP-ONLY (HARD RULE): this path has its OWN, even narrower whitelist than the DIRECTCOSTS
+// filter used for bills. It writes ONLY the two named production-labour accounts (matched by
+// isLabourAccount — the SAME matcher the Costs-tab reconciliation reader uses, so writer and
+// reader can't drift). It deliberately does NOT widen COST_OF_SALES_TYPES to include
+// WAGESEXPENSE / SUPERANNUATION, because that would pull ALL wages (admin, directors, overhead),
+// which Andrew must never see.
+
+/** Local-time YYYY-MM-DD — the format the Xero Reports API expects for fromDate/toDate. */
+function ymd(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
+
+/**
+ * Pull a Profit & Loss report broken down by a tracking category (one column per option).
+ * Single call, no pagination. The GL-backed source for production labour, which never appears
+ * on bills. Throws on non-OK so the caller can soft-fail (materials still flow).
+ */
+async function fetchProfitAndLoss(
+  accessToken: string,
+  tenantId: string,
+  trackingCategoryId: string,
+  fromDate: string,   // YYYY-MM-DD
+  toDate: string,     // YYYY-MM-DD
+): Promise<PnLReport> {
+  const params = new URLSearchParams({ fromDate, toDate, trackingCategoryID: trackingCategoryId })
+  const url = `${XERO_API_BASE}/Reports/ProfitAndLoss?${params.toString()}`
+  let retries = 0
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const resp = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Xero-tenant-id': tenantId,
+        Accept: 'application/json',
+      },
+    })
+    if (resp.status === 429) {
+      if (retries >= 2) throw new Error('rate_limited')
+      retries++
+      const retryAfter = parseInt(resp.headers.get('retry-after') || '60', 10)
+      await new Promise(r => setTimeout(r, (retryAfter + 5) * 1000))
+      continue
+    }
+    if (!resp.ok) throw new Error(`Xero ProfitAndLoss failed: ${resp.status}`)
+    return resp.json()
+  }
+}
+
+/**
+ * Extract per-project production-labour cost rows from a P&L-by-tracking report.
+ *
+ * Pure + exported for testing. Walks the report:
+ *   1. Finds the Header row and maps each column index → projectId (via the option NAME header
+ *      against projectByOptionName). Columns that don't map to a project (blank, "Total",
+ *      "Unassigned") are ignored — so untracked labour never lands against a project.
+ *   2. For every data row whose account is one of the resolved labour accounts (matched by the
+ *      account-id attribute first, then by isLabourAccount on the row label), reads each mapped
+ *      column's value and emits a CostRollupRow.
+ *
+ * GP-only: ONLY the resolved labour accounts are ever emitted. Every other P&L line (income,
+ * other COGS, overheads, gross/net profit) is skipped.
+ */
+export function parseLabourFromPnL(
+  report: PnLReport,
+  labourAccounts: Array<{ accountId: string; code: string; name: string }>,
+  projectByOptionName: Map<string, string>,   // normalized option name → projectId
+  reportEndDate: string,                       // YYYY-MM-DD, stamped as last_bill_date
+): { rows: CostRollupRow[]; diag: Pick<LabourDiagnostics, 'accountsResolved' | 'columnsMapped' | 'rowsWritten' | 'totalAmount' | 'byProject'> } {
+  const labourById = new Map(labourAccounts.map(a => [a.accountId, a]))
+  const norm = (s: string) => s.trim().toLowerCase()
+
+  // Flatten all rows — sections nest their data rows under .Rows.
+  const allRows: PnLRow[] = []
+  const walk = (rows: PnLRow[] | undefined) => {
+    for (const r of rows || []) {
+      allRows.push(r)
+      if (r.Rows) walk(r.Rows)
+    }
+  }
+  walk(report.Reports?.[0]?.Rows)
+
+  // 1) Column index → projectId, from the Header row.
+  const colToProject = new Map<number, string>()
+  const header = allRows.find(r => r.RowType === 'Header' && (r.Cells?.length || 0) > 1)
+  if (header?.Cells) {
+    header.Cells.forEach((cell, idx) => {
+      if (idx === 0) return  // account-label column
+      const name = norm(cell.Value || '')
+      const pid = name ? projectByOptionName.get(name) : undefined
+      if (pid) colToProject.set(idx, pid)
+    })
+  }
+
+  // 2) Labour rows.
+  const acc = new Map<string, { project_id: string; account_code: string; account_name: string; amount: number }>()
+  for (const row of allRows) {
+    const cells = row.Cells
+    if (!cells || cells.length < 2) continue
+    const labelCell = cells[0]
+    const acctAttr = labelCell.Attributes?.find(a => a.Id === 'account')?.Value
+
+    let matched: { accountId: string; code: string; name: string } | undefined
+    if (acctAttr && labourById.has(acctAttr)) {
+      matched = labourById.get(acctAttr)
+    } else if (isLabourAccount(labelCell.Value || '')) {
+      matched =
+        labourAccounts.find(a => norm(a.name) === norm(labelCell.Value || '')) ||
+        { accountId: acctAttr || '', code: '', name: (labelCell.Value || '').trim() }
+    }
+    if (!matched) continue
+
+    for (const [colIdx, pid] of Array.from(colToProject.entries())) {
+      const raw = cells[colIdx]?.Value
+      if (raw == null || raw === '') continue
+      const amount = parseFloat(String(raw).replace(/,/g, ''))
+      if (!Number.isFinite(amount) || amount === 0) continue
+      const code = matched.code || matched.name   // fall back to the name as a stable key if code unknown
+      const key = `${pid}|${code}`
+      const existing = acc.get(key)
+      if (existing) existing.amount += amount
+      else acc.set(key, { project_id: pid, account_code: code, account_name: matched.name, amount })
+    }
+  }
+
+  const rows: CostRollupRow[] = Array.from(acc.values()).map(v => ({
+    project_id: v.project_id,
+    account_code: v.account_code,
+    account_name: v.account_name,
+    amount_ex_gst: Math.round(v.amount * 100) / 100,
+    bill_count: 0,                 // payroll-derived; not a count of bills
+    last_bill_date: reportEndDate,
+  }))
+
+  const byProject: Record<string, number> = {}
+  let totalAmount = 0
+  for (const r of rows) {
+    byProject[r.project_id] = Math.round(((byProject[r.project_id] || 0) + r.amount_ex_gst) * 100) / 100
+    totalAmount = Math.round((totalAmount + r.amount_ex_gst) * 100) / 100
+  }
+
+  return {
+    rows,
+    diag: {
+      accountsResolved: labourAccounts.map(a => ({ code: a.code, name: a.name })),
+      columnsMapped: colToProject.size,
+      rowsWritten: rows.length,
+      totalAmount,
+      byProject,
+    },
+  }
+}
+
 /**
  * Full sync — pulls everything for all mapped projects, replaces the cost cache.
  *
@@ -432,6 +633,10 @@ export async function runFullSync(
       .select('project_id, tracking_category_id, tracking_option_id, tracking_option_name')
     const projectByOptionId = new Map<string, string>()
     const projectByCatOptName = new Map<string, string>()
+    // Option NAME → projectId, for matching P&L report column headers (the report labels
+    // columns by option name, not UUID). And the shared tracking category for the P&L call.
+    const projectByOptionName = new Map<string, string>()
+    let trackingCategoryId: string | null = null
     for (const row of mappingRows || []) {
       projectByOptionId.set(row.tracking_option_id as string, row.project_id as string)
       const cat = row.tracking_category_id as string | null
@@ -439,6 +644,8 @@ export async function runFullSync(
       if (cat && name) {
         projectByCatOptName.set(`${cat}|${name.trim().toLowerCase()}`, row.project_id as string)
       }
+      if (name) projectByOptionName.set(name.trim().toLowerCase(), row.project_id as string)
+      if (cat && !trackingCategoryId) trackingCategoryId = cat
     }
     if (projectByOptionId.size === 0) {
       await finalize('ok', { bills_processed: 0, projects_updated: 0 })
@@ -447,6 +654,15 @@ export async function runFullSync(
 
     // Pull accounts (small — single page, no pagination)
     const accountByCode = await fetchAccounts(tokens.accessToken, tokens.tenantId)
+
+    // Resolve the production-labour accounts from the chart of accounts, using the SAME matcher
+    // the Costs-tab reconciliation reader uses (isLabourAccount) so the two can't drift.
+    const labourAccounts: Array<{ accountId: string; code: string; name: string }> = []
+    for (const acc of Array.from(accountByCode.values())) {
+      if (isLabourAccount(acc.Name)) {
+        labourAccounts.push({ accountId: acc.AccountID, code: acc.Code, name: acc.Name })
+      }
+    }
 
     // Compute the lookback window
     const since = new Date()
@@ -466,9 +682,82 @@ export async function runFullSync(
 
     const { rows: rollup, diagnostics } = aggregateCosts(transactions, projectByOptionId, accountByCode, projectByCatOptName)
 
+    // ── Production labour (separate GP-only path via the P&L report) ──────────
+    // Soft-fail: if this throws (most likely the accounting.reports.profitandloss.read scope
+    // hasn't been granted yet — Chris reconnects Xero once to add it) the materials rows above
+    // still flow. The reason is recorded in diagnostics.labour.error.
+    let labourRows: CostRollupRow[] = []
+    const labourDiag: LabourDiagnostics = {
+      reportFetched: false,
+      error: null,
+      accountsResolved: labourAccounts.map(a => ({ code: a.code, name: a.name })),
+      columnsMapped: 0,
+      rowsWritten: 0,
+      totalAmount: 0,
+      byProject: {},
+    }
+    if (labourAccounts.length > 0 && trackingCategoryId) {
+      try {
+        const report = await fetchProfitAndLoss(
+          tokens.accessToken, tokens.tenantId, trackingCategoryId, ymd(since), ymd(new Date()),
+        )
+        const parsed = parseLabourFromPnL(report, labourAccounts, projectByOptionName, ymd(new Date()))
+        labourRows = parsed.rows
+        Object.assign(labourDiag, parsed.diag, { reportFetched: true })
+      } catch (err) {
+        labourDiag.error = err instanceof Error ? err.message : 'labour_report_failed'
+      }
+    } else {
+      labourDiag.error = labourAccounts.length === 0 ? 'no_labour_accounts_in_coa' : 'no_tracking_category'
+    }
+
+    // If the labour pull soft-failed but we already stored labour on a prior run, carry those
+    // rows forward. Otherwise the wholesale per-project replace below would wipe labour and spike
+    // GP for an hour until the next cron — a confusing blip for a tool whose whole value is a
+    // trustworthy GP number. (No prior labour → nothing to carry; the pre-reconnect state stays
+    // materials-only as intended.)
+    if (!labourDiag.reportFetched && labourAccounts.length > 0) {
+      const labourCodes = labourAccounts.map(a => a.code).filter(Boolean)
+      const materialsProjects = Array.from(new Set(rollup.map(r => r.project_id)))
+      if (labourCodes.length > 0 && materialsProjects.length > 0) {
+        const { data: prior } = await supabaseAdmin
+          .from('fg_xero_project_costs')
+          .select('project_id, account_code, account_name, amount_ex_gst, bill_count, last_bill_date')
+          .in('project_id', materialsProjects)
+          .in('account_code', labourCodes)
+        labourRows = (prior || []).map(r => ({
+          project_id: r.project_id as string,
+          account_code: r.account_code as string,
+          account_name: r.account_name as string,
+          amount_ex_gst: Number(r.amount_ex_gst) || 0,
+          bill_count: (r.bill_count as number) ?? 0,
+          last_bill_date: (r.last_bill_date as string) ?? null,
+        }))
+        if (labourRows.length > 0) labourDiag.error = `${labourDiag.error ?? 'labour_report_failed'}; carried_forward_${labourRows.length}`
+      }
+    }
+    diagnostics.labour = labourDiag
+
+    // Merge materials + labour into one per-(project, account_code) payload. The two are
+    // disjoint by account (wages/super never appear on bills), but de-dupe defensively so a
+    // stray collision can't abort the UNIQUE(project_id, account_code) insert and lose materials.
+    const mergedByKey = new Map<string, CostRollupRow>()
+    for (const r of [...rollup, ...labourRows]) {
+      const key = `${r.project_id}|${r.account_code}`
+      const ex = mergedByKey.get(key)
+      if (ex) {
+        ex.amount_ex_gst = Math.round((ex.amount_ex_gst + r.amount_ex_gst) * 100) / 100
+        ex.bill_count += r.bill_count
+        if (r.last_bill_date && (!ex.last_bill_date || r.last_bill_date > ex.last_bill_date)) ex.last_bill_date = r.last_bill_date
+      } else {
+        mergedByKey.set(key, { ...r })
+      }
+    }
+    const allRows = Array.from(mergedByKey.values())
+
     // Replace-per-project: delete old rollup rows for any project we have new data for,
     // then insert the new rows.
-    const projectsWithNewData = new Set(rollup.map(r => r.project_id))
+    const projectsWithNewData = new Set(allRows.map(r => r.project_id))
     if (projectsWithNewData.size > 0) {
       await supabaseAdmin
         .from('fg_xero_project_costs')
@@ -476,8 +765,8 @@ export async function runFullSync(
         .in('project_id', Array.from(projectsWithNewData))
     }
 
-    if (rollup.length > 0) {
-      const insertPayload = rollup.map(r => ({
+    if (allRows.length > 0) {
+      const insertPayload = allRows.map(r => ({
         ...r,
         pulled_at: new Date().toISOString(),
       }))
@@ -489,6 +778,7 @@ export async function runFullSync(
       bills_processed: bills.length,
       spend_money_processed: spend.length,
       projects_updated: projectsWithNewData.size,
+      labour_rows: labourRows.length,
       diagnostics,
     }
     // Stash diagnostics in the run log's error_message field (it's null on success anyway)

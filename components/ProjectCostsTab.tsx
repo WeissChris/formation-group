@@ -111,7 +111,7 @@ export function ProjectCostsTab({
         <div>
           <h3 className="text-xs font-light tracking-widest uppercase text-fg-muted mb-1">Live Costs (Xero)</h3>
           <p className="text-2xs text-fg-muted">
-            GP-only · Cost-of-sales accounts only ·{' '}
+            GP-only · Direct job costs + production labour ·{' '}
             {data.last_pulled_at
               ? `Last sync ${new Date(data.last_pulled_at).toLocaleString('en-AU', { dateStyle: 'short', timeStyle: 'short' })}`
               : 'No sync data yet'}
@@ -305,9 +305,11 @@ export function ProjectCostsTab({
 
       {/* Footer note */}
       <p className="text-2xs text-fg-muted/80">
-        Only Xero accounts of class DIRECTCOSTS appear here. Operating expenses, director comp,
-        overheads — never queried, never displayed. If a bill is missing from a project, check
-        the bill in Xero has the right Project tracking option set.
+        Only direct job costs appear here: cost-of-sales accounts (materials, subbies, plant)
+        plus production wages and super, which post via payroll and are sourced from the Xero
+        profit and loss report. Operating expenses, director comp and overheads — never queried,
+        never displayed. If a cost is missing from a project, check the bill or pay run in Xero
+        has the right Project tracking option set.
       </p>
     </div>
   )
@@ -379,7 +381,11 @@ function CostRow({
     <tr className="hover:bg-fg-card/20 transition-colors">
       <td className="py-2 pr-3 text-fg-heading">
         {row.account_name}
-        <span className="text-2xs text-fg-muted/70 ml-2">{row.bill_count} bill{row.bill_count === 1 ? '' : 's'}</span>
+        <span className="text-2xs text-fg-muted/70 ml-2">
+          {isLabourAccount(row.account_name)
+            ? 'from payroll'
+            : `${row.bill_count} bill${row.bill_count === 1 ? '' : 's'}`}
+        </span>
       </td>
       <td className="py-2 px-3 text-right text-fg-muted tabular-nums">{formatCurrency(row.amount_ex_gst)}</td>
       <td className="py-2 px-3 text-right">

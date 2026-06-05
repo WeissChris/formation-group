@@ -7,7 +7,7 @@
 // (NOT Class — Class is only ASSET/EQUITY/EXPENSE/LIABILITY/REVENUE). These tests pin that.
 
 import { describe, it, expect } from 'vitest'
-import { aggregateCosts } from './xeroCostSync'
+import { aggregateCosts, parseLabourFromPnL } from './xeroCostSync'
 
 interface XeroLineItem {
   AccountCode?: string
@@ -204,5 +204,234 @@ describe('aggregateCosts — aggregation', () => {
     ])]
     const { rows } = aggregateCosts(txs, projects, accounts)
     expect(rows).toHaveLength(0)
+  })
+})
+
+// ── Production labour via the P&L report ─────────────────────────────────────
+// Production wages + super don't appear on bills (they post via payroll), so they come from
+// the Profit & Loss report broken down by the Project tracking category. CRITICAL GP-only
+// guardrail: parseLabourFromPnL must emit ONLY the two named production-labour accounts — never
+// income, other cost-of-sales, overheads, director comp, or the gross/net-profit summary rows.
+
+// Two resolved labour accounts (as runFullSync resolves them from the chart of accounts).
+const LABOUR_ACCOUNTS = [
+  { accountId: 'lab-wages', code: '477', name: 'Wages & Salaries - Production' },
+  { accountId: 'lab-super', code: '478', name: 'Superannuation - Production' },
+]
+// Option NAME (normalized) → projectId, matching the P&L column headers.
+const PROJECT_BY_OPTION_NAME = new Map([
+  ['45 beach rd.', '1'],
+  ['165 serpells road', '2'],
+])
+
+/** Build a realistic Xero P&L-by-tracking report: header columns are option names, with an
+ *  Income section, a Cost of Sales section (subbies + the two labour accounts), and an
+ *  Operating Expenses section (director comp). A trailing "Total" column to prove it's ignored. */
+function pnlReport() {
+  return {
+    Reports: [
+      {
+        Rows: [
+          {
+            RowType: 'Header',
+            Cells: [
+              { Value: '' },
+              { Value: '45 Beach Rd.' },
+              { Value: '165 Serpells Road' },
+              { Value: 'Total' },
+            ],
+          },
+          {
+            RowType: 'Section',
+            Title: 'Income',
+            Rows: [
+              {
+                RowType: 'Row',
+                Cells: [
+                  { Value: 'Sales', Attributes: [{ Id: 'account', Value: 'inc-1' }] },
+                  { Value: '100000.00' },
+                  { Value: '200000.00' },
+                  { Value: '300000.00' },
+                ],
+              },
+            ],
+          },
+          {
+            RowType: 'Section',
+            Title: 'Less Cost of Sales',
+            Rows: [
+              {
+                RowType: 'Row',
+                Cells: [
+                  { Value: 'Subcontractors', Attributes: [{ Id: 'account', Value: 'cogs-sub' }] },
+                  { Value: '30000.00' },
+                  { Value: '40000.00' },
+                  { Value: '70000.00' },
+                ],
+              },
+              {
+                RowType: 'Row',
+                Cells: [
+                  { Value: 'Wages & Salaries - Production', Attributes: [{ Id: 'account', Value: 'lab-wages' }] },
+                  { Value: '9,537.00' },   // thousands separator — must be parsed
+                  { Value: '12000.00' },
+                  { Value: '21537.00' },
+                ],
+              },
+              {
+                RowType: 'Row',
+                Cells: [
+                  { Value: 'Superannuation - Production', Attributes: [{ Id: 'account', Value: 'lab-super' }] },
+                  { Value: '1282.00' },
+                  { Value: '1500.00' },
+                  { Value: '2782.00' },
+                ],
+              },
+            ],
+          },
+          {
+            RowType: 'Section',
+            Title: 'Operating Expenses',
+            Rows: [
+              {
+                RowType: 'Row',
+                Cells: [
+                  { Value: 'Director Remuneration', Attributes: [{ Id: 'account', Value: 'ovh-dir' }] },
+                  { Value: '50000.00' },
+                  { Value: '60000.00' },
+                  { Value: '110000.00' },
+                ],
+              },
+            ],
+          },
+          {
+            RowType: 'SummaryRow',
+            Cells: [
+              { Value: 'Net Profit' },
+              { Value: '9181.00' },
+              { Value: '86500.00' },
+              { Value: '95681.00' },
+            ],
+          },
+        ],
+      },
+    ],
+  }
+}
+
+describe('parseLabourFromPnL — GP-only labour from the P&L (HARD RULE)', () => {
+  it('emits ONLY the two production-labour accounts, mapped to the right project columns', () => {
+    const { rows } = parseLabourFromPnL(pnlReport(), LABOUR_ACCOUNTS, PROJECT_BY_OPTION_NAME, '2026-06-05')
+    // 2 labour accounts × 2 mapped projects = 4 rows
+    expect(rows).toHaveLength(4)
+
+    const wagesBeach = rows.find(r => r.account_code === '477' && r.project_id === '1')
+    expect(wagesBeach?.amount_ex_gst).toBe(9537)        // "9,537.00" parsed
+    expect(wagesBeach?.account_name).toBe('Wages & Salaries - Production')
+    expect(wagesBeach?.bill_count).toBe(0)               // payroll-derived, not a bill count
+    expect(wagesBeach?.last_bill_date).toBe('2026-06-05')
+
+    expect(rows.find(r => r.account_code === '477' && r.project_id === '2')?.amount_ex_gst).toBe(12000)
+    expect(rows.find(r => r.account_code === '478' && r.project_id === '1')?.amount_ex_gst).toBe(1282)
+    expect(rows.find(r => r.account_code === '478' && r.project_id === '2')?.amount_ex_gst).toBe(1500)
+  })
+
+  it('NEVER emits income, other cost-of-sales, overheads, or summary rows (GP-only)', () => {
+    const { rows } = parseLabourFromPnL(pnlReport(), LABOUR_ACCOUNTS, PROJECT_BY_OPTION_NAME, '2026-06-05')
+    const names = rows.map(r => r.account_name.toLowerCase())
+    expect(names.some(n => n.includes('sales'))).toBe(false)
+    expect(names.some(n => n.includes('subcontractor'))).toBe(false)
+    expect(names.some(n => n.includes('director'))).toBe(false)
+    expect(names.some(n => n.includes('net profit'))).toBe(false)
+    // Every emitted row is one of the two whitelisted accounts.
+    expect(rows.every(r => r.account_code === '477' || r.account_code === '478')).toBe(true)
+  })
+
+  it('ignores unmapped columns (Total / Unassigned never land against a project)', () => {
+    const { rows, diag } = parseLabourFromPnL(pnlReport(), LABOUR_ACCOUNTS, PROJECT_BY_OPTION_NAME, '2026-06-05')
+    expect(diag.columnsMapped).toBe(2)               // only the two project columns, not "Total"
+    expect(rows.every(r => r.project_id === '1' || r.project_id === '2')).toBe(true)
+  })
+
+  it('reports per-project and total diagnostics', () => {
+    const { diag } = parseLabourFromPnL(pnlReport(), LABOUR_ACCOUNTS, PROJECT_BY_OPTION_NAME, '2026-06-05')
+    expect(diag.rowsWritten).toBe(4)
+    expect(diag.totalAmount).toBe(24319)             // 9537 + 12000 + 1282 + 1500
+    expect(diag.byProject['1']).toBe(10819)          // 9537 + 1282
+    expect(diag.byProject['2']).toBe(13500)          // 12000 + 1500
+    expect(diag.accountsResolved).toHaveLength(2)
+  })
+
+  it('matches by account-id attribute even when the report label differs from the CoA name', () => {
+    // Report shows a different display label, but the account-id attribute identifies it.
+    const report = {
+      Reports: [{
+        Rows: [
+          { RowType: 'Header', Cells: [{ Value: '' }, { Value: '45 Beach Rd.' }] },
+          {
+            RowType: 'Section', Title: 'Less Cost of Sales', Rows: [
+              {
+                RowType: 'Row',
+                Cells: [
+                  { Value: 'Production Payroll', Attributes: [{ Id: 'account', Value: 'lab-wages' }] },
+                  { Value: '5000.00' },
+                ],
+              },
+            ],
+          },
+        ],
+      }],
+    }
+    const { rows } = parseLabourFromPnL(report, LABOUR_ACCOUNTS, PROJECT_BY_OPTION_NAME, '2026-06-05')
+    expect(rows).toHaveLength(1)
+    // Canonicalised to the chart-of-accounts name so the reconciliation reader recognises it.
+    expect(rows[0].account_name).toBe('Wages & Salaries - Production')
+    expect(rows[0].account_code).toBe('477')
+    expect(rows[0].amount_ex_gst).toBe(5000)
+  })
+
+  it('matches by name when the account-id attribute is absent', () => {
+    const report = {
+      Reports: [{
+        Rows: [
+          { RowType: 'Header', Cells: [{ Value: '' }, { Value: '45 Beach Rd.' }] },
+          {
+            RowType: 'Section', Title: 'Less Cost of Sales', Rows: [
+              { RowType: 'Row', Cells: [{ Value: 'Superannuation - Production' }, { Value: '900.00' }] },
+            ],
+          },
+        ],
+      }],
+    }
+    const { rows } = parseLabourFromPnL(report, LABOUR_ACCOUNTS, PROJECT_BY_OPTION_NAME, '2026-06-05')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].account_code).toBe('478')
+    expect(rows[0].amount_ex_gst).toBe(900)
+  })
+
+  it('skips zero-value cells (no row for a project with no labour)', () => {
+    const report = {
+      Reports: [{
+        Rows: [
+          { RowType: 'Header', Cells: [{ Value: '' }, { Value: '45 Beach Rd.' }, { Value: '165 Serpells Road' }] },
+          {
+            RowType: 'Section', Title: 'Less Cost of Sales', Rows: [
+              {
+                RowType: 'Row',
+                Cells: [
+                  { Value: 'Wages & Salaries - Production', Attributes: [{ Id: 'account', Value: 'lab-wages' }] },
+                  { Value: '0.00' },       // Beach has no labour yet → no row
+                  { Value: '3000.00' },    // Serpells does
+                ],
+              },
+            ],
+          },
+        ],
+      }],
+    }
+    const { rows } = parseLabourFromPnL(report, LABOUR_ACCOUNTS, PROJECT_BY_OPTION_NAME, '2026-06-05')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].project_id).toBe('2')
+    expect(rows[0].amount_ex_gst).toBe(3000)
   })
 })

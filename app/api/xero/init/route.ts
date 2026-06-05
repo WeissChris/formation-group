@@ -33,12 +33,14 @@ export async function GET(_request: NextRequest) {
     client_id: clientId,
     redirect_uri: redirectUri,
     // New granular scopes (apps created after 2 March 2026 use these, not the broad scopes).
-    // All three are needed by the cost puller (xeroCostSync.ts):
-    //   accounting.settings.read        — /Accounts endpoint (classify DIRECTCOSTS vs EXPENSE)
-    //   accounting.invoices.read        — /Invoices?Type=ACCPAY (Bills from suppliers)
-    //   accounting.banktransactions.read — /BankTransactions?Type=SPEND (Spend Money)
-    //   offline_access                  — refresh tokens for unattended hourly cron
-    scope: 'accounting.settings.read accounting.invoices.read accounting.banktransactions.read offline_access',
+    // All are needed by the cost puller (xeroCostSync.ts):
+    //   accounting.settings.read              — /Accounts (classify DIRECTCOSTS vs EXPENSE; resolve labour accounts)
+    //   accounting.invoices.read              — /Invoices?Type=ACCPAY (Bills from suppliers)
+    //   accounting.banktransactions.read      — /BankTransactions?Type=SPEND (Spend Money)
+    //   accounting.reports.profitandloss.read — /Reports/ProfitAndLoss by tracking (production
+    //                                           wages + super, which post via payroll not bills)
+    //   offline_access                        — refresh tokens for unattended hourly cron
+    scope: 'accounting.settings.read accounting.invoices.read accounting.banktransactions.read accounting.reports.profitandloss.read offline_access',
     state,
   })
 
