@@ -16,7 +16,7 @@ import {
 } from '@/lib/seed'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { downloadBackup, restoreFromBackup } from '@/lib/backup'
-import { getXeroAuthUrl, getXeroStatus, disconnectXero } from '@/lib/xero'
+import { getXeroAuthUrl, getXeroStatus, disconnectXero, triggerXeroSync } from '@/lib/xero'
 import { XeroMappingSection } from '@/components/XeroMappingSection'
 import { Check } from 'lucide-react'
 
@@ -28,6 +28,7 @@ export default function SettingsPage() {
   const [synced, setSynced] = useState(false)
   const [lastBackupText, setLastBackupText] = useState('No backup recorded')
   const [xeroConnected, setXeroConnected] = useState(false)
+  const [xeroSyncing, setXeroSyncing] = useState(false)
   const [xeroOrgName, setXeroOrgName] = useState('')
   const [xeroConfigured, setXeroConfigured] = useState(true) // assume yes until status proves otherwise
   const supabaseConnected = isSupabaseConfigured()
@@ -345,13 +346,24 @@ export default function SettingsPage() {
         {xeroConnected ? (
           <div className="flex items-center gap-3">
             <button
-              onClick={() => {
-                // TODO: trigger sync
-                alert('Sync coming soon — connecting Xero data to projects')
+              onClick={async () => {
+                setXeroSyncing(true)
+                try {
+                  const result = await triggerXeroSync()
+                  if (result.ok) {
+                    const labour = result.labour_rows ? `, ${result.labour_rows} labour rows` : ''
+                    window.alert(`Sync complete: ${result.projects_updated} project(s) updated${labour}.`)
+                  } else {
+                    window.alert(`Sync failed: ${result.error || 'unknown error'}`)
+                  }
+                } finally {
+                  setXeroSyncing(false)
+                }
               }}
-              className="px-4 py-2 bg-fg-dark text-white text-xs font-light tracking-wide uppercase hover:bg-fg-darker transition-colors"
+              disabled={xeroSyncing}
+              className="px-4 py-2 bg-fg-dark text-white text-xs font-light tracking-wide uppercase hover:bg-fg-darker transition-colors disabled:opacity-50"
             >
-              Sync Now
+              {xeroSyncing ? 'Syncing…' : 'Sync Now'}
             </button>
             <button
               onClick={async () => {

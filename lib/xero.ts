@@ -137,6 +137,9 @@ export interface SyncResult {
   bills_processed: number
   spend_money_processed?: number
   projects_updated: number
+  /** Production-labour rows written from the P&L path (0 before Xero is reconnected with the
+   *  accounting.reports.profitandloss.read scope). */
+  labour_rows?: number
   error?: string
 }
 
