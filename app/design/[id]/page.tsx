@@ -7,8 +7,9 @@ import { loadProposals, saveProposal, deleteProposal, generateRevenueFromProposa
 import { upsertProposal } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { getProposalPhases, syncLegacyPhaseFields, phasesTotal, makeBlankPhase, defaultPhaseDescription, defaultPhaseOutcome } from '@/lib/proposalPhases'
+import { requestSendProposal, sendErrorMessage } from '@/lib/emailClient'
 import type { DesignProposal, ProposalContentBlock, ProposalPhase, DesignProject } from '@/types'
-import { Trash2, Copy, Check, Pencil } from 'lucide-react'
+import { Trash2, Copy, Check, Pencil, Mail } from 'lucide-react'
 import ProposalPreview from '@/components/ProposalPreview'
 import ContentBlockEditor from '@/components/ContentBlockEditor'
 
@@ -24,6 +25,8 @@ export default function ProposalDetailPage() {
   const [contentBlocks, setContentBlocks] = useState<ProposalContentBlock[]>([])
   const [blocksSaved, setBlocksSaved] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [sentMsg, setSentMsg] = useState('')
 
   useEffect(() => {
     const p = loadProposals().find(p => p.id === id)
@@ -76,6 +79,38 @@ export default function ProposalDetailPage() {
     navigator.clipboard.writeText(acceptanceUrl)
     setLinkCopied(true)
     setTimeout(() => setLinkCopied(false), 2000)
+  }
+
+  // Email the proposal to the client. Captures the email inline if it's missing, then pushes
+  // the proposal to Supabase BEFORE sending (the client opens the link on a different device, so
+  // the public page must be able to read it from the server), then sends and marks it sent.
+  const handleEmailToClient = async () => {
+    let email = (proposal.clientEmail || '').trim()
+    if (!email) {
+      email = (window.prompt('Send to which client email address?') || '').trim()
+      if (!email) return
+    }
+    if (!window.confirm(`Email this proposal to ${email}?`)) return
+    setSending(true)
+    try {
+      const toSend: DesignProposal = {
+        ...proposal,
+        clientEmail: email,
+        status: proposal.status === 'draft' ? 'sent' : proposal.status,
+      }
+      saveProposal(toSend)
+      setProposal(toSend)
+      await upsertProposal(toSend)           // ensure the server has it before the client clicks
+      const result = await requestSendProposal(toSend)
+      if (result.ok) {
+        setSentMsg(`Sent to ${email}`)
+        setTimeout(() => setSentMsg(''), 6000)
+      } else {
+        window.alert(sendErrorMessage(result.error))
+      }
+    } finally {
+      setSending(false)
+    }
   }
 
   const handleUpdateStatus = (status: DesignProposal['status']) => {
@@ -220,6 +255,19 @@ export default function ProposalDetailPage() {
             {copied ? 'Copied!' : 'Copy acceptance link'}
           </button>
         )}
+
+        {(proposal.status === 'draft' || proposal.status === 'sent') && (
+          <button
+            onClick={handleEmailToClient}
+            disabled={sending}
+            className="flex items-center gap-2 px-4 py-1.5 bg-fg-dark text-white/90 text-xs font-light tracking-architectural uppercase hover:bg-fg-darker transition-colors disabled:opacity-50"
+          >
+            <Mail className="w-3 h-3" />
+            {sending ? 'Sending…' : proposal.status === 'sent' ? 'Resend to client' : 'Email to client'}
+          </button>
+        )}
+
+        {sentMsg && <span className="text-xs font-light text-emerald-600">{sentMsg}</span>}
 
         {proposal.acceptedAt && (
           <p className="text-xs font-light text-fg-muted">

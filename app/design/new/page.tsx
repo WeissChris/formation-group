@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { saveProposal } from '@/lib/storage'
+import { upsertProposal } from '@/lib/storageAsync'
 import { syncLegacyPhaseFields, phasesTotal, makeBlankPhase, DEFAULT_PHASE_TITLES, defaultPhaseDescription, defaultPhaseOutcome } from '@/lib/proposalPhases'
+import { requestSendProposal, sendErrorMessage } from '@/lib/emailClient'
 import { formatCurrency, generateId } from '@/lib/utils'
 import type { DesignProposal, ProposalContentBlock, ProposalPhase } from '@/types'
 import { Trash2 } from 'lucide-react'
@@ -115,14 +116,26 @@ The following outlines our proposed design process and associated fees.`
   const handleSaveDraft = () => {
     if (!validate()) return
     const p = buildProposal('draft')
-    saveProposal(p)
+    void upsertProposal(p)   // local (immediate) + Supabase (background)
     router.push(`/design/${p.id}`)
   }
 
-  const handleSend = () => {
+  // Save & Send: emails the client a link to the proposal. The proposal must reach Supabase
+  // BEFORE the email goes out, because the client opens the link on their own device (no local
+  // copy) — so we await the upsert, then send.
+  const handleSend = async () => {
     if (!validate()) return
+    if (!form.clientEmail.trim()) {
+      setErrors(e => ({ ...e, clientEmail: 'Add a client email to send' }))
+      window.alert('Add a client email address to send the proposal (or use Save as Draft).')
+      return
+    }
     const p = buildProposal('sent')
-    saveProposal(p)
+    await upsertProposal(p)
+    const result = await requestSendProposal(p)
+    if (!result.ok) {
+      window.alert(`Saved, but the email couldn’t be sent: ${sendErrorMessage(result.error)}\n\nYou can resend from the proposal page.`)
+    }
     router.push(`/design/${p.id}`)
   }
 
@@ -170,7 +183,7 @@ The following outlines our proposed design process and associated fees.`
             <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Client</p>
             <Field label="Client Name" value={form.clientName} onChange={v => set('clientName', v)} error={errors.clientName} placeholder="e.g. Smith" />
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Client Email" value={form.clientEmail} onChange={v => set('clientEmail', v)} placeholder="client@example.com" type="email" />
+              <Field label="Client Email" value={form.clientEmail} onChange={v => set('clientEmail', v)} error={errors.clientEmail} placeholder="client@example.com" type="email" />
               <Field label="Client Phone" value={form.clientPhone} onChange={v => set('clientPhone', v)} placeholder="0400 000 000" />
             </div>
             <Field label="Project Address" value={form.projectAddress} onChange={v => set('projectAddress', v)} placeholder="123 Example St" />
