@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { loadProposals, saveProposal } from '@/lib/storage'
+import { getProposalPhases, phasesTotal } from '@/lib/proposalPhases'
 import { formatCurrency } from '@/lib/utils'
 import type { DesignProposal } from '@/types'
 import { Plus, PenLine } from 'lucide-react'
@@ -78,8 +79,8 @@ export default function DesignPage() {
   const accepted = proposals.filter(p => p.status === 'accepted')
   const pending = proposals.filter(p => p.status === 'sent' || p.status === 'pending')
   const closed = proposals.filter(p => p.status === 'accepted' || p.status === 'lost' || p.status === 'declined')
-  const totalAcceptedValue = accepted.reduce((s, p) => s + (p.phase1Fee + p.phase2Fee + (p.phase3Fee ?? 0)) * 1.1, 0)
-  const totalPipelineValue = pending.reduce((s, p) => s + (p.phase1Fee + p.phase2Fee + (p.phase3Fee ?? 0)) * 1.1, 0)
+  const totalAcceptedValue = accepted.reduce((s, p) => s + phasesTotal(getProposalPhases(p)) * 1.1, 0)
+  const totalPipelineValue = pending.reduce((s, p) => s + phasesTotal(getProposalPhases(p)) * 1.1, 0)
   const winRate = closed.length > 0 ? Math.round((accepted.length / closed.length) * 100) : null
   const avgFee = accepted.length > 0
     ? Math.round(totalAcceptedValue / accepted.length)
@@ -99,7 +100,7 @@ export default function DesignPage() {
   }
 
   const renderProposalRow = (p: DesignProposal, muted = false) => {
-    const total = p.phase1Fee + p.phase2Fee + (p.phase3Fee ?? 0)
+    const total = phasesTotal(getProposalPhases(p))
     const showExpiryWarning = p.status === 'sent' || p.status === 'pending'
     const updated = timeAgo(p.updatedAt || p.createdAt)
 

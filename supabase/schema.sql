@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS fg_proposals (
   phase2_scope TEXT,
   phase3_fee NUMERIC DEFAULT 0,
   phase3_scope TEXT,
+  phases JSONB DEFAULT '[]',   -- variable-length editable phase list (source of truth; see migration 04)
   valid_until TEXT,
   notes TEXT,
   acceptance_token TEXT UNIQUE,

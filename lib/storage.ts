@@ -1,5 +1,6 @@
 ﻿import type { Project, WeeklyRevenue, DesignProposal, Estimate, GanttEntry, WeeklyActual, ProgressPaymentStage, DesignProject, ProgressClaim, TakeoffData, TakeoffTemplate, ProposalInvoiceStage, SubcontractorPackage } from '@/types'
 import { notify } from './broadcast'
+import { getProposalPhases } from './proposalPhases'
 
 // IndexedDB backup - runs silently after every localStorage write
 async function backupToIndexedDB(key: string, data: unknown[]): Promise<void> {
@@ -387,51 +388,41 @@ export function deleteTakeoffTemplate(templateId: string): void {
 export function generateInvoiceStages(proposal: DesignProposal): ProposalInvoiceStage[] {
   const stages: ProposalInvoiceStage[] = []
 
-  // Phase 1: 50% deposit + 50% balance
-  if (proposal.phase1Fee > 0) {
-    const deposit = Math.round(proposal.phase1Fee * 0.5)
-    const balance = proposal.phase1Fee - deposit // handles odd numbers
-    stages.push({
-      id: `${proposal.id}-p1-deposit`,
-      name: 'Phase 1 — Concept Design (Deposit)',
-      phase: 1,
-      percentage: 50,
-      amount: deposit,
-      status: 'not_sent',
-    })
-    stages.push({
-      id: `${proposal.id}-p1-balance`,
-      name: 'Phase 1 — Concept Design (Balance)',
-      phase: 1,
-      percentage: 50,
-      amount: balance,
-      status: 'not_sent',
-    })
-  }
-
-  // Phase 2: 100%
-  if (proposal.phase2Fee > 0) {
-    stages.push({
-      id: `${proposal.id}-p2`,
-      name: 'Phase 2 — Design Development',
-      phase: 2,
-      percentage: 100,
-      amount: proposal.phase2Fee,
-      status: 'not_sent',
-    })
-  }
-
-  // Phase 3: 100% — only if exists
-  if (proposal.phase3Fee && proposal.phase3Fee > 0) {
-    stages.push({
-      id: `${proposal.id}-p3`,
-      name: 'Phase 3 — Administration',
-      phase: 3,
-      percentage: 100,
-      amount: proposal.phase3Fee,
-      status: 'not_sent',
-    })
-  }
+  // One billing stage (or a 50/50 deposit + balance pair) per phase. Iterates the variable-length
+  // phase list — getProposalPhases derives it from the legacy phase1/2/3 fields for older proposals.
+  getProposalPhases(proposal).forEach((phase, i) => {
+    if (!(phase.fee > 0)) return
+    const ordinal = i + 1
+    if (phase.depositSplit) {
+      const deposit = Math.round(phase.fee * 0.5)
+      const balance = phase.fee - deposit // handles odd numbers
+      stages.push({
+        id: `${proposal.id}-p${ordinal}-deposit`,
+        name: `Phase ${ordinal} — ${phase.title} (Deposit)`,
+        phase: ordinal,
+        percentage: 50,
+        amount: deposit,
+        status: 'not_sent',
+      })
+      stages.push({
+        id: `${proposal.id}-p${ordinal}-balance`,
+        name: `Phase ${ordinal} — ${phase.title} (Balance)`,
+        phase: ordinal,
+        percentage: 50,
+        amount: balance,
+        status: 'not_sent',
+      })
+    } else {
+      stages.push({
+        id: `${proposal.id}-p${ordinal}`,
+        name: `Phase ${ordinal} — ${phase.title}`,
+        phase: ordinal,
+        percentage: 100,
+        amount: phase.fee,
+        status: 'not_sent',
+      })
+    }
+  })
 
   return stages
 }
@@ -457,78 +448,48 @@ export function generateRevenueFromProposal(proposal: DesignProposal): void {
     return result
   }
 
-  // Phase 1: 50% deposit on acceptance week, 50% balance ~6 weeks later
-  if (proposal.phase1Fee > 0) {
-    const depositWeek = nextFriday(acceptedDate)
-    const depositAmount = proposal.phase1Fee * 0.5
+  // Walk the phases in order, laying each onto the forecast at a running offset. A deposit-split
+  // phase bills 50% on its week + 50% six weeks later and consumes a 12-week slot; a single-stage
+  // phase bills 100% and consumes a 6-week slot. Zero-fee phases consume their slot but add no
+  // entry. This reproduces the original phase-1-deposit / phase-2 +12wk / phase-3 +18wk timing and
+  // extends to any number of phases. (getProposalPhases derives the list for legacy proposals.)
+  let dayOffset = 0
+  let weekNumber = 0
+  const entryAt = (offsetDays: number, suffix: string, amount: number, isDeposit: boolean, note: string) => {
+    const d = new Date(acceptedDate)
+    d.setDate(d.getDate() + offsetDays)
+    weekNumber += 1
     entries.push({
-      id: `design-${proposal.id}-p1-deposit`,
+      id: `design-${proposal.id}-${suffix}`,
       projectId: `design-${proposal.id}`,
       projectName: proposal.clientName,
       entity: 'design',
-      weekEnding: depositWeek.toISOString().split('T')[0],
-      weekNumber: 1,
-      plannedRevenue: depositAmount,
+      weekEnding: nextFriday(d).toISOString().split('T')[0],
+      weekNumber,
+      plannedRevenue: amount,
       actualInvoiced: 0,
-      isDeposit: true,
-      notes: `Phase 1 deposit (50%) — ${proposal.clientName}`,
-    })
-
-    // Phase 1 balance: 6 weeks after acceptance
-    const phase1BalanceDate = new Date(acceptedDate)
-    phase1BalanceDate.setDate(phase1BalanceDate.getDate() + 42)
-    const phase1BalanceWeek = nextFriday(phase1BalanceDate)
-    entries.push({
-      id: `design-${proposal.id}-p1-balance`,
-      projectId: `design-${proposal.id}`,
-      projectName: proposal.clientName,
-      entity: 'design',
-      weekEnding: phase1BalanceWeek.toISOString().split('T')[0],
-      weekNumber: 2,
-      plannedRevenue: depositAmount,
-      actualInvoiced: 0,
-      isDeposit: false,
-      notes: `Phase 1 balance — ${proposal.clientName}`,
+      isDeposit,
+      notes: note,
     })
   }
 
-  // Phase 2: 100% on completion, ~12 weeks after acceptance
-  if (proposal.phase2Fee > 0) {
-    const phase2Date = new Date(acceptedDate)
-    phase2Date.setDate(phase2Date.getDate() + 84)
-    const phase2Week = nextFriday(phase2Date)
-    entries.push({
-      id: `design-${proposal.id}-p2`,
-      projectId: `design-${proposal.id}`,
-      projectName: proposal.clientName,
-      entity: 'design',
-      weekEnding: phase2Week.toISOString().split('T')[0],
-      weekNumber: 3,
-      plannedRevenue: proposal.phase2Fee,
-      actualInvoiced: 0,
-      isDeposit: false,
-      notes: `Phase 2 — ${proposal.clientName}`,
-    })
-  }
-
-  // Phase 3: 100% on completion, ~18 weeks after acceptance
-  if (proposal.phase3Fee && proposal.phase3Fee > 0) {
-    const phase3Date = new Date(acceptedDate)
-    phase3Date.setDate(phase3Date.getDate() + 126) // 18 weeks
-    const phase3Week = nextFriday(phase3Date)
-    entries.push({
-      id: `design-${proposal.id}-p3`,
-      projectId: `design-${proposal.id}`,
-      projectName: proposal.clientName,
-      entity: 'design',
-      weekEnding: phase3Week.toISOString().split('T')[0],
-      weekNumber: 4,
-      plannedRevenue: proposal.phase3Fee,
-      actualInvoiced: 0,
-      isDeposit: false,
-      notes: `Phase 3 — ${proposal.clientName}`,
-    })
-  }
+  getProposalPhases(proposal).forEach((phase, i) => {
+    const ordinal = i + 1
+    const hasFee = phase.fee > 0
+    if (phase.depositSplit) {
+      if (hasFee) {
+        const half = phase.fee * 0.5
+        entryAt(dayOffset, `p${ordinal}-deposit`, half, true, `${phase.title} deposit (50%) — ${proposal.clientName}`)
+        entryAt(dayOffset + 42, `p${ordinal}-balance`, half, false, `${phase.title} balance — ${proposal.clientName}`)
+      }
+      dayOffset += 84
+    } else {
+      if (hasFee) {
+        entryAt(dayOffset, `p${ordinal}`, phase.fee, false, `${phase.title} — ${proposal.clientName}`)
+      }
+      dayOffset += 42
+    }
+  })
 
   const merged = [...filtered, ...entries]
   localStorage.setItem('fg_revenue', JSON.stringify(merged))

@@ -1,15 +1,12 @@
 import { formatCurrency } from '@/lib/utils'
+import type { ProposalPhase } from '@/types'
+import { defaultPhaseDescription, defaultPhaseOutcome, phasesTotal } from '@/lib/proposalPhases'
 
 interface Props {
   clientName: string
   projectAddress: string
   introText?: string
-  phase1Scope: string
-  phase1Fee: number
-  phase2Scope: string
-  phase2Fee: number
-  phase3Scope?: string
-  phase3Fee?: number
+  phases: ProposalPhase[]
   validUntil: string
   welcomeVideoUrl?: string
   processVideoUrl?: string
@@ -111,22 +108,12 @@ function DeliverablesBox({ items }: { items: string[] }) {
 
 export default function ProposalPreview({
   clientName, projectAddress, introText,
-  phase1Scope, phase1Fee,
-  phase2Scope, phase2Fee,
-  phase3Scope, phase3Fee,
+  phases,
   validUntil,
   welcomeVideoUrl,
   processVideoUrl,
 }: Props) {
-  const total = phase1Fee + phase2Fee + (phase3Fee ?? 0)
-
-  const phases = [
-    { num: 1, label: 'Phase 1', title: 'Concept / Schematic Design', scope: phase1Scope, fee: phase1Fee },
-    { num: 2, label: 'Phase 2', title: 'Design Development', scope: phase2Scope, fee: phase2Fee },
-    ...(phase3Scope && phase3Fee
-      ? [{ num: 3, label: 'Phase 3', title: 'Administration', scope: phase3Scope, fee: phase3Fee }]
-      : []),
-  ]
+  const total = phasesTotal(phases)
 
   const defaultIntro = `Thank you for the opportunity to meet on site and discuss your project.\n\nFrom our initial consultation, it's clear there is a strong opportunity to reshape the landscape into a highly resolved, functional, and visually cohesive environment.\n\nThe following outlines our proposed design process and associated fees.`
   const displayIntro = introText || defaultIntro
@@ -137,18 +124,6 @@ export default function ProposalPreview({
     : firstName.length === 2
       ? `Hi ${firstName[0]},`
       : `Hi ${clientName || 'there'},`
-
-  const phaseDescriptions = [
-    'This stage focuses on establishing the overall vision and spatial layout of the project. We explore how the landscape will function, how key elements are positioned, and how the space will feel.',
-    'During this stage, the concept is refined and resolved into a fully considered design. We work through how each element comes together, finalising layouts, levels, materials, and key selections.',
-    'This stage translates the resolved design into detailed construction drawings and specifications. These documents provide clear instruction for construction, ensuring all elements are built accurately and consistently.',
-  ]
-
-  const outcomes = [
-    'A clear and cohesive design direction that defines the layout, functionality, and overall aesthetic of the project.',
-    'A resolved and coordinated design with all key elements, materials, and levels clearly defined and ready for construction documentation.',
-    'A comprehensive set of drawings and documentation that enables the project to be accurately priced and constructed without ambiguity.',
-  ]
 
   return (
     <div className="border border-fg-border overflow-hidden bg-white">
@@ -248,11 +223,11 @@ export default function ProposalPreview({
             concept through to construction.
           </p>
           <div className="space-y-4">
-            {phases.map((phase) => (
-              <div key={phase.num}>
-                <ChevronBadge number={phase.num} />
+            {phases.map((phase, i) => (
+              <div key={phase.id}>
+                <ChevronBadge number={i + 1} />
                 <div className="mt-1 ml-1">
-                  <p className="text-xs font-medium" style={{ color: HEADING }}>{phase.label}</p>
+                  <p className="text-xs font-medium" style={{ color: HEADING }}>Phase {i + 1}</p>
                   <p className="text-xs font-light" style={{ color: MUTED }}>{phase.title}</p>
                 </div>
               </div>
@@ -272,15 +247,17 @@ export default function ProposalPreview({
       {/* ── PHASE DETAIL PAGES ── */}
       {phases.map((phase, i) => {
         const deliverables = scopeToPoints(phase.scope)
+        const description = phase.description ?? defaultPhaseDescription(i)
+        const outcome = phase.outcome ?? defaultPhaseOutcome(i)
         return (
-          <div key={phase.num} className="border-t p-8" style={{ borderColor: BORDER }}>
+          <div key={phase.id} className="border-t p-8" style={{ borderColor: BORDER }}>
             <h3 className="font-light mb-3" style={{ fontSize: 20, color: HEADING }}>
-              {phase.label} – {phase.title}
+              Phase {i + 1} – {phase.title}
             </h3>
 
-            {deliverables.length > 0 && (
+            {description && (
               <p className="text-xs font-light leading-relaxed mb-6" style={{ color: BODY }}>
-                {phaseDescriptions[i]}
+                {description}
               </p>
             )}
 
@@ -297,12 +274,14 @@ export default function ProposalPreview({
                 )}
               </div>
               {/* Right: Outcome */}
-              <div className="flex flex-col justify-start pt-1">
-                <h4 className="text-sm font-light mb-3" style={{ color: HEADING }}>Outcome</h4>
-                <p className="text-xs font-light leading-relaxed" style={{ color: BODY }}>
-                  {outcomes[i] || outcomes[0]}
-                </p>
-              </div>
+              {outcome && (
+                <div className="flex flex-col justify-start pt-1">
+                  <h4 className="text-sm font-light mb-3" style={{ color: HEADING }}>Outcome</h4>
+                  <p className="text-xs font-light leading-relaxed" style={{ color: BODY }}>
+                    {outcome}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         )
@@ -317,14 +296,14 @@ export default function ProposalPreview({
         <div className="grid grid-cols-2 gap-8">
           {/* Left: Fee cards */}
           <div className="space-y-3">
-            {phases.map((phase) => (
+            {phases.map((phase, i) => (
               <div
-                key={phase.num}
+                key={phase.id}
                 className="border-l-4 bg-white p-4 shadow-sm"
                 style={{ borderLeftColor: BORDER, borderTop: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}
               >
                 <p className="text-sm font-light" style={{ color: HEADING }}>
-                  {phase.label} – {phase.title}
+                  Phase {i + 1} – {phase.title}
                 </p>
                 <p className="text-xs font-light mt-0.5" style={{ color: MUTED }}>
                   {formatCurrency(phase.fee)} + GST
@@ -343,39 +322,30 @@ export default function ProposalPreview({
               Fees are invoiced in accordance with the following schedule:
             </p>
             <div className="space-y-3">
-              <div>
-                <p className="text-white text-xs font-semibold mb-1">Phase 1 – Concept / Schematic Design</p>
-                <ul className="space-y-0.5">
-                  <li className="flex items-start gap-2">
-                    <span className="text-white/60 mt-1 text-[5px]">●</span>
-                    <span className="text-white/80 text-xs font-light">50% deposit prior to commencement</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-white/60 mt-1 text-[5px]">●</span>
-                    <span className="text-white/80 text-xs font-light">50% balance upon completion of Phase 1</span>
-                  </li>
-                </ul>
-              </div>
-              <div>
-                <p className="text-white text-xs font-semibold mb-1">Phase 2 – Design Development</p>
-                <ul className="space-y-0.5">
-                  <li className="flex items-start gap-2">
-                    <span className="text-white/60 mt-1 text-[5px]">●</span>
-                    <span className="text-white/80 text-xs font-light">100% invoiced upon completion</span>
-                  </li>
-                </ul>
-              </div>
-              {phase3Fee ? (
-                <div>
-                  <p className="text-white text-xs font-semibold mb-1">Phase 3 – Administration</p>
+              {phases.map((phase, i) => (
+                <div key={phase.id}>
+                  <p className="text-white text-xs font-semibold mb-1">Phase {i + 1} – {phase.title}</p>
                   <ul className="space-y-0.5">
-                    <li className="flex items-start gap-2">
-                      <span className="text-white/60 mt-1 text-[5px]">●</span>
-                      <span className="text-white/80 text-xs font-light">100% invoiced upon completion</span>
-                    </li>
+                    {phase.depositSplit ? (
+                      <>
+                        <li className="flex items-start gap-2">
+                          <span className="text-white/60 mt-1 text-[5px]">●</span>
+                          <span className="text-white/80 text-xs font-light">50% deposit prior to commencement</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-white/60 mt-1 text-[5px]">●</span>
+                          <span className="text-white/80 text-xs font-light">50% balance upon completion of Phase {i + 1}</span>
+                        </li>
+                      </>
+                    ) : (
+                      <li className="flex items-start gap-2">
+                        <span className="text-white/60 mt-1 text-[5px]">●</span>
+                        <span className="text-white/80 text-xs font-light">100% invoiced upon completion</span>
+                      </li>
+                    )}
                   </ul>
                 </div>
-              ) : null}
+              ))}
             </div>
             <p className="text-white/60 text-xs font-light mt-4">
               All invoices are payable within 7 days.

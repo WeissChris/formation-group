@@ -170,6 +170,7 @@ function mapProposalRow(row: Record<string, unknown>): DesignProposal {
     phase2Scope: (row.phase2_scope as string) || '',
     phase3Fee: row.phase3_fee != null ? Number(row.phase3_fee) : undefined,
     phase3Scope: row.phase3_scope as string | undefined,
+    phases: (row.phases as DesignProposal['phases']) || undefined,
     validUntil: (row.valid_until as string) || '',
     notes: row.notes as string | undefined,
     acceptanceToken: row.acceptance_token as string,

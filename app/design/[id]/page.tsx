@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { loadProposals, saveProposal, deleteProposal, generateRevenueFromProposal, generateInvoiceStages, saveDesignProject, loadDesignProjectByProposalId } from '@/lib/storage'
+import { upsertProposal } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
-import type { DesignProposal, ProposalContentBlock, DesignProject } from '@/types'
+import { getProposalPhases, syncLegacyPhaseFields, phasesTotal, makeBlankPhase, defaultPhaseDescription, defaultPhaseOutcome } from '@/lib/proposalPhases'
+import type { DesignProposal, ProposalContentBlock, ProposalPhase, DesignProject } from '@/types'
 import { Trash2, Copy, Check, Pencil } from 'lucide-react'
 import ProposalPreview from '@/components/ProposalPreview'
 import ContentBlockEditor from '@/components/ContentBlockEditor'
@@ -43,7 +45,22 @@ export default function ProposalDetailPage() {
     </div>
   )
 
-  const total = proposal.phase1Fee + proposal.phase2Fee + (proposal.phase3Fee ?? 0)
+  const phases = getProposalPhases(proposal)
+  const total = phasesTotal(phases)
+
+  // ── Phase editing ──────────────────────────────────────────────────────────
+  // Apply a new phase list: sync the legacy phase1/2/3 fields, save locally + update the UI.
+  const applyPhases = (next: ProposalPhase[]) => {
+    const updated = syncLegacyPhaseFields(proposal, next)
+    saveProposal(updated)
+    setProposal(updated)
+  }
+  // Push the latest saved proposal to Supabase so the client-facing proposal reflects the edit.
+  const syncPhasesRemote = () => { void upsertProposal(loadProposals().find(p => p.id === proposal.id) ?? proposal) }
+  const setPhaseField = (i: number, patch: Partial<ProposalPhase>) =>
+    applyPhases(phases.map((ph, idx) => (idx === i ? { ...ph, ...patch } : ph)))
+  const addPhase = () => { applyPhases([...phases, makeBlankPhase(phases.length + 1)]); syncPhasesRemote() }
+  const removePhase = (i: number) => { applyPhases(phases.filter((_, idx) => idx !== i)); syncPhasesRemote() }
 
   const acceptanceUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/proposal/${proposal.acceptanceToken}`
@@ -89,9 +106,9 @@ export default function ProposalDetailPage() {
           phase2Status: 'not_started',
           phase3Fee: updated.phase3Fee,
           phase3Status: updated.phase3Fee ? 'not_started' : undefined,
-          totalFee: updated.phase1Fee + updated.phase2Fee + (updated.phase3Fee || 0),
+          totalFee: phasesTotal(getProposalPhases(updated)),
           totalPaid: 0,
-          totalOutstanding: updated.phase1Fee + updated.phase2Fee + (updated.phase3Fee || 0),
+          totalOutstanding: phasesTotal(getProposalPhases(updated)),
           notes: '',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -271,19 +288,106 @@ export default function ProposalDetailPage() {
             </div>
           </div>
 
-          {[
-            { label: 'Phase 1', fee: proposal.phase1Fee, scope: proposal.phase1Scope },
-            { label: 'Phase 2', fee: proposal.phase2Fee, scope: proposal.phase2Scope },
-            ...(proposal.phase3Fee ? [{ label: 'Phase 3', fee: proposal.phase3Fee, scope: proposal.phase3Scope ?? '' }] : []),
-          ].map(phase => (
-            <div key={phase.label} className="border-t border-fg-border pt-5">
-              <div className="flex items-baseline justify-between mb-2">
-                <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">{phase.label}</p>
-                <p className="text-sm font-light text-fg-heading tabular-nums">{formatCurrency(phase.fee)}</p>
-              </div>
-              <p className="text-sm font-light text-fg-heading leading-relaxed">{phase.scope}</p>
+          {/* Phases — editable when in Edit mode (title, scope, description, outcome, fee; add/remove) */}
+          <div className="border-t border-fg-border pt-5">
+            <div className="flex items-baseline justify-between mb-3">
+              <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Phases</p>
+              {editing && <p className="text-2xs font-light text-fg-muted/60">Headings, scope, description &amp; outcome show on the client proposal</p>}
             </div>
-          ))}
+
+            <div className="space-y-3">
+              {phases.map((phase, i) => (
+                <div key={phase.id} className="border border-fg-border/70 p-4">
+                  {editing ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xs font-light tracking-architectural uppercase text-fg-muted whitespace-nowrap">Phase {i + 1}</span>
+                        <input
+                          defaultValue={phase.title}
+                          onBlur={e => { setPhaseField(i, { title: e.target.value }); syncPhasesRemote() }}
+                          placeholder="Phase title (e.g. Concept Design)"
+                          className="flex-1 px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors"
+                        />
+                        <input
+                          type="number"
+                          defaultValue={phase.fee || ''}
+                          onBlur={e => { setPhaseField(i, { fee: parseFloat(e.target.value) || 0 }); syncPhasesRemote() }}
+                          placeholder="Fee"
+                          className="w-28 px-2 py-1.5 text-right bg-transparent border border-fg-border text-fg-heading text-sm font-light tabular-nums outline-none focus:border-fg-heading transition-colors"
+                        />
+                        <button
+                          onClick={() => removePhase(i)}
+                          disabled={phases.length <= 1}
+                          title="Remove phase"
+                          className="text-fg-muted hover:text-red-500 disabled:opacity-30 disabled:hover:text-fg-muted transition-colors p-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <div>
+                        <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Scope (deliverables)</label>
+                        <textarea
+                          defaultValue={phase.scope}
+                          onBlur={e => { setPhaseField(i, { scope: e.target.value }); syncPhasesRemote() }}
+                          rows={3}
+                          placeholder="One deliverable per line"
+                          className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors resize-none leading-relaxed"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Description</label>
+                          <textarea
+                            defaultValue={phase.description ?? ''}
+                            onBlur={e => { setPhaseField(i, { description: e.target.value }); syncPhasesRemote() }}
+                            rows={3}
+                            placeholder={defaultPhaseDescription(i)}
+                            className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-muted text-2xs font-light outline-none focus:border-fg-heading transition-colors resize-none leading-relaxed"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Outcome</label>
+                          <textarea
+                            defaultValue={phase.outcome ?? ''}
+                            onBlur={e => { setPhaseField(i, { outcome: e.target.value }); syncPhasesRemote() }}
+                            rows={3}
+                            placeholder={defaultPhaseOutcome(i)}
+                            className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-muted text-2xs font-light outline-none focus:border-fg-heading transition-colors resize-none leading-relaxed"
+                          />
+                        </div>
+                      </div>
+                      <label className="flex items-center gap-2 text-2xs font-light text-fg-muted cursor-pointer">
+                        <input
+                          type="checkbox"
+                          defaultChecked={!!phase.depositSplit}
+                          onChange={e => { setPhaseField(i, { depositSplit: e.target.checked }); syncPhasesRemote() }}
+                          className="w-3.5 h-3.5 accent-fg-dark"
+                        />
+                        Bill as 50% deposit + 50% balance (otherwise 100% on completion)
+                      </label>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="flex items-baseline justify-between mb-1.5">
+                        <p className="text-sm font-medium text-fg-heading">Phase {i + 1} — {phase.title}</p>
+                        <p className="text-sm font-light text-fg-heading tabular-nums">{formatCurrency(phase.fee)}</p>
+                      </div>
+                      <p className="text-sm font-light text-fg-muted leading-relaxed whitespace-pre-line">{phase.scope}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {editing && (
+              <button
+                onClick={addPhase}
+                className="mt-3 px-3 py-1.5 text-2xs font-light tracking-architectural uppercase border border-dashed border-fg-border text-fg-muted hover:text-fg-heading hover:border-fg-heading transition-colors"
+              >
+                + Add phase
+              </button>
+            )}
+          </div>
 
           {/* Intro Text */}
           <div className="border-t border-fg-border pt-5">
@@ -467,12 +571,7 @@ export default function ProposalDetailPage() {
             clientName={proposal.clientName}
             projectAddress={proposal.projectAddress}
             introText={proposal.introText}
-            phase1Scope={proposal.phase1Scope}
-            phase1Fee={proposal.phase1Fee}
-            phase2Scope={proposal.phase2Scope}
-            phase2Fee={proposal.phase2Fee}
-            phase3Scope={proposal.phase3Scope}
-            phase3Fee={proposal.phase3Fee}
+            phases={getProposalPhases(proposal)}
             validUntil={proposal.validUntil}
             welcomeVideoUrl={proposal.welcomeVideoUrl}
             processVideoUrl={proposal.processVideoUrl}

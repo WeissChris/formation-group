@@ -12,6 +12,7 @@ import {
   saveWeeklyRevenue, loadWeeklyRevenue,
   deleteGanttGeneratedRevenueByProject,
   deleteWeeklyRevenueByProject,
+  generateInvoiceStages,
 } from './storage'
 import type { Project, Estimate, DesignProposal, WeeklyRevenue } from '@/types'
 
@@ -209,5 +210,46 @@ describe('deleteWeeklyRevenueByProject (destructive)', () => {
     deleteWeeklyRevenueByProject('p1')
     const remaining = loadWeeklyRevenue()
     expect(remaining.map(r => r.id)).toEqual(['r3'])
+  })
+})
+
+describe('generateInvoiceStages — derives from the variable phase list', () => {
+  it('legacy 2-phase proposal → phase-1 50/50 deposit+balance, phase-2 100%', () => {
+    const stages = generateInvoiceStages(proposal({ id: 'prop1', phase1Fee: 1000, phase2Fee: 2000 }))
+    expect(stages).toHaveLength(3)
+    expect(stages[0].amount).toBe(500)
+    expect(stages[0].percentage).toBe(50)
+    expect(stages[0].phase).toBe(1)
+    expect(stages[1].amount).toBe(500)
+    expect(stages[1].phase).toBe(1)
+    expect(stages[2].amount).toBe(2000)
+    expect(stages[2].percentage).toBe(100)
+    expect(stages[2].phase).toBe(2)
+  })
+
+  it('odd phase-1 fee splits to the cent without losing a dollar', () => {
+    const stages = generateInvoiceStages(proposal({ id: 'prop1', phase1Fee: 1001, phase2Fee: 0 }))
+    const p1 = stages.filter(s => s.phase === 1)
+    expect(p1).toHaveLength(2)
+    expect(p1[0].amount + p1[1].amount).toBe(1001)
+  })
+
+  it('explicit 4-phase proposal: per-phase split, zero-fee phase skipped, title in the name', () => {
+    const stages = generateInvoiceStages(proposal({
+      id: 'prop1',
+      phases: [
+        { id: 'a', title: 'Discovery', fee: 1000, scope: '', depositSplit: true },
+        { id: 'b', title: 'Concept', fee: 2000, scope: '' },
+        { id: 'c', title: 'Detail', fee: 3000, scope: '' },
+        { id: 'd', title: 'Handover', fee: 0, scope: '' },
+      ],
+    }))
+    // Discovery → 2 stages (deposit/balance), Concept → 1, Detail → 1, Handover (0 fee) → 0
+    expect(stages).toHaveLength(4)
+    expect(stages.filter(s => s.phase === 1)).toHaveLength(2)
+    expect(stages.find(s => s.phase === 2)?.amount).toBe(2000)
+    expect(stages.find(s => s.phase === 3)?.amount).toBe(3000)
+    expect(stages.find(s => s.phase === 4)).toBeUndefined()
+    expect(stages[0].name).toContain('Discovery')
   })
 })

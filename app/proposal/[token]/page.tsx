@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { saveProposal, generateRevenueFromProposal, saveDesignProject, loadDesignProjectByProposalId } from '@/lib/storage'
 import { getProposalByToken, acceptProposalByToken } from '@/lib/publicData'
 import { formatCurrency, generateId } from '@/lib/utils'
+import { getProposalPhases, phasesTotal, defaultPhaseDescription, defaultPhaseOutcome } from '@/lib/proposalPhases'
 import type { DesignProposal, ProposalContentBlock, DesignProject } from '@/types'
 import { ChevronDown, Check, Play } from 'lucide-react'
 
@@ -311,21 +312,14 @@ export default function ProposalAcceptancePage() {
     )
   }
 
-  const total = proposal.phase1Fee + proposal.phase2Fee + (proposal.phase3Fee ?? 0)
+  const phases = getProposalPhases(proposal)
+  const total = phasesTotal(phases)
   const gst = total * 0.1
   const blocks = proposal.contentBlocks ?? []
 
   // Find video URLs from content blocks
   const aboutVideo = blocks.find(b => b.type === 'video' && b.position === 'before_phases')
   const experienceVideo = blocks.find(b => b.type === 'video' && (b.position as string) === 'client_experience')
-
-  const phases = [
-    { num: 1, label: 'Phase 1', title: 'Concept / Schematic Design', scope: proposal.phase1Scope, fee: proposal.phase1Fee },
-    { num: 2, label: 'Phase 2', title: 'Design Development', scope: proposal.phase2Scope, fee: proposal.phase2Fee },
-    ...(proposal.phase3Fee
-      ? [{ num: 3, label: 'Phase 3', title: 'Administration', scope: proposal.phase3Scope ?? '', fee: proposal.phase3Fee }]
-      : []),
-  ]
 
   // Default intro text
   const introText = proposal.introText || `Thank you for the opportunity to meet on site and discuss your project.\n\nFrom our initial consultation, it's clear there is a strong opportunity to reshape the landscape into a highly resolved, functional, and visually cohesive environment.\n\nThe following outlines our proposed design process and associated fees.`
@@ -581,11 +575,11 @@ export default function ProposalAcceptancePage() {
               </p>
 
               <div className="space-y-6">
-                {phases.map((phase) => (
-                  <div key={phase.num}>
-                    <ChevronBadge number={phase.num} />
+                {phases.map((phase, i) => (
+                  <div key={phase.id}>
+                    <ChevronBadge number={i + 1} />
                     <div className="mt-2 ml-1">
-                      <p className="text-sm font-medium" style={{ color: HEADING }}>{phase.label}</p>
+                      <p className="text-sm font-medium" style={{ color: HEADING }}>Phase {i + 1}</p>
                       <p className="text-sm font-light" style={{ color: MUTED }}>{phase.title}</p>
                     </div>
                   </div>
@@ -612,28 +606,22 @@ export default function ProposalAcceptancePage() {
         {/* ── PAGES 6-8: PHASE DETAIL PAGES ── */}
         {phases.map((phase, i) => {
           const deliverables = scopeToPoints(phase.scope)
-          // Default outcome text per phase
-          const outcomes = [
-            'A clear and cohesive design direction that defines the layout, functionality, and overall aesthetic of the project.',
-            'A resolved and coordinated design with all key elements, materials, and levels clearly defined and ready for construction documentation.',
-            'A comprehensive set of drawings and documentation that enables the project to be accurately priced and constructed without ambiguity.',
-          ]
+          const description = phase.description ?? defaultPhaseDescription(i)
+          const outcome = phase.outcome ?? defaultPhaseOutcome(i)
           return (
-            <section key={phase.num} className="bg-white border-t" style={{ borderColor: BORDER }}>
+            <section key={phase.id} className="bg-white border-t" style={{ borderColor: BORDER }}>
               <div className="max-w-[1200px] mx-auto px-8 py-20 md:py-28">
                 <h2
                   className="font-light mb-6"
                   style={{ fontSize: 'clamp(28px, 3vw, 40px)', color: HEADING }}
                 >
-                  {phase.label} – {phase.title}
+                  Phase {i + 1} – {phase.title}
                 </h2>
 
                 {/* Phase description */}
-                {deliverables.length > 0 && (
+                {description && (
                   <p className="text-base font-light leading-relaxed mb-10" style={{ color: BODY }}>
-                    {i === 0 && 'This stage focuses on establishing the overall vision and spatial layout of the project. We explore how the landscape will function, how key elements are positioned, and how the space will feel.'}
-                    {i === 1 && 'During this stage, the concept is refined and resolved into a fully considered design. We work through how each element comes together, finalising layouts, levels, materials, and key selections.'}
-                    {i === 2 && 'This stage translates the resolved design into detailed construction drawings and specifications. These documents provide clear instruction for construction, ensuring all elements are built accurately and consistently.'}
+                    {description}
                   </p>
                 )}
 
@@ -650,12 +638,14 @@ export default function ProposalAcceptancePage() {
                     )}
                   </div>
                   {/* Right: Outcome */}
-                  <div className="flex flex-col justify-start pt-2">
-                    <h4 className="text-lg font-light mb-4" style={{ color: HEADING }}>Outcome</h4>
-                    <p className="text-base font-light leading-relaxed" style={{ color: BODY }}>
-                      {outcomes[i] || outcomes[0]}
-                    </p>
-                  </div>
+                  {outcome && (
+                    <div className="flex flex-col justify-start pt-2">
+                      <h4 className="text-lg font-light mb-4" style={{ color: HEADING }}>Outcome</h4>
+                      <p className="text-base font-light leading-relaxed" style={{ color: BODY }}>
+                        {outcome}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {i === 0 && <BlocksAtPosition blocks={blocks} position="between_phase1_2" />}
@@ -678,14 +668,14 @@ export default function ProposalAcceptancePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
               {/* Left: Fee cards */}
               <div className="space-y-4">
-                {phases.map((phase) => (
+                {phases.map((phase, i) => (
                   <div
-                    key={phase.num}
+                    key={phase.id}
                     className="border-l-4 bg-white p-5 shadow-sm"
                     style={{ borderLeftColor: BORDER, borderTop: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}
                   >
                     <p className="text-base font-light" style={{ color: HEADING }}>
-                      {phase.label} – {phase.title}
+                      Phase {i + 1} – {phase.title}
                     </p>
                     <p className="text-sm font-light mt-1" style={{ color: MUTED }}>
                       {formatCurrency(phase.fee)} + GST
@@ -707,41 +697,30 @@ export default function ProposalAcceptancePage() {
                   </p>
 
                   <div className="space-y-4">
-                    <div>
-                      <p className="text-white text-sm font-semibold mb-1">Phase 1 – Concept / Schematic Design</p>
-                      <ul className="space-y-1">
-                        <li className="flex items-start gap-2">
-                          <span className="text-white/60 mt-1.5 text-[6px]">●</span>
-                          <span className="text-white/80 text-sm font-light">50% deposit prior to commencement</span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                          <span className="text-white/60 mt-1.5 text-[6px]">●</span>
-                          <span className="text-white/80 text-sm font-light">50% balance upon completion of Phase 1</span>
-                        </li>
-                      </ul>
-                    </div>
-
-                    <div>
-                      <p className="text-white text-sm font-semibold mb-1">Phase 2 – Design Development</p>
-                      <ul className="space-y-1">
-                        <li className="flex items-start gap-2">
-                          <span className="text-white/60 mt-1.5 text-[6px]">●</span>
-                          <span className="text-white/80 text-sm font-light">100% invoiced upon completion of Phase 2</span>
-                        </li>
-                      </ul>
-                    </div>
-
-                    {proposal.phase3Fee ? (
-                      <div>
-                        <p className="text-white text-sm font-semibold mb-1">Phase 3 – Administration</p>
+                    {phases.map((phase, i) => (
+                      <div key={phase.id}>
+                        <p className="text-white text-sm font-semibold mb-1">Phase {i + 1} – {phase.title}</p>
                         <ul className="space-y-1">
-                          <li className="flex items-start gap-2">
-                            <span className="text-white/60 mt-1.5 text-[6px]">●</span>
-                            <span className="text-white/80 text-sm font-light">100% invoiced upon completion of Phase 3</span>
-                          </li>
+                          {phase.depositSplit ? (
+                            <>
+                              <li className="flex items-start gap-2">
+                                <span className="text-white/60 mt-1.5 text-[6px]">●</span>
+                                <span className="text-white/80 text-sm font-light">50% deposit prior to commencement</span>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="text-white/60 mt-1.5 text-[6px]">●</span>
+                                <span className="text-white/80 text-sm font-light">50% balance upon completion of Phase {i + 1}</span>
+                              </li>
+                            </>
+                          ) : (
+                            <li className="flex items-start gap-2">
+                              <span className="text-white/60 mt-1.5 text-[6px]">●</span>
+                              <span className="text-white/80 text-sm font-light">100% invoiced upon completion of Phase {i + 1}</span>
+                            </li>
+                          )}
                         </ul>
                       </div>
-                    ) : null}
+                    ))}
                   </div>
 
                   <p className="text-white/60 text-xs font-light mt-6">

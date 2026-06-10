@@ -4,6 +4,7 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { loadProjects, loadWeeklyRevenue, saveWeeklyRevenue, deleteWeeklyRevenue, loadEstimates, loadProposals } from '@/lib/storage'
+import { getProposalPhases, phasesTotal } from '@/lib/proposalPhases'
 import {
   formatCurrency, getFridaysInMonth, getFinancialYear,
   generateId, snapToFriday, toISODate, formatDayMonth,
@@ -286,7 +287,7 @@ export default function RevenuePage() {
     // Design is fee-based with minimal tracked costs — uses the top-of-file DESIGN_DEFAULT_GP constant
     // so the calc and the on-screen caption can never drift.
     const acceptedProposals = allProposals.filter(p => p.status === 'accepted')
-    const designRevenue = acceptedProposals.reduce((s, p) => s + p.phase1Fee + p.phase2Fee + (p.phase3Fee || 0), 0)
+    const designRevenue = acceptedProposals.reduce((s, p) => s + phasesTotal(getProposalPhases(p)), 0)
     const calcDesignGP = designRevenue > 0 ? DESIGN_DEFAULT_GP : null
 
     // Lume GP% — revenue-weighted average across accepted lume_quotes when available;

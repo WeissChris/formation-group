@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { saveProposal } from '@/lib/storage'
+import { getProposalPhases } from '@/lib/proposalPhases'
 import { formatCurrency, generateId } from '@/lib/utils'
 import type { DesignProposal, ProposalContentBlock } from '@/types'
 import ProposalPreview from '@/components/ProposalPreview'
@@ -141,12 +142,12 @@ The following outlines our proposed design process and associated fees.`
             clientName={form.clientName}
             projectAddress={form.projectAddress}
             introText={form.introText}
-            phase1Scope={form.phase1Scope}
-            phase1Fee={phase1Fee}
-            phase2Scope={form.phase2Scope}
-            phase2Fee={phase2Fee}
-            phase3Scope={form.includePhase3 ? form.phase3Scope : undefined}
-            phase3Fee={form.includePhase3 ? phase3Fee : undefined}
+            phases={getProposalPhases({
+              phase1Scope: form.phase1Scope, phase1Fee,
+              phase2Scope: form.phase2Scope, phase2Fee,
+              phase3Scope: form.includePhase3 ? form.phase3Scope : undefined,
+              phase3Fee: form.includePhase3 ? phase3Fee : undefined,
+            } as DesignProposal)}
             validUntil={form.validUntil}
             welcomeVideoUrl={form.welcomeVideoUrl}
             processVideoUrl={form.processVideoUrl}

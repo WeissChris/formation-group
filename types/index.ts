@@ -200,6 +200,22 @@ export interface WeeklyRevenue {
   updatedAt?: string
 }
 
+/**
+ * One phase of a design proposal. The source-of-truth, variable-length replacement for the
+ * fixed phase1/2/3 fields. Title, description and outcome are editable per proposal (they were
+ * previously hardcoded in the proposal preview). Read via getProposalPhases() in
+ * lib/proposalPhases.ts, which derives this array from the legacy fields for older proposals.
+ */
+export interface ProposalPhase {
+  id: string
+  title: string          // editable heading, e.g. "Concept / Schematic Design"
+  fee: number
+  scope: string          // deliverables (newline/sentence list)
+  description?: string   // intro paragraph shown above the deliverables
+  outcome?: string       // outcome paragraph shown beside the deliverables
+  depositSplit?: boolean // bill 50% deposit + 50% balance (historically phase 1 only)
+}
+
 export interface DesignProposal {
   id: string
   clientName: string
@@ -208,6 +224,10 @@ export interface DesignProposal {
   projectAddress: string
   status: 'draft' | 'sent' | 'pending' | 'accepted' | 'declined' | 'lost'
   archived?: boolean
+  // Variable-length phases — the source of truth when present. The phase1/2/3 fields below are
+  // kept in sync from the first three phases for backward compatibility (Supabase columns, the
+  // DesignProject mirror, older readers). New/edited proposals populate `phases`.
+  phases?: ProposalPhase[]
   phase1Fee: number
   phase1Scope: string
   phase2Fee: number
@@ -245,8 +265,8 @@ export interface ProposalContentBlock {
 
 export interface ProposalInvoiceStage {
   id: string
-  name: string          // "Phase 1 Deposit", "Phase 1 Balance", "Phase 2", "Phase 3"
-  phase: 1 | 2 | 3
+  name: string          // "Phase 1 — Concept Design (Deposit)", "Phase 2 — …", …
+  phase: number         // 1-based phase ordinal (variable number of phases)
   percentage: number    // 50, 50, 100, 100
   amount: number        // calculated from phase fee
   status: 'not_sent' | 'sent' | 'paid'
