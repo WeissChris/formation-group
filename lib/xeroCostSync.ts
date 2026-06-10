@@ -471,7 +471,11 @@ async function fetchProfitAndLoss(
       await new Promise(r => setTimeout(r, (retryAfter + 5) * 1000))
       continue
     }
-    if (!resp.ok) throw new Error(`Xero ProfitAndLoss failed: ${resp.status}`)
+    if (!resp.ok) {
+      let detail = ''
+      try { detail = (await resp.text()).slice(0, 300) } catch { /* ignore */ }
+      throw new Error(`Xero ProfitAndLoss failed: ${resp.status} ${detail}`)
+    }
     return resp.json()
   }
 }
