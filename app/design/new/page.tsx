@@ -38,13 +38,6 @@ Landscape specification - finished surface levels.`
       caption: 'Formation Landscapes — our approach to design and construction',
       position: 'before_phases',
     },
-    {
-      id: generateId(),
-      type: 'video',
-      content: 'https://vimeo.com/890881290',
-      caption: 'Recent projects by Formation Landscapes',
-      position: 'after_phases',
-    },
   ]
 
   const DEFAULT_INTRO_TEXT = `Thank you for the opportunity to meet on site and discuss your project.

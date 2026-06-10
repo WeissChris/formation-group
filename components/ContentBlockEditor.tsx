@@ -10,11 +10,13 @@ interface Props {
   onChange: (blocks: ProposalContentBlock[]) => void
 }
 
+// Note: 'after_phases' is intentionally not offered — content after the Exclusions section was
+// removed (it only ever duplicated the welcome/process videos shown above). Legacy after_phases
+// blocks are simply no longer rendered.
 const POSITIONS: { value: ProposalContentBlock['position']; label: string }[] = [
   { value: 'before_phases', label: 'Before phases' },
   { value: 'between_phase1_2', label: 'Between Phase 1 & 2' },
   { value: 'between_phase2_3', label: 'Between Phase 2 & 3' },
-  { value: 'after_phases', label: 'After phases' },
 ]
 
 function VideoPreview({ url }: { url: string }) {
@@ -42,7 +44,7 @@ export default function ContentBlockEditor({ blocks, onChange }: Props) {
       id: generateId(),
       type,
       content: '',
-      position: 'after_phases',
+      position: 'before_phases',
     }
     onChange([...blocks, block])
     setAddingType(null)

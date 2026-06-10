@@ -768,8 +768,6 @@ export default function ProposalAcceptancePage() {
           </section>
         )}
 
-        <BlocksAtPosition blocks={blocks} position="after_phases" />
-
         {/* ── ACCEPTANCE SECTION ── */}
         <section className="border-t" style={{ backgroundColor: BG_WARM, borderColor: BORDER }}>
           <div className="max-w-[640px] mx-auto px-8 py-20 md:py-28" ref={acceptSectionRef}>
