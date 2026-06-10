@@ -4,9 +4,10 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { saveProposal } from '@/lib/storage'
-import { getProposalPhases } from '@/lib/proposalPhases'
+import { syncLegacyPhaseFields, phasesTotal, makeBlankPhase, DEFAULT_PHASE_TITLES, defaultPhaseDescription, defaultPhaseOutcome } from '@/lib/proposalPhases'
 import { formatCurrency, generateId } from '@/lib/utils'
-import type { DesignProposal, ProposalContentBlock } from '@/types'
+import type { DesignProposal, ProposalContentBlock, ProposalPhase } from '@/types'
+import { Trash2 } from 'lucide-react'
 import ProposalPreview from '@/components/ProposalPreview'
 import ContentBlockEditor from '@/components/ContentBlockEditor'
 
@@ -57,57 +58,59 @@ The following outlines our proposed design process and associated fees.`
     clientPhone: '',
     projectAddress: '',
     introText: DEFAULT_INTRO_TEXT,
-    phase1Scope: DEFAULT_PHASE1_SCOPE,
-    phase1Fee: '9800',
-    phase2Scope: DEFAULT_PHASE2_SCOPE,
-    phase2Fee: '3500',
-    includePhase3: false,
-    phase3Scope: '',
-    phase3Fee: '',
     validUntil: defaultValidUntil.toISOString().split('T')[0],
     notes: '',
     welcomeVideoUrl: '',
     processVideoUrl: '',
   })
+  // Editable, variable-length phases (same model as the proposal editor). Seeded with the two
+  // standard phases; the user can rename, edit, add or remove them.
+  const [phases, setPhases] = useState<ProposalPhase[]>([
+    { id: generateId(), title: DEFAULT_PHASE_TITLES[0], fee: 9800, scope: DEFAULT_PHASE1_SCOPE, depositSplit: true },
+    { id: generateId(), title: DEFAULT_PHASE_TITLES[1], fee: 3500, scope: DEFAULT_PHASE2_SCOPE },
+  ])
   const [preview, setPreview] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [contentBlocks, setContentBlocks] = useState<ProposalContentBlock[]>(DEFAULT_CONTENT_BLOCKS)
 
   const set = (k: string, v: string | boolean) => setForm(f => ({ ...f, [k]: v }))
+  const updatePhase = (i: number, patch: Partial<ProposalPhase>) =>
+    setPhases(ps => ps.map((p, idx) => (idx === i ? { ...p, ...patch } : p)))
+  const addPhase = () => setPhases(ps => [...ps, makeBlankPhase(ps.length + 1)])
+  const removePhase = (i: number) => setPhases(ps => ps.filter((_, idx) => idx !== i))
 
   const validate = () => {
     const e: Record<string, string> = {}
-    if (!form.clientName.trim())  e.clientName  = 'Required'
-    if (!form.phase1Scope.trim()) e.phase1Scope = 'Required'
-    if (!form.phase1Fee)          e.phase1Fee   = 'Required'
-    if (!form.phase2Scope.trim()) e.phase2Scope = 'Required'
-    if (!form.phase2Fee)          e.phase2Fee   = 'Required'
+    if (!form.clientName.trim()) e.clientName = 'Required'
     setErrors(e)
+    if (!phases.some(p => p.scope.trim() && p.fee > 0)) {
+      window.alert('Add at least one phase with a scope and a fee.')
+      return false
+    }
     return Object.keys(e).length === 0
   }
 
-  const buildProposal = (status: DesignProposal['status']): DesignProposal => ({
-    id: generateId(),
-    clientName: form.clientName,
-    clientEmail: form.clientEmail || undefined,
-    clientPhone: form.clientPhone || undefined,
-    projectAddress: form.projectAddress,
-    status,
-    introText: form.introText || undefined,
-    phase1Fee:   parseFloat(form.phase1Fee.replace(/[^0-9.]/g, '')) || 0,
-    phase1Scope: form.phase1Scope,
-    phase2Fee:   parseFloat(form.phase2Fee.replace(/[^0-9.]/g, '')) || 0,
-    phase2Scope: form.phase2Scope,
-    phase3Fee:   form.includePhase3 ? (parseFloat(form.phase3Fee.replace(/[^0-9.]/g, '')) || 0) : undefined,
-    phase3Scope: form.includePhase3 ? form.phase3Scope : undefined,
-    validUntil: form.validUntil,
-    acceptanceToken: generateId(),
-    notes: form.notes,
-    welcomeVideoUrl: form.welcomeVideoUrl || undefined,
-    processVideoUrl: form.processVideoUrl || undefined,
-    createdAt: new Date().toISOString(),
-    contentBlocks: contentBlocks.length > 0 ? contentBlocks : undefined,
-  })
+  const buildProposal = (status: DesignProposal['status']): DesignProposal => {
+    const base: DesignProposal = {
+      id: generateId(),
+      clientName: form.clientName,
+      clientEmail: form.clientEmail || undefined,
+      clientPhone: form.clientPhone || undefined,
+      projectAddress: form.projectAddress,
+      status,
+      introText: form.introText || undefined,
+      // legacy phase1/2/3 fields are filled by syncLegacyPhaseFields from the phases array
+      phase1Fee: 0, phase1Scope: '', phase2Fee: 0, phase2Scope: '',
+      validUntil: form.validUntil,
+      acceptanceToken: generateId(),
+      notes: form.notes,
+      welcomeVideoUrl: form.welcomeVideoUrl || undefined,
+      processVideoUrl: form.processVideoUrl || undefined,
+      createdAt: new Date().toISOString(),
+      contentBlocks: contentBlocks.length > 0 ? contentBlocks : undefined,
+    }
+    return syncLegacyPhaseFields(base, phases)
+  }
 
   const handleSaveDraft = () => {
     if (!validate()) return
@@ -123,10 +126,7 @@ The following outlines our proposed design process and associated fees.`
     router.push(`/design/${p.id}`)
   }
 
-  const phase1Fee = parseFloat(form.phase1Fee.replace(/[^0-9.]/g, '')) || 0
-  const phase2Fee = parseFloat(form.phase2Fee.replace(/[^0-9.]/g, '')) || 0
-  const phase3Fee = form.includePhase3 ? (parseFloat(form.phase3Fee.replace(/[^0-9.]/g, '')) || 0) : 0
-  const totalFee  = phase1Fee + phase2Fee + phase3Fee
+  const totalFee = phasesTotal(phases)
 
   if (preview) {
     return (
@@ -142,12 +142,7 @@ The following outlines our proposed design process and associated fees.`
             clientName={form.clientName}
             projectAddress={form.projectAddress}
             introText={form.introText}
-            phases={getProposalPhases({
-              phase1Scope: form.phase1Scope, phase1Fee,
-              phase2Scope: form.phase2Scope, phase2Fee,
-              phase3Scope: form.includePhase3 ? form.phase3Scope : undefined,
-              phase3Fee: form.includePhase3 ? phase3Fee : undefined,
-            } as DesignProposal)}
+            phases={phases}
             validUntil={form.validUntil}
             welcomeVideoUrl={form.welcomeVideoUrl}
             processVideoUrl={form.processVideoUrl}
@@ -200,73 +195,91 @@ The following outlines our proposed design process and associated fees.`
 
           <div className="h-px bg-fg-border" />
 
-          {/* Phase 1 */}
+          {/* Phases — editable, variable length (rename, edit, add or remove) */}
           <div className="space-y-4">
-            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Phase 1 — Concept Design</p>
-            <div>
-              <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Scope</label>
-              <textarea
-                value={form.phase1Scope}
-                onChange={e => set('phase1Scope', e.target.value)}
-                rows={3}
-                placeholder="2D Landscape plan. Materials and finishes – extent and type of hard surfacing for pathways, decking, etc. Prepare a selection of stills from the model to describe features and details in 3D for in-depth discussion. A meeting to discuss the design and associated construction costs."
-                className={`w-full px-3 py-2.5 bg-transparent border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-none placeholder-fg-muted/40 leading-relaxed ${errors.phase1Scope ? 'border-red-400/50' : 'border-fg-border'}`}
-              />
-              {errors.phase1Scope && <p className="text-xs text-red-400/70 font-light mt-1">{errors.phase1Scope}</p>}
+            <div className="flex items-baseline justify-between">
+              <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Phases</p>
+              <p className="text-2xs font-light text-fg-muted/60">Rename, edit, add or remove — these show on the client proposal</p>
             </div>
-            <Field label="Fee ($)" value={form.phase1Fee} onChange={v => set('phase1Fee', v)} error={errors.phase1Fee} placeholder="9800" />
-          </div>
 
-          <div className="h-px bg-fg-border" />
-
-          {/* Phase 2 */}
-          <div className="space-y-4">
-            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Phase 2 — Design Development</p>
-            <div>
-              <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Scope</label>
-              <textarea
-                value={form.phase2Scope}
-                onChange={e => set('phase2Scope', e.target.value)}
-                rows={3}
-                placeholder="Planting Schedule nominating and locating all planting (botanical names, common names, container sizes, spacing, quantities). 12v Landscape Lighting Plan including location of fittings, lighting schedule, lamp types, zoning/switching. Front fence elevation and details plan. Materials and finishes selections and schedule. Landscape specification - finished surface levels."
-                className={`w-full px-3 py-2.5 bg-transparent border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-none placeholder-fg-muted/40 leading-relaxed ${errors.phase2Scope ? 'border-red-400/50' : 'border-fg-border'}`}
-              />
-              {errors.phase2Scope && <p className="text-xs text-red-400/70 font-light mt-1">{errors.phase2Scope}</p>}
-            </div>
-            <Field label="Fee ($)" value={form.phase2Fee} onChange={v => set('phase2Fee', v)} error={errors.phase2Fee} placeholder="3500" />
-          </div>
-
-          <div className="h-px bg-fg-border" />
-
-          {/* Phase 3 (optional) */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Phase 3 — Administration (Optional)</p>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.includePhase3}
-                  onChange={e => set('includePhase3', e.target.checked)}
-                  className="w-3.5 h-3.5 accent-fg-dark"
-                />
-                <span className="text-xs font-light text-fg-muted">Include</span>
-              </label>
-            </div>
-            {form.includePhase3 && (
-              <>
+            {phases.map((phase, i) => (
+              <div key={phase.id} className="border border-fg-border/70 p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xs font-light tracking-architectural uppercase text-fg-muted whitespace-nowrap">Phase {i + 1}</span>
+                  <input
+                    value={phase.title}
+                    onChange={e => updatePhase(i, { title: e.target.value })}
+                    placeholder="Phase title (e.g. Concept Design)"
+                    className="flex-1 px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors"
+                  />
+                  <input
+                    type="number"
+                    value={phase.fee || ''}
+                    onChange={e => updatePhase(i, { fee: parseFloat(e.target.value) || 0 })}
+                    placeholder="Fee"
+                    className="w-28 px-2 py-1.5 text-right bg-transparent border border-fg-border text-fg-heading text-sm font-light tabular-nums outline-none focus:border-fg-heading transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removePhase(i)}
+                    disabled={phases.length <= 1}
+                    title="Remove phase"
+                    className="text-fg-muted hover:text-red-500 disabled:opacity-30 disabled:hover:text-fg-muted transition-colors p-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
                 <div>
-                  <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Scope</label>
+                  <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Scope (deliverables)</label>
                   <textarea
-                    value={form.phase3Scope}
-                    onChange={e => set('phase3Scope', e.target.value)}
+                    value={phase.scope}
+                    onChange={e => updatePhase(i, { scope: e.target.value })}
                     rows={3}
-                    placeholder="Contract administration, site inspections, variation management…"
-                    className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-none placeholder-fg-muted/40 leading-relaxed"
+                    placeholder="One deliverable per line"
+                    className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors resize-none leading-relaxed"
                   />
                 </div>
-                <Field label="Fee ($)" value={form.phase3Fee} onChange={v => set('phase3Fee', v)} placeholder="2500" />
-              </>
-            )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Description</label>
+                    <textarea
+                      value={phase.description ?? ''}
+                      onChange={e => updatePhase(i, { description: e.target.value })}
+                      rows={3}
+                      placeholder={defaultPhaseDescription(i)}
+                      className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-muted text-2xs font-light outline-none focus:border-fg-heading transition-colors resize-none leading-relaxed"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Outcome</label>
+                    <textarea
+                      value={phase.outcome ?? ''}
+                      onChange={e => updatePhase(i, { outcome: e.target.value })}
+                      rows={3}
+                      placeholder={defaultPhaseOutcome(i)}
+                      className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-muted text-2xs font-light outline-none focus:border-fg-heading transition-colors resize-none leading-relaxed"
+                    />
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-2xs font-light text-fg-muted cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!phase.depositSplit}
+                    onChange={e => updatePhase(i, { depositSplit: e.target.checked })}
+                    className="w-3.5 h-3.5 accent-fg-dark"
+                  />
+                  Bill as 50% deposit + 50% balance (otherwise 100% on completion)
+                </label>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              onClick={addPhase}
+              className="px-3 py-1.5 text-2xs font-light tracking-architectural uppercase border border-dashed border-fg-border text-fg-muted hover:text-fg-heading hover:border-fg-heading transition-colors"
+            >
+              + Add phase
+            </button>
           </div>
 
           <div className="h-px bg-fg-border" />
