@@ -441,6 +441,26 @@ function ymd(d: Date): string {
 }
 
 /**
+ * Split [start, end] into consecutive YYYY-MM-DD windows at most `maxDays` wide. The Xero
+ * ProfitAndLoss report rejects fromDate/toDate more than 365 days apart ("must be within 365
+ * days of each other"), so a 24-month labour pull has to be fetched in ~yearly slices and
+ * summed. Windows are gap-free and non-overlapping (each starts the day after the previous ends).
+ * Exported for testing.
+ */
+export function dateWindows(start: Date, end: Date, maxDays: number): Array<{ from: string; to: string }> {
+  const windows: Array<{ from: string; to: string }> = []
+  const dayMs = 24 * 60 * 60 * 1000
+  let cursor = new Date(start.getTime())
+  while (cursor.getTime() <= end.getTime()) {
+    const winEnd = new Date(Math.min(cursor.getTime() + maxDays * dayMs, end.getTime()))
+    windows.push({ from: ymd(cursor), to: ymd(winEnd) })
+    cursor = new Date(winEnd.getTime() + dayMs)   // next window starts the day after — no overlap
+  }
+  if (windows.length === 0) windows.push({ from: ymd(start), to: ymd(end) })
+  return windows
+}
+
+/**
  * Pull a Profit & Loss report broken down by a tracking category (one column per option).
  * Single call, no pagination. The GL-backed source for production labour, which never appears
  * on bills. Throws on non-OK so the caller can soft-fail (materials still flow).
@@ -702,12 +722,36 @@ export async function runFullSync(
     }
     if (labourAccounts.length > 0 && trackingCategoryId) {
       try {
-        const report = await fetchProfitAndLoss(
-          tokens.accessToken, tokens.tenantId, trackingCategoryId, ymd(since), ymd(new Date()),
-        )
-        const parsed = parseLabourFromPnL(report, labourAccounts, projectByOptionName, ymd(new Date()))
-        labourRows = parsed.rows
-        Object.assign(labourDiag, parsed.diag, { reportFetched: true })
+        // The P&L report caps fromDate/toDate at 365 days apart, so pull the 24-month span in
+        // ~yearly windows and sum the per-project labour across them (P&L is a flow measure, so
+        // consecutive non-overlapping periods add up to the full-span total). If ANY window
+        // throws, the catch below soft-fails the whole labour pull (and carry-forward kicks in)
+        // rather than writing understated labour that would inflate GP.
+        const endDate = new Date()
+        const endYmd = ymd(endDate)
+        const windows = dateWindows(since, endDate, 364)
+        const summed = new Map<string, CostRollupRow>()
+        let columnsMapped = 0
+        for (const w of windows) {
+          const report = await fetchProfitAndLoss(tokens.accessToken, tokens.tenantId, trackingCategoryId, w.from, w.to)
+          const parsed = parseLabourFromPnL(report, labourAccounts, projectByOptionName, endYmd)
+          columnsMapped = Math.max(columnsMapped, parsed.diag.columnsMapped)
+          for (const r of parsed.rows) {
+            const key = `${r.project_id}|${r.account_code}`
+            const ex = summed.get(key)
+            if (ex) ex.amount_ex_gst = Math.round((ex.amount_ex_gst + r.amount_ex_gst) * 100) / 100
+            else summed.set(key, { ...r })
+          }
+          if (windows.length > 1) await new Promise(res => setTimeout(res, 1200))  // polite between report calls
+        }
+        labourRows = Array.from(summed.values())
+        const byProject: Record<string, number> = {}
+        let totalAmount = 0
+        for (const r of labourRows) {
+          byProject[r.project_id] = Math.round(((byProject[r.project_id] || 0) + r.amount_ex_gst) * 100) / 100
+          totalAmount = Math.round((totalAmount + r.amount_ex_gst) * 100) / 100
+        }
+        Object.assign(labourDiag, { reportFetched: true, columnsMapped, rowsWritten: labourRows.length, totalAmount, byProject })
       } catch (err) {
         labourDiag.error = err instanceof Error ? err.message : 'labour_report_failed'
       }

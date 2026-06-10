@@ -7,7 +7,7 @@
 // (NOT Class — Class is only ASSET/EQUITY/EXPENSE/LIABILITY/REVENUE). These tests pin that.
 
 import { describe, it, expect } from 'vitest'
-import { aggregateCosts, parseLabourFromPnL } from './xeroCostSync'
+import { aggregateCosts, parseLabourFromPnL, dateWindows } from './xeroCostSync'
 
 interface XeroLineItem {
   AccountCode?: string
@@ -433,5 +433,46 @@ describe('parseLabourFromPnL — GP-only labour from the P&L (HARD RULE)', () =>
     expect(rows).toHaveLength(1)
     expect(rows[0].project_id).toBe('2')
     expect(rows[0].amount_ex_gst).toBe(3000)
+  })
+})
+
+// ── P&L date windowing ───────────────────────────────────────────────────────
+// The ProfitAndLoss report rejects fromDate/toDate more than 365 days apart, so a 24-month
+// labour pull is sliced into ≤364-day windows that get summed. These pin that the slices cover
+// the whole span with no gaps and no overlaps (an overlap would double-count labour → GP error).
+const DAY = 24 * 60 * 60 * 1000
+
+describe('dateWindows — ≤365-day slices for the P&L report', () => {
+  it('returns a single window when the span is under the limit', () => {
+    const wins = dateWindows(new Date('2025-01-01'), new Date('2025-04-10'), 364)
+    expect(wins).toHaveLength(1)
+    expect(wins[0]).toEqual({ from: '2025-01-01', to: '2025-04-10' })
+  })
+
+  it('slices a 24-month span into multiple windows, none wider than the cap', () => {
+    const start = new Date('2024-06-10')
+    const end = new Date('2026-06-10')
+    const wins = dateWindows(start, end, 364)
+    expect(wins.length).toBeGreaterThan(1)
+    for (const w of wins) {
+      const widthDays = (new Date(w.to).getTime() - new Date(w.from).getTime()) / DAY
+      expect(widthDays).toBeLessThanOrEqual(364)
+      expect(widthDays).toBeGreaterThanOrEqual(0)
+    }
+  })
+
+  it('covers the full span with no gaps and no overlaps', () => {
+    const start = new Date('2024-06-10')
+    const end = new Date('2026-06-10')
+    const wins = dateWindows(start, end, 364)
+    // First window starts at the span start; last ends at the span end.
+    expect(wins[0].from).toBe('2024-06-10')
+    expect(wins[wins.length - 1].to).toBe('2026-06-10')
+    // Each window begins exactly one day after the previous one ended (gap-free, no overlap).
+    for (let i = 1; i < wins.length; i++) {
+      const prevEnd = new Date(wins[i - 1].to).getTime()
+      const thisStart = new Date(wins[i].from).getTime()
+      expect(thisStart - prevEnd).toBe(DAY)
+    }
   })
 })
