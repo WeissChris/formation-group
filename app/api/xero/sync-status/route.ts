@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 
 export const runtime = 'nodejs'
+// No request input → would be statically cached and serve a stale "last synced" forever.
+export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/xero/sync-status

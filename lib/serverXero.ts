@@ -143,8 +143,13 @@ export async function getStatus(): Promise<{
   }
   const tokens = await getTokens()
   if (!tokens) return { connected: false, configured: true }
+  // Connection is live whenever a token row exists with a refresh token: Xero access tokens
+  // expire every 30 min, but getValidTokens() refreshes them on demand, so an expired access
+  // token does NOT mean disconnected. (Disconnect deletes the row — presence is the signal.)
+  // Reporting connected:false purely on access-token expiry made the Settings page flip to
+  // "not connected" half an hour after every reconnect.
   return {
-    connected: Date.now() < tokens.expiresAt,
+    connected: !!tokens.refreshToken,
     tenantName: tokens.tenantName,
     expiresAt: tokens.expiresAt,
     configured: true,
