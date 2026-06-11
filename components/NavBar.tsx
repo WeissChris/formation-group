@@ -15,6 +15,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Projects',    href: '/projects' },
   { label: 'Financials',  href: '/revenue' },
   { label: 'Programme',   href: '/programme' },
+  { label: 'Reports',     href: '/reports' },
   { label: 'Settings',    href: '/settings' },
   { label: 'Lume Pools', href: 'https://lume-quoting.vercel.app', external: true },
 ]

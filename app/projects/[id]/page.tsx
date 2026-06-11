@@ -971,6 +971,12 @@ export default function ProjectDetailPage() {
           </div>
           <div className="flex items-center gap-2">
             <Link
+              href={`/projects/${id}/report`}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-light tracking-wide uppercase border border-fg-border text-fg-muted rounded-sm hover:text-fg-heading hover:border-fg-heading/40 transition-colors"
+            >
+              Financial report
+            </Link>
+            <Link
               href={`/projects/${id}/edit`}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-light tracking-wide uppercase border border-fg-border text-fg-muted rounded-sm hover:text-fg-heading hover:border-fg-heading/40 transition-colors"
             >
