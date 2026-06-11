@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import * as XLSX from 'xlsx'
-import { loadProjects, loadEstimates, saveEstimate } from '@/lib/storage'
+import { loadProjects, loadEstimates } from '@/lib/storage'
+import { upsertEstimate } from '@/lib/storageAsync'
 import { generateId } from '@/lib/utils'
 import type { Project, Estimate, EstimateLineItem } from '@/types'
 import { Suspense } from 'react'
@@ -142,7 +143,7 @@ function NewEstimateForm() {
     reader.readAsBinaryString(file)
   }
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!projectType) { setProjectTypeError(true); return }
     setProjectTypeError(false)
     // Project is optional — estimate can exist without a project
@@ -181,7 +182,7 @@ function NewEstimateForm() {
       updatedAt: new Date().toISOString(),
     }
 
-    saveEstimate(estimate)
+    await upsertEstimate(estimate)   // local (immediate) + Supabase, so it reaches the dashboard/other devices
     router.push(`/estimates/${estimate.id}`)
   }
 

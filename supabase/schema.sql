@@ -68,6 +68,12 @@ CREATE TABLE IF NOT EXISTS fg_estimates (
   parent_estimate_id TEXT,
   variation_number INTEGER,
   variation_reason TEXT,
+  variation_amount NUMERIC,     -- net contract change for a variation; see migration 08
+  project_type TEXT,            -- landscape_only | pool_only | landscape_and_pool; drives quote exclusions
+  proposal_id TEXT,             -- backlink to the originating design proposal
+  is_baseline BOOLEAN DEFAULT false, -- locked when converted to a project
+  sent_at TEXT,
+  accepted_at TEXT,
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()

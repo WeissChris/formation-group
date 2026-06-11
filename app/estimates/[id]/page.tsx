@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { loadEstimates, saveEstimate, saveProject, loadProposals } from '@/lib/storage'
+import { loadEstimates, loadProposals } from '@/lib/storage'
+import { upsertEstimate, upsertProject } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals } from '@/lib/estimateCalculations'
 import { getAllLibraryItems, getCategories } from '@/lib/itemLibrary'
@@ -461,11 +462,12 @@ export default function EstimateBuilderPage() {
       if (!prev) return prev
       return {
         ...prev,
-        lineItems: prev.lineItems.map(li =>
-          li.id === lineItemId
-            ? { ...li, units: qty, uom: unit, total: qty * li.unitCost, revenue: qty * li.unitCost * (1 + li.markupPercent / 100) }
-            : li
-        ),
+        lineItems: prev.lineItems.map(li => {
+          if (li.id !== lineItemId) return li
+          const total = (qty || 0) * (li.unitCost || 0)
+          // Reuse the single revenue calculator so this path can't drift from the editor's.
+          return { ...li, units: qty, uom: unit, total, revenue: calculateLineItemRevenue({ ...li, total }) }
+        }),
         updatedAt: new Date().toISOString(),
       }
     })
@@ -473,13 +475,13 @@ export default function EstimateBuilderPage() {
 
   const handleSave = () => {
     if (!estimate) return
-    saveEstimate(estimate)
+    void upsertEstimate(estimate)   // local (immediate) + Supabase (background)
     setSaved(true)
     setHasUnsavedChanges(false)
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const handleConvertToProject = () => {
+  const handleConvertToProject = async () => {
     if (!estimate) return
     if (!confirm('Convert this estimate to a project? The estimate will be locked as the financial baseline.')) return
 
@@ -499,7 +501,7 @@ export default function EstimateBuilderPage() {
     estimate.lineItems.forEach(li => {
       const cat = li.category || 'General'
       if (!categoryMap[cat]) categoryMap[cat] = { revenue: 0, cost: 0 }
-      categoryMap[cat].revenue += li.revenue
+      categoryMap[cat].revenue += readLineItemRevenue(li)
       categoryMap[cat].cost += li.total
     })
     const baselineCategories = Object.entries(categoryMap).map(([name, v]) => ({ name, ...v }))
@@ -547,7 +549,8 @@ export default function EstimateBuilderPage() {
       createdAt: new Date().toISOString(),
     }
 
-    saveProject(newProject)
+    // Project first (estimate.project_id has an FK to fg_projects), then the estimate.
+    await upsertProject(newProject)
 
     // Lock estimate as baseline and link to project
     const updated = {
@@ -558,7 +561,7 @@ export default function EstimateBuilderPage() {
       isBaseline: true,
       updatedAt: new Date().toISOString(),
     }
-    saveEstimate(updated)
+    await upsertEstimate(updated)
     setEstimate(updated)
 
     router.push(`/projects/${newProject.id}`)

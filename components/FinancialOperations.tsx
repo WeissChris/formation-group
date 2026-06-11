@@ -4,9 +4,10 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  loadEstimates, saveEstimate, loadWeeklyActuals,
+  loadEstimates, loadWeeklyActuals,
   loadProgressClaims, saveProgressClaim, deleteProgressClaim,
 } from '@/lib/storage'
+import { upsertEstimate } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { getEstimateTotals, readLineItemRevenue } from '@/lib/estimateCalculations'
 import type { ProgressPaymentStage, Estimate, WeeklyActual, ProgressClaim, ProgressClaimLineItem } from '@/types'
@@ -957,7 +958,7 @@ function VariationsSubTab({
     const idx = all.findIndex(e => e.id === v.id)
     if (idx < 0) return
     all[idx] = { ...all[idx], status: 'accepted', updatedAt: new Date().toISOString() }
-    saveEstimate(all[idx])
+    void upsertEstimate(all[idx])
     onVariationsChange()
   }
 
@@ -966,7 +967,7 @@ function VariationsSubTab({
     const idx = all.findIndex(e => e.id === v.id)
     if (idx < 0) return
     all[idx] = { ...all[idx], status: 'declined', updatedAt: new Date().toISOString() }
-    saveEstimate(all[idx])
+    void upsertEstimate(all[idx])
     onVariationsChange()
   }
 
@@ -1003,9 +1004,10 @@ function VariationsSubTab({
       parentEstimateId: acceptedBase.id,
       variationNumber,
       variationReason: reason.trim(),
-      variationAmount: 0,
+      // variationAmount intentionally left unset — the contract delta is derived from line-item
+      // revenue (every consumer falls back to summing line items); storing 0 was a footgun.
     }
-    saveEstimate(variation)
+    void upsertEstimate(variation)
     router.push(`/estimates/${newId}`)
   }
 

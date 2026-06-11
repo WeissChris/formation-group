@@ -152,7 +152,7 @@ export async function upsertEstimate(estimate: Estimate): Promise<void> {
     const fresh = loadEstimates().find(e => e.id === estimate.id) ?? estimate
     await safeUpsert('fg_estimates', {
       id: fresh.id,
-      project_id: fresh.projectId,
+      project_id: fresh.projectId || null,   // '' would violate the FK to fg_projects
       project_name: fresh.projectName,
       name: fresh.name,
       version: fresh.version,
@@ -164,6 +164,12 @@ export async function upsertEstimate(estimate: Estimate): Promise<void> {
       parent_estimate_id: fresh.parentEstimateId,
       variation_number: fresh.variationNumber,
       variation_reason: fresh.variationReason,
+      variation_amount: fresh.variationAmount ?? null,
+      project_type: fresh.projectType ?? null,
+      proposal_id: fresh.proposalId ?? null,
+      is_baseline: fresh.isBaseline ?? false,
+      sent_at: fresh.sentAt ?? null,
+      accepted_at: fresh.acceptedAt ?? null,
       notes: fresh.notes,
       updated_at: fresh.updatedAt ?? new Date().toISOString(),
     })
@@ -272,6 +278,12 @@ function mapEstimate(row: Record<string, unknown>): Estimate {
     parentEstimateId: row.parent_estimate_id as string | undefined,
     variationNumber: row.variation_number as number | undefined,
     variationReason: row.variation_reason as string | undefined,
+    variationAmount: row.variation_amount != null ? Number(row.variation_amount) : undefined,
+    projectType: (row.project_type as Estimate['projectType']) || undefined,
+    proposalId: (row.proposal_id as string | null) || undefined,
+    isBaseline: (row.is_baseline as boolean) || undefined,
+    sentAt: (row.sent_at as string | null) || undefined,
+    acceptedAt: (row.accepted_at as string | null) || undefined,
     notes: row.notes as string | undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
