@@ -6,7 +6,7 @@ import { generateRevenueFromProposal, saveDesignProject, loadDesignProjectByProp
 import { getProposalByToken, acceptProposalByToken } from '@/lib/publicData'
 import { notifyProposalAccepted } from '@/lib/emailClient'
 import { formatCurrency, generateId, clientDisplayName, clientGreetingNames } from '@/lib/utils'
-import { getProposalPhases, phasesTotal, defaultPhaseDescription, defaultPhaseOutcome } from '@/lib/proposalPhases'
+import { getProposalPhases, phasesTotal, defaultPhaseDescription, defaultPhaseOutcome, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 import type { DesignProposal, ProposalContentBlock, DesignProject } from '@/types'
 import { ChevronDown, Check, Play } from 'lucide-react'
 
@@ -782,6 +782,24 @@ export default function ProposalAcceptancePage() {
             </div>
           </section>
         )}
+
+        {/* ── PROGRAM (timeline) ── */}
+        <section className="bg-white border-t" style={{ borderColor: BORDER }}>
+          <div className="max-w-[1200px] mx-auto px-8 py-20 md:py-28">
+            <h2
+              className="font-light mb-8"
+              style={{ fontSize: 'clamp(28px, 3vw, 40px)', color: HEADING }}
+            >
+              Program
+            </h2>
+            <p
+              className="text-base font-light leading-relaxed"
+              style={{ color: BODY, whiteSpace: 'pre-line', maxWidth: 760 }}
+            >
+              {proposal.programText || DEFAULT_PROGRAM_TEXT}
+            </p>
+          </div>
+        </section>
 
         {/* ── ACCEPTANCE SECTION ── */}
         <section className="border-t" style={{ backgroundColor: BG_WARM, borderColor: BORDER }}>

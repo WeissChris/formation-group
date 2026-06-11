@@ -1,10 +1,11 @@
 import { formatCurrency, clientDisplayName, clientGreetingNames } from '@/lib/utils'
 import type { ProposalPhase } from '@/types'
-import { defaultPhaseDescription, defaultPhaseOutcome, phasesTotal } from '@/lib/proposalPhases'
+import { defaultPhaseDescription, defaultPhaseOutcome, phasesTotal, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 
 interface Props {
   clientName: string
   clientName2?: string
+  programText?: string
   projectAddress: string
   introText?: string
   phases: ProposalPhase[]
@@ -108,7 +109,7 @@ function DeliverablesBox({ items }: { items: string[] }) {
 }
 
 export default function ProposalPreview({
-  clientName, clientName2, projectAddress, introText,
+  clientName, clientName2, programText, projectAddress, introText,
   phases,
   validUntil,
   welcomeVideoUrl,
@@ -384,6 +385,16 @@ export default function ProposalPreview({
             </div>
           ))}
         </div>
+      </div>
+
+      {/* ── PROGRAM (timeline) ── */}
+      <div className="border-t p-8" style={{ borderColor: BORDER }}>
+        <h3 className="font-light mb-4" style={{ fontSize: 20, color: HEADING }}>
+          Program
+        </h3>
+        <p className="text-xs font-light leading-relaxed" style={{ color: BODY, whiteSpace: 'pre-line', maxWidth: 620 }}>
+          {programText || DEFAULT_PROGRAM_TEXT}
+        </p>
       </div>
 
       {/* ── ACCEPTANCE SECTION ── */}

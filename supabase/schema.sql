@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS fg_proposals (
   phases JSONB DEFAULT '[]',   -- variable-length editable phase list (source of truth; see migration 04)
   intro_text TEXT,             -- opening paragraph shown on the proposal page
   email_message TEXT,          -- message in the delivery email (separate from intro_text)
+  program_text TEXT,           -- "Program" box (timeline) near the end of the proposal; see migration 11
   cc_emails TEXT,              -- extra recipients CC'd on the proposal email (comma-separated)
   welcome_video_url TEXT,      -- per-proposal custom welcome video (blank = default); see migration 06
   process_video_url TEXT,      -- per-proposal custom design-process video (blank = default); see migration 06

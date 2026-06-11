@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { loadProposals, saveProposal, deleteProposal, generateRevenueFromProposal, generateInvoiceStages, saveDesignProject, loadDesignProjectByProposalId } from '@/lib/storage'
 import { upsertProposal } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
-import { getProposalPhases, syncLegacyPhaseFields, phasesTotal, makeBlankPhase, defaultPhaseDescription, defaultPhaseOutcome } from '@/lib/proposalPhases'
+import { getProposalPhases, syncLegacyPhaseFields, phasesTotal, makeBlankPhase, defaultPhaseDescription, defaultPhaseOutcome, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 import { requestSendProposal, sendErrorMessage } from '@/lib/emailClient'
 import type { DesignProposal, ProposalContentBlock, ProposalPhase, DesignProject } from '@/types'
 import { Trash2, Copy, Check, Pencil, Mail } from 'lucide-react'
@@ -567,6 +567,29 @@ export default function ProposalDetailPage() {
             )}
           </div>
 
+          {/* Program (timeline) — the "Program" box near the end of the proposal */}
+          <div className="border-t border-fg-border pt-5">
+            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-2">Program (timeline)</p>
+            <p className="text-2xs font-light text-fg-muted/60 mb-2">The &quot;Program&quot; box near the end of the proposal — how long each phase takes. Prefilled with the standard wording; edit per job.</p>
+            {editing ? (
+              <textarea
+                defaultValue={proposal.programText ?? DEFAULT_PROGRAM_TEXT}
+                rows={6}
+                onBlur={(e) => {
+                  const updated: DesignProposal = { ...proposal, programText: e.target.value || undefined, updatedAt: new Date().toISOString() }
+                  saveProposal(updated)
+                  setProposal(updated)
+                  void upsertProposal(updated)
+                }}
+                className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-none placeholder-fg-muted/40 leading-relaxed"
+              />
+            ) : (
+              <p className="text-sm font-light text-fg-heading leading-relaxed whitespace-pre-line">
+                {proposal.programText || DEFAULT_PROGRAM_TEXT}
+              </p>
+            )}
+          </div>
+
           {proposal.notes && (
             <div className="border-t border-fg-border pt-5">
               <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-2">Notes</p>
@@ -717,6 +740,7 @@ export default function ProposalDetailPage() {
           <ProposalPreview
             clientName={proposal.clientName}
             clientName2={proposal.clientName2}
+            programText={proposal.programText}
             projectAddress={proposal.projectAddress}
             introText={proposal.introText}
             phases={getProposalPhases(proposal)}

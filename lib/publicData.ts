@@ -174,6 +174,7 @@ function mapProposalRow(row: Record<string, unknown>): DesignProposal {
     phases: (row.phases as DesignProposal['phases']) || undefined,
     introText: (row.intro_text as string | null) || undefined,
     emailMessage: (row.email_message as string | null) || undefined,
+    programText: (row.program_text as string | null) || undefined,
     ccEmails: (row.cc_emails as string | null) || undefined,
     welcomeVideoUrl: (row.welcome_video_url as string | null) || undefined,
     processVideoUrl: (row.process_video_url as string | null) || undefined,

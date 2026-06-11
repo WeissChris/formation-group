@@ -8,6 +8,14 @@
 
 import type { DesignProposal, ProposalPhase } from '@/types'
 
+// Default copy for the "Program" box near the end of the proposal — how long each phase takes.
+// Editable per proposal via proposal.programText; this renders when that's blank.
+export const DEFAULT_PROGRAM_TEXT = `Upon acceptance of this proposal and receipt of the engagement fee, we will schedule your project to commence.
+
+Phase 1 (Concept Design): Approximately 6 weeks
+Phase 2 (Design Development): Commences following concept approval (3 weeks)
+I will be in touch as the concept design nears completion to arrange a presentation meeting.`
+
 // Historic hardcoded copy, lifted verbatim from the old ProposalPreview so derived (legacy)
 // proposals are unchanged.
 export const DEFAULT_PHASE_TITLES = [

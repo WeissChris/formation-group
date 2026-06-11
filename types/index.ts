@@ -242,6 +242,7 @@ export interface DesignProposal {
   acceptedByName?: string
   introText?: string           // Opening paragraph shown ON the proposal page (the letter)
   emailMessage?: string        // Message in the email that delivers the proposal (separate from introText)
+  programText?: string         // "Program" box near the end — how long each phase takes (editable; has a default)
   welcomeVideoUrl?: string     // Video shown under the opening letter (YouTube or Vimeo)
   processVideoUrl?: string     // Video shown under the Design Process section (YouTube or Vimeo)
   notes?: string
