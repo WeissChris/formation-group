@@ -7,17 +7,7 @@ import { isSupabaseAuthEnabled } from '@/lib/supabaseBrowser'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import NavBar from '@/components/NavBar'
 import {
-  seedDemoData,
-  seedQ1371Estimate,
-  seedQ1362Estimate,
-  seedQ1356Estimate,
-  seedQ1369Estimate,
   seedDesignProjects,
-  seedRamondettaPayments,
-  seedQ1331Estimate,
-  seedQ1243Estimate,
-  seedQ1266Estimate,
-  seedQ1320Estimate,
   migrateProjectNames,
   migrateForemanPins,
 } from '@/lib/seed'
@@ -92,21 +82,30 @@ export default function LoginGate({ children }: { children: ReactNode }) {
           localStorage.setItem('fg_proposals_purged_2026_06_11', '1')
         }
 
-        // Seed all Formation data (idempotent — safe to run on every login)
-        seedDemoData()
-        // Demo proposals retired 2026-06-11 (all were tests) — seeding disabled so they
-        // don't repopulate localStorage and get re-synced to Supabase:
-        //   seedAllDesignProposals(); seedCachiaProposal()
-        seedQ1371Estimate()
-        seedQ1362Estimate()
-        seedQ1356Estimate()
-        seedQ1369Estimate()
+        // One-time purge of all projects + estimates (and their local-only collateral). All were
+        // tests/old imports; cleared from Supabase on 2026-06-12 (backups: fg_projects_backup_,
+        // fg_estimates_backup_, fg_revenue_projbackup_20260612). Clears the local copies BEFORE the
+        // auto-sync below so it can't re-push them. Design-proposal revenue (design-*) is preserved.
+        if (!localStorage.getItem('fg_projects_estimates_purged_2026_06_12')) {
+          localStorage.removeItem('fg_projects')
+          localStorage.removeItem('fg_estimates')
+          localStorage.removeItem('fg_gantt')
+          localStorage.removeItem('fg_actuals')
+          localStorage.removeItem('fg_payment_stages')
+          try {
+            const rev = JSON.parse(localStorage.getItem('fg_revenue') || '[]')
+            if (Array.isArray(rev)) {
+              localStorage.setItem('fg_revenue', JSON.stringify(rev.filter((r: { projectId?: string }) => String(r?.projectId || '').startsWith('design-'))))
+            }
+          } catch { /* ignore */ }
+          localStorage.setItem('fg_projects_estimates_purged_2026_06_12', '1')
+        }
+
+        // Seed Formation data (idempotent). Demo projects + estimates retired 2026-06-12 (all were
+        // tests/old imports) — seeding disabled so they don't repopulate localStorage and re-sync:
+        //   seedDemoData(); seedRamondettaPayments(); seedQ1371/1362/1356/1369/1331/1243/1266/1320Estimate()
+        // Proposals were retired earlier (2026-06-11): seedAllDesignProposals(); seedCachiaProposal()
         seedDesignProjects()
-        seedRamondettaPayments()
-        seedQ1331Estimate()
-        seedQ1243Estimate()
-        seedQ1266Estimate()
-        seedQ1320Estimate()
 
         // Auto-backup after seeds complete
         migrateProjectNames()
