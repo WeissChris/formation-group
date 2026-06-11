@@ -18,8 +18,11 @@ export interface ProposalEmailInput {
   clientName: string
   proposalUrl: string
   projectAddress?: string
-  introText?: string
+  message?: string   // the email body message — separate from the proposal's on-page intro
 }
+
+const DEFAULT_EMAIL_MESSAGE =
+  'Thank you for the opportunity to discuss your project. Your landscape design proposal is ready to view online — including our design process, the deliverables for each phase, and the associated fees.'
 
 /** Absolute base URL for hosted assets (hero image) in the email. */
 function appBaseUrl(): string {
@@ -49,18 +52,11 @@ export function proposalEmailSubject(): string {
   return 'Your landscape design proposal — Formation Landscapes'
 }
 
-/**
- * The opening line. Uses the proposal's intro text first sentence if present, otherwise a
- * sensible default — kept short so the email reads like a personal note, with the full detail
- * living on the proposal page itself.
- */
-function leadParagraph(introText?: string): string {
-  const trimmed = (introText || '').trim()
-  if (trimmed) {
-    const firstPara = trimmed.split(/\n\s*\n/)[0].trim()
-    if (firstPara) return firstPara
-  }
-  return 'Thank you for the opportunity to discuss your project. Your landscape design proposal is ready to view online — including our design process, the deliverables for each phase, and the associated fees.'
+/** The email body, split into paragraphs (blank-line separated). Falls back to a sensible default. */
+function messageParagraphs(message?: string): string[] {
+  const trimmed = (message || '').trim()
+  const source = trimmed || DEFAULT_EMAIL_MESSAGE
+  return source.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)
 }
 
 /** Plain-text body (improves deliverability and covers text-only clients). */
@@ -68,7 +64,7 @@ export function buildProposalEmailText(input: ProposalEmailInput): string {
   return [
     `Hi ${firstName(input.clientName)},`,
     '',
-    leadParagraph(input.introText),
+    messageParagraphs(input.message).join('\n\n'),
     '',
     `View your proposal: ${input.proposalUrl}`,
     '',
@@ -88,7 +84,9 @@ export function buildProposalEmailHtml(input: ProposalEmailInput): string {
   const MUTED = '#8A8580'
   const font = `-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif`
   const name = escapeHtml(firstName(input.clientName))
-  const lead = escapeHtml(leadParagraph(input.introText))
+  const bodyHtml = messageParagraphs(input.message)
+    .map((p, i, arr) => `<p style="margin:0 0 ${i === arr.length - 1 ? 28 : 16}px 0;font-size:14px;line-height:1.7;color:${BODY};">${escapeHtml(p)}</p>`)
+    .join('')
   const url = escapeHtml(input.proposalUrl)
   const hero = `${appBaseUrl()}/proposal-hero-8.jpg`
   const address = input.projectAddress ? escapeHtml(input.projectAddress.trim()) : ''
@@ -118,7 +116,7 @@ export function buildProposalEmailHtml(input: ProposalEmailInput): string {
             <tr>
               <td style="padding:26px 44px 0 44px;">
                 <p style="margin:0 0 16px 0;font-size:15px;color:${INK};">Hi ${name},</p>
-                <p style="margin:0 0 28px 0;font-size:14px;line-height:1.7;color:${BODY};">${lead}</p>
+                ${bodyHtml}
                 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 22px 0;">
                   <tr>
                     <td style="background:${GREEN};border-radius:2px;">

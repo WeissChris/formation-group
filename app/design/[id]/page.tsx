@@ -437,10 +437,10 @@ export default function ProposalDetailPage() {
             )}
           </div>
 
-          {/* Intro Text */}
+          {/* Proposal opening paragraph (shown ON the proposal page) */}
           <div className="border-t border-fg-border pt-5">
-            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-2">Introduction Text</p>
-            <p className="text-2xs font-light text-fg-muted/60 mb-2">Personalised intro shown on the client-facing proposal</p>
+            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-2">Opening paragraph (on the proposal)</p>
+            <p className="text-2xs font-light text-fg-muted/60 mb-2">The personalised intro in the opening letter at the top of the proposal page</p>
             {editing ? (
               <textarea
                 defaultValue={proposal.introText ?? ''}
@@ -449,6 +449,7 @@ export default function ProposalDetailPage() {
                   const updated: DesignProposal = { ...proposal, introText: e.target.value || undefined, updatedAt: new Date().toISOString() }
                   saveProposal(updated)
                   setProposal(updated)
+                  void upsertProposal(updated)
                 }}
                 className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-none placeholder-fg-muted/40 leading-relaxed"
                 placeholder="Thank you for the opportunity to meet on site and discuss your project..."
@@ -456,6 +457,30 @@ export default function ProposalDetailPage() {
             ) : (
               <p className="text-sm font-light text-fg-heading leading-relaxed whitespace-pre-line">
                 {proposal.introText || <span className="text-fg-muted/40 italic">Default intro text will be used</span>}
+              </p>
+            )}
+          </div>
+
+          {/* Email message (shown in the delivery EMAIL — separate from the proposal intro) */}
+          <div className="border-t border-fg-border pt-5">
+            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-2">Email message</p>
+            <p className="text-2xs font-light text-fg-muted/60 mb-2">The note in the email that delivers the proposal — separate from the opening paragraph above</p>
+            {editing ? (
+              <textarea
+                defaultValue={proposal.emailMessage ?? ''}
+                rows={4}
+                onBlur={(e) => {
+                  const updated: DesignProposal = { ...proposal, emailMessage: e.target.value || undefined, updatedAt: new Date().toISOString() }
+                  saveProposal(updated)
+                  setProposal(updated)
+                  void upsertProposal(updated)
+                }}
+                className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-none placeholder-fg-muted/40 leading-relaxed"
+                placeholder="Thank you for the opportunity to discuss your project. Your proposal is ready to view online…"
+              />
+            ) : (
+              <p className="text-sm font-light text-fg-heading leading-relaxed whitespace-pre-line">
+                {proposal.emailMessage || <span className="text-fg-muted/40 italic">Default email message will be used</span>}
               </p>
             )}
           </div>

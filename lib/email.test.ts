@@ -42,13 +42,13 @@ describe('buildProposalEmailText', () => {
     expect(text).toContain('Formation Landscapes')
   })
 
-  it('uses the proposal intro first paragraph when present', () => {
-    const text = buildProposalEmailText({ ...base, introText: 'Custom opening line.\n\nSecond paragraph.' })
+  it('uses the custom email message (all paragraphs) when provided', () => {
+    const text = buildProposalEmailText({ ...base, message: 'Custom opening line.\n\nSecond paragraph.' })
     expect(text).toContain('Custom opening line.')
-    expect(text).not.toContain('Second paragraph.')
+    expect(text).toContain('Second paragraph.')   // the dedicated message renders in full
   })
 
-  it('falls back to a default lead when no intro', () => {
+  it('falls back to a default message when none provided', () => {
     expect(buildProposalEmailText(base)).toContain('Thank you for the opportunity')
   })
 

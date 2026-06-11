@@ -238,7 +238,8 @@ export interface DesignProposal {
   acceptanceToken: string
   acceptedAt?: string
   acceptedByName?: string
-  introText?: string           // Personalised introduction paragraph for proposal
+  introText?: string           // Opening paragraph shown ON the proposal page (the letter)
+  emailMessage?: string        // Message in the email that delivers the proposal (separate from introText)
   welcomeVideoUrl?: string     // Video shown under the opening letter (YouTube or Vimeo)
   processVideoUrl?: string     // Video shown under the Design Process section (YouTube or Vimeo)
   notes?: string

@@ -15,7 +15,7 @@ export async function requestSendProposal(proposal: DesignProposal): Promise<Sen
         clientEmail: proposal.clientEmail,
         acceptanceToken: proposal.acceptanceToken,
         projectAddress: proposal.projectAddress,
-        introText: proposal.introText,
+        emailMessage: proposal.emailMessage,
       }),
     })
     const data = await resp.json().catch(() => ({}))

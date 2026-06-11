@@ -46,6 +46,7 @@ The following outlines our proposed design process and associated fees.`
     clientPhone: '',
     projectAddress: '',
     introText: DEFAULT_INTRO_TEXT,
+    emailMessage: '',
     validUntil: defaultValidUntil.toISOString().split('T')[0],
     notes: '',
     welcomeVideoUrl: '',
@@ -87,6 +88,7 @@ The following outlines our proposed design process and associated fees.`
       projectAddress: form.projectAddress,
       status,
       introText: form.introText || undefined,
+      emailMessage: form.emailMessage || undefined,
       // legacy phase1/2/3 fields are filled by syncLegacyPhaseFields from the phases array
       phase1Fee: 0, phase1Scope: '', phase2Fee: 0, phase2Scope: '',
       validUntil: form.validUntil,
@@ -178,16 +180,33 @@ The following outlines our proposed design process and associated fees.`
 
           <div className="h-px bg-fg-border" />
 
-          {/* Intro text */}
+          {/* Opening paragraph — shown ON the proposal page */}
           <div className="space-y-4">
-            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Introduction Text</p>
-            <p className="text-xs font-light text-fg-muted/60 -mt-2">Personalised intro shown on the client-facing proposal</p>
+            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Opening paragraph (on the proposal)</p>
+            <p className="text-xs font-light text-fg-muted/60 -mt-2">The personalised intro in the opening letter at the top of the proposal page</p>
             <div>
               <textarea
                 value={form.introText}
                 onChange={e => set('introText', e.target.value)}
                 rows={5}
                 placeholder="Thank you for the opportunity to meet on site and discuss your project..."
+                className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-none placeholder-fg-muted/40 leading-relaxed"
+              />
+            </div>
+          </div>
+
+          <div className="h-px bg-fg-border" />
+
+          {/* Email message — shown in the delivery email, separate from the opening paragraph */}
+          <div className="space-y-4">
+            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Email message</p>
+            <p className="text-xs font-light text-fg-muted/60 -mt-2">The note in the email that delivers the proposal (leave blank for the default)</p>
+            <div>
+              <textarea
+                value={form.emailMessage}
+                onChange={e => set('emailMessage', e.target.value)}
+                rows={4}
+                placeholder="Thank you for the opportunity to discuss your project. Your proposal is ready to view online…"
                 className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-none placeholder-fg-muted/40 leading-relaxed"
               />
             </div>
