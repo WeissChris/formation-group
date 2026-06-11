@@ -10,6 +10,7 @@ import {
   type ProjectCostsResponse,
 } from '@/lib/xero'
 import { reconcileLabour, computeLabourPace, isLabourAccount } from '@/lib/labour'
+import { CostCurve } from '@/components/CostCurve'
 import type { EstimateLineItem, WeeklyActual } from '@/types'
 
 interface Props {
@@ -142,6 +143,9 @@ export function ProjectCostsTab({
           tone={gpPct >= targetMarginPct - 2 ? 'good' : gpPct >= targetMarginPct - 10 ? 'warn' : 'bad'}
         />
       </div>
+
+      {/* Cumulative budget-vs-actual cost curve (weekly supply + monthly labour from Xero) */}
+      <CostCurve projectId={projectId} />
 
       {/* Labour reconciliation + pace */}
       {(() => {

@@ -219,6 +219,31 @@ export async function getProjectCosts(projectId: string): Promise<ProjectCostsRe
   }
 }
 
+export interface CostPeriodApiRow {
+  account_code: string
+  account_name: string | null
+  source: 'supply' | 'labour'
+  grain: 'week' | 'month'
+  period_end: string
+  amount_ex_gst: number
+}
+
+export interface CostPeriodsResponse {
+  periods: CostPeriodApiRow[]
+  last_pulled_at: string | null
+}
+
+/** Time-phased Xero actual cost for a project (weekly supply + monthly labour buckets). */
+export async function getProjectCostPeriods(projectId: string): Promise<CostPeriodsResponse> {
+  try {
+    const resp = await fetch(`/api/projects/${projectId}/cost-periods`, { cache: 'no-store' })
+    if (!resp.ok) return { periods: [], last_pulled_at: null }
+    return await resp.json()
+  } catch {
+    return { periods: [], last_pulled_at: null }
+  }
+}
+
 export interface LiveJobRow {
   project_id: string
   cost_to_date: number
