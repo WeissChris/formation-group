@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS fg_proposals (
   intro_text TEXT,             -- opening paragraph shown on the proposal page
   email_message TEXT,          -- message in the delivery email (separate from intro_text)
   cc_emails TEXT,              -- extra recipients CC'd on the proposal email (comma-separated)
+  welcome_video_url TEXT,      -- per-proposal custom welcome video (blank = default); see migration 06
+  process_video_url TEXT,      -- per-proposal custom design-process video (blank = default); see migration 06
   valid_until TEXT,
   notes TEXT,
   acceptance_token TEXT UNIQUE,

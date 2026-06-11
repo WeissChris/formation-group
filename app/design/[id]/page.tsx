@@ -571,21 +571,13 @@ export default function ProposalDetailPage() {
               <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block">Proposal Videos</label>
               <input
                 defaultValue={proposal.welcomeVideoUrl ?? ''}
-                onBlur={(e) => {
-                  const updated: DesignProposal = { ...proposal, welcomeVideoUrl: e.target.value || undefined, updatedAt: new Date().toISOString() }
-                  saveProposal(updated)
-                  setProposal(updated)
-                }}
+                onBlur={(e) => saveProposalField({ welcomeVideoUrl: e.target.value.trim() || undefined })}
                 className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors placeholder-fg-muted/40"
                 placeholder="Welcome video URL (leave blank for default)"
               />
               <input
                 defaultValue={proposal.processVideoUrl ?? ''}
-                onBlur={(e) => {
-                  const updated: DesignProposal = { ...proposal, processVideoUrl: e.target.value || undefined, updatedAt: new Date().toISOString() }
-                  saveProposal(updated)
-                  setProposal(updated)
-                }}
+                onBlur={(e) => saveProposalField({ processVideoUrl: e.target.value.trim() || undefined })}
                 className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors placeholder-fg-muted/40"
                 placeholder="Process video URL (leave blank for default)"
               />
