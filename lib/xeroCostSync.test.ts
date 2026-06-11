@@ -207,6 +207,54 @@ describe('aggregateCosts — aggregation', () => {
   })
 })
 
+describe('aggregateCosts — weekly supply buckets (periodRows)', () => {
+  const li = (amt: number) => ({ AccountCode: '311', LineAmount: amt, Tracking: [{ TrackingOptionID: 'opt' }] })
+
+  it('buckets supply by week-ending Friday, merges same-week, and the buckets sum to the rollup', () => {
+    const accounts = new Map([COGS('311', 'Subcontractors')])
+    const projects = new Map([['opt', 'proj']])
+    const txs = [
+      tx('2026-06-01', [li(1000)]),
+      tx('2026-06-01', [li(500)]),   // exact same date → same weekly bucket
+      tx('2026-06-08', [li(2000)]),  // +7 days → the next week's Friday, a distinct bucket
+    ]
+    const { rows, periodRows } = aggregateCosts(txs, projects, accounts)
+
+    // Cumulative rollup is unchanged by the additive bucketing
+    expect(rows).toHaveLength(1)
+    expect(rows[0].amount_ex_gst).toBe(3500)
+
+    // Two weekly buckets, every one a Friday, tagged supply/week
+    expect(periodRows).toHaveLength(2)
+    expect(periodRows.every(p => p.source === 'supply' && p.grain === 'week')).toBe(true)
+    expect(periodRows.every(p => new Date(`${p.period_end}T00:00:00`).getDay() === 5)).toBe(true)
+    // The two Fridays are exactly 7 days apart
+    const ends = periodRows.map(p => p.period_end).sort()
+    expect((new Date(ends[1]).getTime() - new Date(ends[0]).getTime()) / 86400000).toBe(7)
+    // Same-week merge (1000+500) and the later week, summing to the rollup
+    const byEnd = Object.fromEntries(periodRows.map(p => [p.period_end, p.amount_ex_gst]))
+    expect(byEnd[ends[0]]).toBe(1500)
+    expect(byEnd[ends[1]]).toBe(2000)
+    expect(periodRows.reduce((s, p) => s + p.amount_ex_gst, 0)).toBe(3500)
+  })
+
+  it('only buckets cost-of-sales line items (GP-only, same as the rollup)', () => {
+    const accounts = new Map([
+      account('420', 'Director Remuneration', 'EXPENSE', 'OVERHEADS'),
+      ...[COGS('311', 'Subcontractors')],
+    ] as [string, { AccountID: string; Code: string; Name: string; Class: string; Type: string }][])
+    const projects = new Map([['opt', 'proj']])
+    const txs = [tx('2026-06-08', [
+      { AccountCode: '420', LineAmount: 9999, Tracking: [{ TrackingOptionID: 'opt' }] },
+      li(2000),
+    ])]
+    const { periodRows } = aggregateCosts(txs, projects, accounts)
+    expect(periodRows).toHaveLength(1)
+    expect(periodRows[0].account_code).toBe('311')
+    expect(periodRows[0].amount_ex_gst).toBe(2000)
+  })
+})
+
 // ── Production labour via the P&L report ─────────────────────────────────────
 // Production wages + super don't appear on bills (they post via payroll), so they come from
 // the Profit & Loss report broken down by the Project tracking category. CRITICAL GP-only

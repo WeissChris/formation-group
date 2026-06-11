@@ -93,6 +93,27 @@ interface CostRollupRow {
   last_bill_date: string | null
 }
 
+/** Time-phased row written to fg_xero_cost_periods (additive — never affects the GP rollup above). */
+export interface CostPeriodRow {
+  project_id: string
+  account_code: string
+  account_name: string
+  source: 'supply' | 'labour'
+  grain: 'week' | 'month'
+  period_end: string   // YYYY-MM-DD (Friday for weekly supply, month-end for monthly labour)
+  amount_ex_gst: number
+}
+
+/** Snap a YYYY-MM-DD date to its week-ending Friday (matches lib/utils snapToFriday + the revenue
+ * calendar's Friday weeks). Self-contained so this server module needs no client-util import. */
+function weekEndingFriday(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`)
+  const day = d.getDay()                 // 0 Sun .. 6 Sat
+  const diff = day === 6 ? -1 : 5 - day  // Sat → back to Fri; Sun–Thu → forward to Fri; Fri stays
+  d.setDate(d.getDate() + diff)
+  return ymd(d)
+}
+
 /**
  * Diagnostic breakdown emitted by aggregateCosts so we can see WHY a pull produced the row
  * count it did — isolates "tracking didn't match" from "account filter dropped everything".
@@ -293,7 +314,7 @@ export function aggregateCosts(
   projectByOptionId: Map<string, string>,
   accountByCode: Map<string, XeroAccount>,
   projectByCatOptName?: Map<string, string>,
-): { rows: CostRollupRow[]; diagnostics: AggregateDiagnostics } {
+): { rows: CostRollupRow[]; periodRows: CostPeriodRow[]; diagnostics: AggregateDiagnostics } {
   // {projectId|accountCode → {amount, count, lastDate}}
   const acc = new Map<string, {
     project_id: string
@@ -303,6 +324,9 @@ export function aggregateCosts(
     count: number
     lastDate: string | null
   }>()
+  // Time-phased weekly supply buckets, keyed projectId|accountCode|weekEndingFriday. Additive —
+  // built from the SAME matched/filtered line items as `acc`, so it can't drift from the rollup.
+  const periodAcc = new Map<string, { project_id: string; account_code: string; account_name: string; period_end: string; amount: number }>()
 
   const diag: AggregateDiagnostics = {
     lineItemsTotal: 0,
@@ -370,6 +394,17 @@ export function aggregateCosts(
       if (!isCostOfSales(account)) continue
       diag.lineItemsCostFiltered++
 
+      // Time-phased weekly bucket (supply). Same matched + cost-filtered line item; bucket by the
+      // transaction's week-ending Friday so it lines up with the revenue calendar / Gantt weeks.
+      const txIso = parseXeroDate(tx.date)
+      if (txIso) {
+        const we = weekEndingFriday(txIso)
+        const pkey = `${projectId}|${code}|${we}`
+        const pex = periodAcc.get(pkey)
+        if (pex) pex.amount += amount
+        else periodAcc.set(pkey, { project_id: projectId, account_code: code, account_name: account!.Name, period_end: we, amount })
+      }
+
       const key = `${projectId}|${code}`
       const existing = acc.get(key)
       if (existing) {
@@ -401,7 +436,17 @@ export function aggregateCosts(
     last_bill_date: v.lastDate ? parseXeroDate(v.lastDate) : null,
   }))
 
-  return { rows, diagnostics: diag }
+  const periodRows: CostPeriodRow[] = Array.from(periodAcc.values()).map(v => ({
+    project_id: v.project_id,
+    account_code: v.account_code,
+    account_name: v.account_name,
+    source: 'supply',
+    grain: 'week',
+    period_end: v.period_end,
+    amount_ex_gst: Math.round(v.amount * 100) / 100,
+  }))
+
+  return { rows, periodRows, diagnostics: diag }
 }
 
 /** Convert Xero's "/Date(1716115200000+0000)/" wire format to "YYYY-MM-DD" local. */
@@ -432,6 +477,22 @@ function parseXeroDate(xeroDateStr: string): string | null {
 // reader can't drift). It deliberately does NOT widen COST_OF_SALES_TYPES to include
 // WAGESEXPENSE / SUPERANNUATION, because that would pull ALL wages (admin, directors, overhead),
 // which Andrew must never see.
+
+/** How many trailing months of monthly labour buckets to pull for the cost-period detail. One
+ * P&L report call per month (bounded so the additive period pull can't balloon the sync). */
+const LABOUR_PERIOD_MONTHS = 12
+
+/** The last N calendar months as {from, to, periodEnd} YYYY-MM-DD (oldest first, includes current). */
+function lastNMonths(n: number): Array<{ from: string; to: string; periodEnd: string }> {
+  const out: Array<{ from: string; to: string; periodEnd: string }> = []
+  const now = new Date()
+  for (let i = n - 1; i >= 0; i--) {
+    const first = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const last = new Date(now.getFullYear(), now.getMonth() - i + 1, 0)
+    out.push({ from: ymd(first), to: ymd(last), periodEnd: ymd(last) })
+  }
+  return out
+}
 
 /** Local-time YYYY-MM-DD — the format the Xero Reports API expects for fromDate/toDate. */
 function ymd(d: Date): string {
@@ -704,7 +765,7 @@ export async function runFullSync(
       ...spend.map(s => ({ date: s.Date, lineItems: s.LineItems || [] })),
     ]
 
-    const { rows: rollup, diagnostics } = aggregateCosts(transactions, projectByOptionId, accountByCode, projectByCatOptName)
+    const { rows: rollup, periodRows: supplyPeriodRows, diagnostics } = aggregateCosts(transactions, projectByOptionId, accountByCode, projectByCatOptName)
 
     // ── Production labour (separate GP-only path via the P&L report) ──────────
     // Soft-fail: if this throws (most likely the accounting.reports.profitandloss.read scope
@@ -819,6 +880,43 @@ export async function runFullSync(
         pulled_at: new Date().toISOString(),
       }))
       await supabaseAdmin.from('fg_xero_project_costs').insert(insertPayload)
+    }
+
+    // ── Time-phased cost periods (additive, fully isolated) ────────────────────
+    // Weekly supply buckets come free from the transactions already fetched; monthly labour
+    // buckets cost one P&L call per month (bounded to LABOUR_PERIOD_MONTHS). Written to the
+    // separate fg_xero_cost_periods table. Wrapped so a failure here can NEVER affect the GP
+    // rollup written above — the period data is a monitoring aid, not the source of truth.
+    try {
+      const labourPeriodRows: CostPeriodRow[] = []
+      if (labourAccounts.length > 0 && trackingCategoryId) {
+        for (const mo of lastNMonths(LABOUR_PERIOD_MONTHS)) {
+          try {
+            const report = await fetchProfitAndLoss(tokens.accessToken, tokens.tenantId, trackingCategoryId, mo.from, mo.to)
+            const parsed = parseLabourFromPnL(report, labourAccounts, projectByOptionName, mo.to)
+            for (const r of parsed.rows) {
+              if (r.amount_ex_gst === 0) continue
+              labourPeriodRows.push({
+                project_id: r.project_id, account_code: r.account_code, account_name: r.account_name,
+                source: 'labour', grain: 'month', period_end: mo.periodEnd, amount_ex_gst: r.amount_ex_gst,
+              })
+            }
+          } catch { /* skip just this month — a partial labour history is fine for the curve */ }
+          await new Promise(res => setTimeout(res, 1200))   // polite between report calls
+        }
+      }
+      const allPeriodRows = [...supplyPeriodRows, ...labourPeriodRows]
+      const periodProjects = Array.from(new Set(allPeriodRows.map(r => r.project_id)))
+      if (periodProjects.length > 0) {
+        await supabaseAdmin.from('fg_xero_cost_periods').delete().in('project_id', periodProjects)
+        if (allPeriodRows.length > 0) {
+          await supabaseAdmin
+            .from('fg_xero_cost_periods')
+            .insert(allPeriodRows.map(r => ({ ...r, pulled_at: new Date().toISOString() })))
+        }
+      }
+    } catch (e) {
+      console.warn('[xero] cost-period bucketing failed (GP rollup unaffected):', e instanceof Error ? e.message : e)
     }
 
     const result: SyncResult = {
