@@ -20,6 +20,7 @@ import {
   toISODate,
   SHORT_MONTH_NAMES,
 } from '@/lib/utils'
+import { readLineItemRevenue } from '@/lib/estimateCalculations'
 import type { Project, Estimate, GanttEntry, GanttSegment, GanttSubtask, WeeklyRevenue } from '@/types'
 import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react'
 
@@ -123,7 +124,7 @@ function extractCategories(estimate: Estimate): CategorySummary[] {
     if (!map[item.category]) {
       map[item.category] = { category: item.category, crewType: item.crewType, budgetedRevenue: 0, budgetedCost: 0 }
     }
-    map[item.category].budgetedRevenue += item.revenue
+    map[item.category].budgetedRevenue += readLineItemRevenue(item)
     map[item.category].budgetedCost += item.total
   }
   return Object.values(map)
@@ -684,6 +685,58 @@ export default function GanttPage() {
     setTimeout(() => setSuccessMsg(''), 2000)
   }
 
+  // ── Seed timeline from the estimate ─────────────────────────────────────────
+  // Drops one starter bar per category (budget fully allocated), staggered in sequence, so the
+  // user begins from a draft programme instead of drawing every bar by hand. Only fills EMPTY
+  // categories — existing hand-drawn timelines are left untouched, so it's safe to click anytime.
+  const handleSeedFromEstimate = () => {
+    if (!estimate || categories.length === 0) {
+      setSuccessMsg('No estimate categories to seed from')
+      setTimeout(() => setSuccessMsg(''), 3000)
+      return
+    }
+    const DEFAULT_WEEKS = 2
+    const lastIdx = fridays.length - 1
+    // Start at the project's start week if set, else the first column.
+    let cursor = project?.startDate ? fridays.findIndex(f => toISODate(f) >= project.startDate) : 0
+    if (cursor < 0) cursor = 0
+    let seededCount = 0
+    const seeded: GanttEntry[] = categories.map(cat => {
+      const existing = entries.find(e => e.category === cat.category)
+      if (existing && existing.segments.length > 0) return existing  // keep hand-drawn work
+      const sIdx = Math.min(cursor, lastIdx)
+      const eIdx = Math.min(cursor + DEFAULT_WEEKS - 1, lastIdx)
+      cursor = eIdx + 1   // next category follows this one
+      seededCount++
+      const seg: GanttSegment = {
+        id: generateId(),
+        startDate: toISODate(fridays[sIdx]),
+        endDate: toISODate(fridays[eIdx]),
+        weekCount: eIdx - sIdx + 1,
+        revenueAllocation: cat.budgetedRevenue,
+        costAllocation: cat.budgetedCost,
+      }
+      const base: GanttEntry = existing ?? {
+        id: generateId(), projectId: id, estimateId: estimate.id, category: cat.category,
+        crewType: cat.crewType, budgetedRevenue: cat.budgetedRevenue, budgetedCost: cat.budgetedCost,
+        segments: [], subtasks: [],
+      }
+      return { ...base, budgetedRevenue: cat.budgetedRevenue, budgetedCost: cat.budgetedCost, segments: [seg] }
+    })
+    if (seededCount === 0) {
+      setSuccessMsg('Every category already has a timeline — nothing to seed')
+      setTimeout(() => setSuccessMsg(''), 4000)
+      return
+    }
+    // Preserve any entries whose category is no longer in the estimate (defensive).
+    const covered = new Set(categories.map(c => c.category))
+    const next = [...seeded, ...entries.filter(e => !covered.has(e.category))]
+    setEntries(next)
+    saveGanttEntries(id, next.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0)))
+    setSuccessMsg(`Seeded ${seededCount} ${seededCount === 1 ? 'category' : 'categories'} from the estimate — drag the bars to set your programme, then Generate Revenue Forecast`)
+    setTimeout(() => setSuccessMsg(''), 6000)
+  }
+
   // ── Generate Revenue Forecast ─────────────────────────────────────────────
 
   const handleGenerateForecast = () => {
@@ -993,6 +1046,12 @@ export default function GanttPage() {
             <span className="text-xs font-light text-fg-muted flex items-center gap-1.5">
               <Check className="w-3 h-3" /> {successMsg}
             </span>
+          )}
+          {estimate && (
+            <button onClick={handleSeedFromEstimate}
+              className="px-4 py-2 border border-fg-border text-fg-heading text-xs font-light tracking-architectural uppercase hover:border-fg-heading transition-colors">
+              Build timeline from estimate
+            </button>
           )}
           <button onClick={handleSave}
             className="px-4 py-2 border border-fg-border text-fg-heading text-xs font-light tracking-architectural uppercase hover:border-fg-heading transition-colors">
