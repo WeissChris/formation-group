@@ -107,6 +107,7 @@ export interface EstimateLineItem {
   estimateId: string
   displayOrder: string
   category: string
+  subcategory?: string   // e.g. category "Paving" → subcategory "Front yard paving"; becomes a Gantt posting
   description: string
   type: 'Material' | 'Labour' | 'Subcontractor' | 'Equipment'
   units: number

@@ -313,6 +313,12 @@ function LineItemRow({
           className={inputCls}
           placeholder="Description…"
         />
+        <input
+          value={item.subcategory ?? ''}
+          onChange={e => update({ subcategory: e.target.value || undefined })}
+          className={`${inputCls} text-2xs text-fg-muted mt-0.5`}
+          placeholder="Sub-category (Gantt posting)…"
+        />
       </td>
       <td className="py-1.5 px-1">
         <select

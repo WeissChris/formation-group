@@ -124,11 +124,16 @@ function extractCategories(estimate: Estimate): CategorySummary[] {
   const factor = getEstimateContract(estimate).factor
   const map: Record<string, CategorySummary> = {}
   for (const item of estimate.lineItems) {
-    if (!map[item.category]) {
-      map[item.category] = { category: item.category, crewType: item.crewType, budgetedRevenue: 0, budgetedCost: 0 }
+    // Each (category, sub-category) is its own Gantt posting so a sub-category's cost + labour can be
+    // scheduled independently. No sub-category → the category itself (unchanged for existing estimates).
+    const sub = (item.subcategory || '').trim()
+    const key = `${item.category}||${sub}`
+    const label = sub ? `${item.category} — ${sub}` : item.category
+    if (!map[key]) {
+      map[key] = { category: label, crewType: item.crewType, budgetedRevenue: 0, budgetedCost: 0 }
     }
-    map[item.category].budgetedRevenue += readLineItemRevenue(item) * factor
-    map[item.category].budgetedCost += item.total
+    map[key].budgetedRevenue += readLineItemRevenue(item) * factor
+    map[key].budgetedCost += item.total
   }
   return Object.values(map)
 }
