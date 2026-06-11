@@ -888,8 +888,23 @@ export async function runFullSync(
     // separate fg_xero_cost_periods table. Wrapped so a failure here can NEVER affect the GP
     // rollup written above — the period data is a monitoring aid, not the source of truth.
     try {
+      // Monthly labour buckets each cost a P&L report call, and labour doesn't change within an
+      // hour — so refresh them at most ~daily even though this runs hourly. Weekly supply buckets
+      // are free (reuse the transactions already fetched) and refresh every run.
+      let refreshLabour = true
+      try {
+        const { data: lastLabour } = await supabaseAdmin
+          .from('fg_xero_cost_periods')
+          .select('pulled_at')
+          .eq('source', 'labour')
+          .order('pulled_at', { ascending: false })
+          .limit(1)
+        const stamp = lastLabour?.[0]?.pulled_at as string | undefined
+        if (stamp && (Date.now() - new Date(stamp).getTime()) / 3_600_000 < 20) refreshLabour = false
+      } catch { /* default to refreshing */ }
+
       const labourPeriodRows: CostPeriodRow[] = []
-      if (labourAccounts.length > 0 && trackingCategoryId) {
+      if (refreshLabour && labourAccounts.length > 0 && trackingCategoryId) {
         for (const mo of lastNMonths(LABOUR_PERIOD_MONTHS)) {
           try {
             const report = await fetchProfitAndLoss(tokens.accessToken, tokens.tenantId, trackingCategoryId, mo.from, mo.to)
@@ -905,10 +920,15 @@ export async function runFullSync(
           await new Promise(res => setTimeout(res, 1200))   // polite between report calls
         }
       }
+
       const allPeriodRows = [...supplyPeriodRows, ...labourPeriodRows]
       const periodProjects = Array.from(new Set(allPeriodRows.map(r => r.project_id)))
       if (periodProjects.length > 0) {
-        await supabaseAdmin.from('fg_xero_cost_periods').delete().in('project_id', periodProjects)
+        // Replace supply every run; replace labour only when we just refreshed it — otherwise the
+        // wholesale delete would wipe the still-valid labour buckets we deliberately didn't re-pull.
+        let del = supabaseAdmin.from('fg_xero_cost_periods').delete().in('project_id', periodProjects)
+        if (!refreshLabour) del = del.eq('source', 'supply')
+        await del
         if (allPeriodRows.length > 0) {
           await supabaseAdmin
             .from('fg_xero_cost_periods')
