@@ -66,9 +66,45 @@ export function getMarginSummary(estimate: Estimate): CategoryMargin[] {
   })
 }
 
+/** Sum of the project-level markup percentages (waste, contingency, etc.). */
+export function projectMarkupPct(estimate: Estimate): number {
+  return (estimate.projectMarkups ?? []).reduce((s, m) => s + (Number(m.percent) || 0), 0)
+}
+
+/** Round to the nearest 10 / 100 / 1000 per the estimate's rounding mode (none = unchanged). */
+export function roundToMode(value: number, mode?: Estimate['roundingMode']): number {
+  const step = mode === 'ten' ? 10 : mode === 'hundred' ? 100 : mode === 'thousand' ? 1000 : 0
+  return step > 0 ? Math.round(value / step) * step : value
+}
+
+/**
+ * The estimate's ex-GST contract value: marked-up line subtotal × (1 + project markups), then
+ * rounded. Returns each piece for the breakdown UI, plus `factor` (contract ÷ line revenue) used to
+ * scale category budgets so the Gantt/baseline sum to the contract rather than the bare line total.
+ */
+export function getEstimateContract(estimate: Estimate): {
+  lineRevenue: number; markupPct: number; markupAmount: number; markedUp: number; rounding: number; exGst: number; factor: number
+} {
+  const lineRevenue = estimate.lineItems.reduce((s, i) => s + readLineItemRevenue(i), 0)
+  const markupPct = projectMarkupPct(estimate)
+  const markedUp = lineRevenue * (1 + markupPct / 100)
+  const exGst = roundToMode(markedUp, estimate.roundingMode)
+  return {
+    lineRevenue,
+    markupPct,
+    markupAmount: markedUp - lineRevenue,
+    markedUp,
+    rounding: exGst - markedUp,
+    exGst,
+    factor: lineRevenue > 0 ? exGst / lineRevenue : 1,
+  }
+}
+
 export function getEstimateTotals(estimate: Estimate) {
   const totalCost = estimate.lineItems.reduce((s, i) => s + i.total, 0)
-  const totalRevenue = estimate.lineItems.reduce((s, i) => s + readLineItemRevenue(i), 0)
+  const lineRevenue = estimate.lineItems.reduce((s, i) => s + readLineItemRevenue(i), 0)
+  const contract = getEstimateContract(estimate)
+  const totalRevenue = contract.exGst   // ex-GST contract incl project markups + rounding
   const gst = totalRevenue * 0.1
   const totalIncGst = totalRevenue + gst
   const overallMargin = totalRevenue > 0 ? (totalRevenue - totalCost) / totalRevenue : 0
@@ -80,7 +116,11 @@ export function getEstimateTotals(estimate: Estimate) {
 
   return {
     totalCost,
-    totalRevenue,
+    lineRevenue,                              // sum of line revenue, before project markups
+    projectMarkupPct: contract.markupPct,
+    projectMarkupAmount: contract.markupAmount,
+    roundingAdjustment: contract.rounding,
+    totalRevenue,                             // ex-GST contract (line revenue + project markups, rounded)
     gst,
     totalIncGst,
     overallMargin,

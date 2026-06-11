@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { loadEstimates, loadProposals } from '@/lib/storage'
 import { upsertEstimate, upsertProject } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
-import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals } from '@/lib/estimateCalculations'
+import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract } from '@/lib/estimateCalculations'
 import { getAllLibraryItems, getCategories, defaultMarkupForType } from '@/lib/itemLibrary'
 import type { Estimate, EstimateLineItem, LibraryItem } from '@/types'
 import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch } from 'lucide-react'
@@ -199,6 +199,74 @@ function MarginSidebar({ estimate }: { estimate: Estimate }) {
             {totals.totalRevenue > 0 ? fmtPct(totals.overallMargin) : '—'}
           </span>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Markup & Rounding ───────────────────────────────────────────────────────
+
+function MarkupRoundingPanel({ estimate, onChange }: { estimate: Estimate; onChange: (patch: Partial<Estimate>) => void }) {
+  const markups = estimate.projectMarkups ?? []
+  const rows = Array.from({ length: 5 }, (_, i) => markups[i] ?? { id: '', description: '', percent: 0 })
+  const c = getEstimateContract(estimate)
+
+  const setRow = (idx: number, patch: Partial<{ description: string; percent: number }>) => {
+    const next = rows.map((r, i) => {
+      const base = { id: r.id || generateId(), description: r.description, percent: r.percent }
+      return i === idx ? { ...base, ...patch } : base
+    })
+    onChange({ projectMarkups: next })
+  }
+
+  return (
+    <div className="bg-fg-card/20 border border-fg-border p-5 mt-4 space-y-4">
+      <div>
+        <h3 className="text-xs font-medium tracking-wide uppercase text-fg-heading">Markup &amp; Rounding</h3>
+        <p className="text-2xs text-fg-muted mt-1">Up to 5 project markups (e.g. waste, contingency), applied on top of the line totals.</p>
+      </div>
+      <div className="space-y-1.5">
+        {rows.map((r, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <span className="text-2xs text-fg-muted w-3 text-right">{i + 1}</span>
+            <input
+              defaultValue={r.description}
+              onBlur={e => setRow(i, { description: e.target.value })}
+              placeholder="Description"
+              className="flex-1 min-w-0 text-xs bg-fg-card/30 px-1.5 py-1 outline-none text-fg-heading placeholder-fg-muted/40"
+            />
+            <input
+              type="number"
+              defaultValue={r.percent || ''}
+              onBlur={e => { const n = parseFloat(e.target.value); setRow(i, { percent: Number.isFinite(n) ? n : 0 }) }}
+              className="w-12 text-xs bg-fg-card/30 px-1.5 py-1 outline-none text-fg-heading text-right tabular-nums"
+            />
+            <span className="text-2xs text-fg-muted">%</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between items-baseline border-t border-fg-border pt-2">
+        <span className="text-2xs font-medium uppercase tracking-wide text-fg-muted">Total Markup</span>
+        <span className="text-sm font-medium text-fg-heading tabular-nums">{c.markupPct.toFixed(1)}%</span>
+      </div>
+      <div>
+        <p className="text-2xs text-fg-muted uppercase tracking-wide mb-1">Round ex-GST total to nearest</p>
+        <select
+          value={estimate.roundingMode ?? 'none'}
+          onChange={e => onChange({ roundingMode: e.target.value as Estimate['roundingMode'] })}
+          className="w-full text-xs bg-fg-bg border border-fg-border px-2 py-1.5 outline-none text-fg-heading"
+        >
+          <option value="none">None</option>
+          <option value="ten">Ten</option>
+          <option value="hundred">Hundred</option>
+          <option value="thousand">Thousand</option>
+        </select>
+      </div>
+      <div className="border-t border-fg-border pt-2 space-y-1 text-xs">
+        <div className="flex justify-between"><span className="text-fg-muted">Line subtotal</span><span className="text-fg-heading tabular-nums">{fmtCurrency(c.lineRevenue)}</span></div>
+        {c.markupAmount > 0.005 && <div className="flex justify-between"><span className="text-fg-muted">+ Markups</span><span className="text-fg-heading tabular-nums">{fmtCurrency(c.markupAmount)}</span></div>}
+        {Math.abs(c.rounding) >= 0.005 && <div className="flex justify-between"><span className="text-fg-muted">Rounding</span><span className="text-fg-heading tabular-nums">{c.rounding >= 0 ? '+' : '−'}{fmtCurrency(Math.abs(c.rounding))}</span></div>}
+        <div className="flex justify-between font-medium border-t border-fg-border/50 pt-1"><span className="text-fg-heading uppercase tracking-wide text-2xs">Total ex GST</span><span className="text-fg-heading tabular-nums">{fmtCurrency(c.exGst)}</span></div>
       </div>
     </div>
   )
@@ -497,12 +565,15 @@ export default function EstimateBuilderPage() {
     const clientName = linkedProposal?.clientName || projectName
     const projectAddress = linkedProposal?.projectAddress || ''
 
-    // Build baseline from estimate
+    // Build baseline from estimate. Scale each category's revenue by the contract factor so the
+    // categories sum to the ex-GST contract (line revenue + project markups + rounding), not the
+    // bare line subtotal.
+    const factor = getEstimateContract(estimate).factor
     const categoryMap: Record<string, { revenue: number; cost: number }> = {}
     estimate.lineItems.forEach(li => {
       const cat = li.category || 'General'
       if (!categoryMap[cat]) categoryMap[cat] = { revenue: 0, cost: 0 }
-      categoryMap[cat].revenue += readLineItemRevenue(li)
+      categoryMap[cat].revenue += readLineItemRevenue(li) * factor
       categoryMap[cat].cost += li.total
     })
     const baselineCategories = Object.entries(categoryMap).map(([name, v]) => ({ name, ...v }))
@@ -954,6 +1025,7 @@ export default function EstimateBuilderPage() {
         {/* Sidebar */}
         <div className="w-72 shrink-0">
           <MarginSidebar estimate={estimate} />
+          <MarkupRoundingPanel estimate={estimate} onChange={updateEstimate} />
         </div>
       </div>
 

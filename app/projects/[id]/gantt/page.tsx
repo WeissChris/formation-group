@@ -20,7 +20,7 @@ import {
   toISODate,
   SHORT_MONTH_NAMES,
 } from '@/lib/utils'
-import { readLineItemRevenue } from '@/lib/estimateCalculations'
+import { readLineItemRevenue, getEstimateContract } from '@/lib/estimateCalculations'
 import type { Project, Estimate, GanttEntry, GanttSegment, GanttSubtask, WeeklyRevenue } from '@/types'
 import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react'
 
@@ -119,12 +119,15 @@ function addDays(isoDate: string, days: number): string {
 }
 
 function extractCategories(estimate: Estimate): CategorySummary[] {
+  // Scale category revenue by the contract factor so the Gantt's budgeted revenue sums to the
+  // ex-GST contract (incl project markups + rounding), matching the baseline.
+  const factor = getEstimateContract(estimate).factor
   const map: Record<string, CategorySummary> = {}
   for (const item of estimate.lineItems) {
     if (!map[item.category]) {
       map[item.category] = { category: item.category, crewType: item.crewType, budgetedRevenue: 0, budgetedCost: 0 }
     }
-    map[item.category].budgetedRevenue += readLineItemRevenue(item)
+    map[item.category].budgetedRevenue += readLineItemRevenue(item) * factor
     map[item.category].budgetedCost += item.total
   }
   return Object.values(map)

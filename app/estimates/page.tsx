@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { loadEstimates, deleteEstimate } from '@/lib/storage'
 import { formatCurrency } from '@/lib/utils'
-import { getEstimateTotals, readLineItemRevenue } from '@/lib/estimateCalculations'
+import { getEstimateTotals, readLineItemRevenue, getEstimateContract } from '@/lib/estimateCalculations'
 import type { Estimate } from '@/types'
 import { Plus, Trash2, FileText, Search, GitBranch } from 'lucide-react'
 
@@ -141,7 +141,7 @@ export default function EstimatesPage() {
 
       {/* Metrics bar */}
       {estimates.length > 0 && (() => {
-        const totalEstimateValue = estimates.reduce((s, e) => s + e.lineItems.reduce((ls, li) => ls + readLineItemRevenue(li), 0), 0)
+        const totalEstimateValue = estimates.reduce((s, e) => s + getEstimateContract(e).exGst, 0)
         const acceptedCount = estimates.filter(e => e.status === 'accepted').length
         // Revenue-weighted portfolio margin: Σ(revenue − cost) / Σrevenue, so a $200k estimate
         // counts proportionally more than a $2k one (an unweighted mean misrepresented the mix).
