@@ -621,8 +621,11 @@ export default function RevenuePage() {
                     const mProjects = projects.filter(proj => mRevenue.some(r => r.projectId === proj.id && r.plannedRevenue > 0))
                     const mColTotals = mFridays.map(fri => mRevenue.filter(r => isSameWeek(r.weekEnding, fri)).reduce((s, r) => s + r.plannedRevenue, 0))
                     const mActualTotals = mFridays.map(fri => mRevenue.filter(r => isSameWeek(r.weekEnding, fri)).reduce((s, r) => s + (r.actualInvoiced || 0), 0))
+                    // Budgeted cost out per week (from the Gantt forecast — scheduledCost on the same rows).
+                    const mColCostTotals = mFridays.map(fri => mRevenue.filter(r => isSameWeek(r.weekEnding, fri)).reduce((s, r) => s + (r.scheduledCost || 0), 0))
                     const mTotal = mColTotals.reduce((s, v) => s + v, 0)
                     const mActual = mActualTotals.reduce((s, v) => s + v, 0)
+                    const mCostTotal = mColCostTotals.reduce((s, v) => s + v, 0)
                     const isThisMonth = m === now.getMonth() && y === now.getFullYear()
                     const midpointPassed = isThisMonth && now.getDate() > 14
                     const atRisk = isThisMonth && midpointPassed && mTotal > 0 && mActual < mTotal * 0.4
@@ -744,6 +747,47 @@ export default function RevenuePage() {
                                   <span className="text-sm font-semibold text-fg-heading tabular-nums">{formatCurrency(mTotal)}</span>
                                 </td>
                               </tr>
+                              {/* Cashflow: budgeted cost out (from the Gantt) + net. Only shown when a Gantt
+                                  forecast has populated weekly costs, so non-forecast months stay clean. */}
+                              {mCostTotal > 0 && (
+                                <>
+                                  <tr className="h-9 bg-fg-card/10">
+                                    <td className="py-0 px-4">
+                                      <span className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Cost out (budget)</span>
+                                    </td>
+                                    {mColCostTotals.map((c, ci) => (
+                                      <td key={ci} className={`py-0 px-2 text-right ${isCurrentWeek(mFridays[ci]) ? 'bg-fg-border/10' : ''}`}>
+                                        <span className={`text-xs tabular-nums ${c > 0 ? 'text-fg-muted' : 'text-fg-muted/20'}`}>
+                                          {c > 0 ? formatCurrency(c) : '—'}
+                                        </span>
+                                      </td>
+                                    ))}
+                                    <td className="py-0 px-4 text-right">
+                                      <span className="text-xs font-light text-fg-muted tabular-nums">{formatCurrency(mCostTotal)}</span>
+                                    </td>
+                                  </tr>
+                                  <tr className="h-9 border-b border-fg-border/30">
+                                    <td className="py-0 px-4">
+                                      <span className="text-2xs font-semibold tracking-architectural uppercase text-fg-muted">Net</span>
+                                    </td>
+                                    {mColCostTotals.map((c, ci) => {
+                                      const net = (mColTotals[ci] || 0) - c
+                                      return (
+                                        <td key={ci} className={`py-0 px-2 text-right ${isCurrentWeek(mFridays[ci]) ? 'bg-fg-border/10' : ''}`}>
+                                          <span className={`text-xs font-medium tabular-nums ${net > 0 ? 'text-green-600' : net < 0 ? 'text-red-500' : 'text-fg-muted/20'}`}>
+                                            {net !== 0 ? formatCurrency(net) : '—'}
+                                          </span>
+                                        </td>
+                                      )
+                                    })}
+                                    <td className="py-0 px-4 text-right">
+                                      <span className={`text-sm font-semibold tabular-nums ${(mTotal - mCostTotal) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                        {formatCurrency(mTotal - mCostTotal)}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                </>
+                              )}
                             </tbody>
                           </table>
                         )}
