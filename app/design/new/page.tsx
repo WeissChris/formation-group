@@ -30,15 +30,9 @@ Water feature detail plan schematic plan.
 Materials and finishes selections and schedule.
 Landscape specification - finished surface levels.`
 
-  const DEFAULT_CONTENT_BLOCKS: ProposalContentBlock[] = [
-    {
-      id: generateId(),
-      type: 'video',
-      content: 'https://vimeo.com/892469176',
-      caption: 'Formation Landscapes — our approach to design and construction',
-      position: 'before_phases',
-    },
-  ]
+  // No auto-added videos — the proposal already has the dedicated "Welcome to Formation" and
+  // "Our Design Process" videos. Extra content blocks can be added manually if needed.
+  const DEFAULT_CONTENT_BLOCKS: ProposalContentBlock[] = []
 
   const DEFAULT_INTRO_TEXT = `Thank you for the opportunity to meet on site and discuss your project.
 

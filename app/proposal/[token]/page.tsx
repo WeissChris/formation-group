@@ -318,7 +318,6 @@ export default function ProposalAcceptancePage() {
   const blocks = proposal.contentBlocks ?? []
 
   // Find video URLs from content blocks
-  const aboutVideo = blocks.find(b => b.type === 'video' && b.position === 'before_phases')
   const experienceVideo = blocks.find(b => b.type === 'video' && (b.position as string) === 'client_experience')
 
   // Default intro text
@@ -450,7 +449,6 @@ export default function ProposalAcceptancePage() {
                     <p key={i}>{para}</p>
                   ))}
                 </div>
-                <BlocksAtPosition blocks={blocks} position="before_phases" />
               </div>
             </div>
           </div>
@@ -495,11 +493,6 @@ export default function ProposalAcceptancePage() {
                     delivering a seamless transition from concept to construction.
                   </p>
                 </div>
-                {aboutVideo ? (
-                  <div className="mt-8">
-                    <VideoButton label="Watch Formation Overview" url={aboutVideo.content} />
-                  </div>
-                ) : null}
               </div>
               {/* Right: full-height image */}
               <div className="relative min-h-[400px] md:min-h-0">

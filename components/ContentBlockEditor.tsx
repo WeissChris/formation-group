@@ -10,11 +10,10 @@ interface Props {
   onChange: (blocks: ProposalContentBlock[]) => void
 }
 
-// Note: 'after_phases' is intentionally not offered — content after the Exclusions section was
-// removed (it only ever duplicated the welcome/process videos shown above). Legacy after_phases
-// blocks are simply no longer rendered.
+// Note: 'before_phases' and 'after_phases' are intentionally not offered — those slots only ever
+// duplicated the dedicated Welcome / Our Design Process videos, so they were removed. Legacy
+// blocks in those positions are simply no longer rendered.
 const POSITIONS: { value: ProposalContentBlock['position']; label: string }[] = [
-  { value: 'before_phases', label: 'Before phases' },
   { value: 'between_phase1_2', label: 'Between Phase 1 & 2' },
   { value: 'between_phase2_3', label: 'Between Phase 2 & 3' },
 ]
@@ -44,7 +43,7 @@ export default function ContentBlockEditor({ blocks, onChange }: Props) {
       id: generateId(),
       type,
       content: '',
-      position: 'before_phases',
+      position: 'between_phase1_2',
     }
     onChange([...blocks, block])
     setAddingType(null)
