@@ -12,6 +12,7 @@ export async function requestSendProposal(proposal: DesignProposal): Promise<Sen
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         clientName: proposal.clientName,
+        clientName2: proposal.clientName2,
         clientEmail: proposal.clientEmail,
         acceptanceToken: proposal.acceptanceToken,
         projectAddress: proposal.projectAddress,

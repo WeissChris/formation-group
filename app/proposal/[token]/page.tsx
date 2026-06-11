@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import { generateRevenueFromProposal, saveDesignProject, loadDesignProjectByProposalId } from '@/lib/storage'
 import { getProposalByToken, acceptProposalByToken } from '@/lib/publicData'
 import { notifyProposalAccepted } from '@/lib/emailClient'
-import { formatCurrency, generateId } from '@/lib/utils'
+import { formatCurrency, generateId, clientDisplayName, clientGreetingNames } from '@/lib/utils'
 import { getProposalPhases, phasesTotal, defaultPhaseDescription, defaultPhaseOutcome } from '@/lib/proposalPhases'
 import type { DesignProposal, ProposalContentBlock, DesignProject } from '@/types'
 import { ChevronDown, Check, Play } from 'lucide-react'
@@ -342,13 +342,9 @@ export default function ProposalAcceptancePage() {
     ? formatDate(proposal.createdAt)
     : formatDate(new Date().toISOString())
 
-  // Derive first names for greeting
-  const firstName = proposal.clientName.split(' ').filter(Boolean)
-  const greeting = firstName.length >= 3
-    ? `Hi ${firstName[0]} and ${firstName[firstName.length - 1]},`
-    : firstName.length === 2
-      ? `Hi ${firstName[0]},`
-      : `Hi ${proposal.clientName},`
+  // Greeting + display name — handles one or two clients (e.g. "Hi John and Jane,")
+  const displayName = clientDisplayName(proposal.clientName, proposal.clientName2)
+  const greeting = `Hi ${clientGreetingNames(proposal.clientName, proposal.clientName2)},`
 
   return (
     <>
@@ -370,7 +366,7 @@ export default function ProposalAcceptancePage() {
         </div>
         <div className="flex-1 mx-6 min-w-0 text-center hidden sm:block">
           <span className="text-xs tracking-[0.15em] uppercase" style={{ color: MUTED }}>
-            {proposal.clientName} — Landscape Design Proposal
+            {displayName} — Landscape Design Proposal
           </span>
         </div>
         <div className="flex items-center gap-3 shrink-0">
@@ -421,7 +417,7 @@ export default function ProposalAcceptancePage() {
             Landscape Design Proposal
           </h1>
           <p className="text-white/90 font-light mb-2" style={{ fontSize: 'clamp(18px, 2.5vw, 26px)' }}>
-            {proposal.clientName}
+            {displayName}
           </p>
           {proposal.projectAddress && (
             <p className="text-white/70 font-light" style={{ fontSize: 'clamp(14px, 1.5vw, 18px)' }}>

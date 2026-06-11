@@ -42,6 +42,7 @@ The following outlines our proposed design process and associated fees.`
 
   const [form, setForm] = useState({
     clientName: '',
+    clientName2: '',
     clientEmail: '',
     clientPhone: '',
     ccEmails: '',
@@ -84,6 +85,7 @@ The following outlines our proposed design process and associated fees.`
     const base: DesignProposal = {
       id: generateId(),
       clientName: form.clientName,
+      clientName2: form.clientName2 || undefined,
       clientEmail: form.clientEmail || undefined,
       clientPhone: form.clientPhone || undefined,
       ccEmails: form.ccEmails || undefined,
@@ -144,6 +146,7 @@ The following outlines our proposed design process and associated fees.`
           </button>
           <ProposalPreview
             clientName={form.clientName}
+            clientName2={form.clientName2}
             projectAddress={form.projectAddress}
             introText={form.introText}
             phases={phases}
@@ -172,7 +175,10 @@ The following outlines our proposed design process and associated fees.`
           {/* Client details */}
           <div className="space-y-4">
             <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Client</p>
-            <Field label="Client Name" value={form.clientName} onChange={v => set('clientName', v)} error={errors.clientName} placeholder="e.g. Smith" />
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Client Name" value={form.clientName} onChange={v => set('clientName', v)} error={errors.clientName} placeholder="e.g. John Smith" />
+              <Field label="Second Client (optional)" value={form.clientName2} onChange={v => set('clientName2', v)} placeholder="e.g. Jane Smith" />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Client Email" value={form.clientEmail} onChange={v => set('clientEmail', v)} error={errors.clientEmail} placeholder="client@example.com" type="email" />
               <Field label="Client Phone" value={form.clientPhone} onChange={v => set('clientPhone', v)} placeholder="0400 000 000" />

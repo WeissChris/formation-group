@@ -72,6 +72,11 @@ describe('buildProposalEmailText', () => {
   it('falls back to "there" when the name is blank', () => {
     expect(buildProposalEmailText({ ...base, clientName: '' })).toContain('Hi there,')
   })
+
+  it('greets both clients when a second name is given', () => {
+    const text = buildProposalEmailText({ ...base, clientName: 'John Smith', clientName2: 'Jane Smith' })
+    expect(text).toContain('Hi John and Jane,')
+  })
 })
 
 describe('buildProposalEmailHtml', () => {
@@ -86,6 +91,11 @@ describe('buildProposalEmailHtml', () => {
     const html = buildProposalEmailHtml({ ...base, clientName: 'A&B' })
     expect(html).toContain('Hi A&amp;B,')
     expect(html).not.toContain('Hi A&B,')
+  })
+
+  it('greets both clients in the HTML when a second name is given', () => {
+    const html = buildProposalEmailHtml({ ...base, clientName: 'John Smith', clientName2: 'Jane Doe' })
+    expect(html).toContain('Hi John and Jane,')
   })
 
   it('includes a hero photo and the Formation brand', () => {

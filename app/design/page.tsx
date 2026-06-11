@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { loadProposals, saveProposal } from '@/lib/storage'
 import { getProposalPhases, phasesTotal } from '@/lib/proposalPhases'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, clientDisplayName } from '@/lib/utils'
 import type { DesignProposal } from '@/types'
 import { Plus, PenLine } from 'lucide-react'
 
@@ -116,7 +116,7 @@ export default function DesignPage() {
               href={`/design/${p.id}`}
               className="text-sm font-light text-fg-heading hover:text-fg-dark transition-colors"
             >
-              {p.clientName}
+              {clientDisplayName(p.clientName, p.clientName2)}
             </Link>
             <p className="text-xs font-light text-fg-muted truncate">{p.projectAddress}</p>
 

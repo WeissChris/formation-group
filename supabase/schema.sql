@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS fg_projects (
 CREATE TABLE IF NOT EXISTS fg_proposals (
   id TEXT PRIMARY KEY,
   client_name TEXT NOT NULL,
+  client_name2 TEXT,           -- optional second client (partner); see migration 07
   client_email TEXT,
   client_phone TEXT,
   project_address TEXT,

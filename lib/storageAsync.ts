@@ -108,6 +108,7 @@ export async function upsertProposal(proposal: DesignProposal): Promise<void> {
     await safeUpsert('fg_proposals', {
       id: fresh.id,
       client_name: fresh.clientName,
+      client_name2: fresh.clientName2 ?? null,
       client_email: fresh.clientEmail,
       client_phone: fresh.clientPhone,
       project_address: fresh.projectAddress,
@@ -228,6 +229,7 @@ function mapProposal(row: Record<string, unknown>): DesignProposal {
   return {
     id: row.id as string,
     clientName: row.client_name as string,
+    clientName2: (row.client_name2 as string | null) || undefined,
     clientEmail: row.client_email as string | undefined,
     clientPhone: row.client_phone as string | undefined,
     projectAddress: row.project_address as string,

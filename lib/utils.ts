@@ -140,6 +140,25 @@ export function extractLastName(clientName: string): string {
   return parts[parts.length - 1]
 }
 
+// Combine one or two client names for display (titles, hero, header).
+// "John Smith" + "Jane Smith" → "John Smith & Jane Smith"; second name optional.
+export function clientDisplayName(name1: string, name2?: string): string {
+  const a = (name1 || '').trim()
+  const b = (name2 || '').trim()
+  if (a && b) return `${a} & ${b}`
+  return a || b
+}
+
+// Build the "Hi ___," greeting names from one or two client names, using the FIRST word of each.
+// "John Smith" + "Jane Smith" → "John and Jane"; one name → "John"; blank → "there".
+export function clientGreetingNames(name1: string, name2?: string): string {
+  const first = (n?: string) => (n || '').trim().split(/\s+/).filter(Boolean)[0] || ''
+  const a = first(name1)
+  const b = first(name2)
+  if (a && b) return `${a} and ${b}`
+  return a || b || 'there'
+}
+
 // Generate standardised project name
 export function generateProjectName(address: string, clientName: string): string {
   const suburb = extractSuburb(address)

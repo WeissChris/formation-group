@@ -317,13 +317,24 @@ export default function ProposalDetailPage() {
             <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-3">Client Details</p>
             {editing ? (
               <div className="space-y-3">
-                <div>
-                  <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Client name</label>
-                  <input
-                    defaultValue={proposal.clientName}
-                    onBlur={e => saveProposalField({ clientName: e.target.value })}
-                    className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Client name</label>
+                    <input
+                      defaultValue={proposal.clientName}
+                      onBlur={e => saveProposalField({ clientName: e.target.value })}
+                      className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Second client (optional)</label>
+                    <input
+                      defaultValue={proposal.clientName2 ?? ''}
+                      onBlur={e => saveProposalField({ clientName2: e.target.value.trim() || undefined })}
+                      placeholder="e.g. partner"
+                      className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Client email</label>
@@ -705,6 +716,7 @@ export default function ProposalDetailPage() {
         <div className="max-w-4xl">
           <ProposalPreview
             clientName={proposal.clientName}
+            clientName2={proposal.clientName2}
             projectAddress={proposal.projectAddress}
             introText={proposal.introText}
             phases={getProposalPhases(proposal)}

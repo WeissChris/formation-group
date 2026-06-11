@@ -1,9 +1,10 @@
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, clientDisplayName, clientGreetingNames } from '@/lib/utils'
 import type { ProposalPhase } from '@/types'
 import { defaultPhaseDescription, defaultPhaseOutcome, phasesTotal } from '@/lib/proposalPhases'
 
 interface Props {
   clientName: string
+  clientName2?: string
   projectAddress: string
   introText?: string
   phases: ProposalPhase[]
@@ -107,7 +108,7 @@ function DeliverablesBox({ items }: { items: string[] }) {
 }
 
 export default function ProposalPreview({
-  clientName, projectAddress, introText,
+  clientName, clientName2, projectAddress, introText,
   phases,
   validUntil,
   welcomeVideoUrl,
@@ -118,12 +119,8 @@ export default function ProposalPreview({
   const defaultIntro = `Thank you for the opportunity to meet on site and discuss your project.\n\nFrom our initial consultation, it's clear there is a strong opportunity to reshape the landscape into a highly resolved, functional, and visually cohesive environment.\n\nThe following outlines our proposed design process and associated fees.`
   const displayIntro = introText || defaultIntro
 
-  const firstName = clientName.split(' ').filter(Boolean)
-  const greeting = firstName.length >= 3
-    ? `Hi ${firstName[0]} and ${firstName[firstName.length - 1]},`
-    : firstName.length === 2
-      ? `Hi ${firstName[0]},`
-      : `Hi ${clientName || 'there'},`
+  const displayName = clientDisplayName(clientName, clientName2)
+  const greeting = `Hi ${clientGreetingNames(clientName, clientName2)},`
 
   return (
     <div className="border border-fg-border overflow-hidden bg-white">
@@ -145,7 +142,7 @@ export default function ProposalPreview({
           <h1 className="text-white font-light leading-tight mb-2" style={{ fontSize: 28, letterSpacing: '0.01em' }}>
             Landscape Design Proposal
           </h1>
-          <p className="text-white/90 font-light text-lg">{clientName || 'Client Name'}</p>
+          <p className="text-white/90 font-light text-lg">{displayName || 'Client Name'}</p>
           {projectAddress && (
             <p className="text-white/70 font-light text-sm mt-0.5">{projectAddress}</p>
           )}

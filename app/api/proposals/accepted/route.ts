@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
 
   const { data } = await supabaseAdmin
     .from('fg_proposals')
-    .select('client_name, client_email, project_address, accepted_by_name, phases, phase1_fee, phase2_fee, phase3_fee')
+    .select('client_name, client_name2, client_email, project_address, accepted_by_name, phases, phase1_fee, phase2_fee, phase3_fee')
     .eq('acceptance_token', token)
     .maybeSingle()
   if (!data) return NextResponse.json({ ok: false, error: 'not_found' }, { status: 200 })
@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
 
   const acceptance = {
     clientName: (data.client_name as string) || 'A client',
+    clientName2: (data.client_name2 as string | null) || undefined,
     acceptedByName: (data.accepted_by_name as string | null) || undefined,
     clientEmail: (data.client_email as string | null) || undefined,
     projectAddress: (data.project_address as string | null) || undefined,

@@ -219,6 +219,7 @@ export interface ProposalPhase {
 export interface DesignProposal {
   id: string
   clientName: string
+  clientName2?: string         // optional second client (e.g. partner) — addressed alongside clientName
   clientEmail?: string
   clientPhone?: string
   ccEmails?: string            // extra recipients CC'd on the proposal email (comma-separated)

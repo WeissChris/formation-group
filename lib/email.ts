@@ -7,6 +7,8 @@
 // verified in Resend (SPF/DKIM DNS records). Sender/reply-to/bcc default to Chris's address
 // and can be overridden by env without a redeploy of logic.
 
+import { clientGreetingNames } from './utils'
+
 const RESEND_ENDPOINT = 'https://api.resend.com/emails'
 
 const DEFAULT_FROM = 'Formation Landscapes <chris@formationlandscapes.com.au>'
@@ -16,6 +18,7 @@ const DEFAULT_BCC = 'chris@formationlandscapes.com.au'
 export interface ProposalEmailInput {
   to: string
   clientName: string
+  clientName2?: string   // optional second client — greeted alongside clientName ("Hi A and B,")
   proposalUrl: string
   projectAddress?: string
   message?: string   // the email body message — separate from the proposal's on-page intro
@@ -60,11 +63,6 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;')
 }
 
-function firstName(clientName: string): string {
-  const first = clientName.trim().split(/\s+/)[0]
-  return first || 'there'
-}
-
 export function proposalEmailSubject(): string {
   return 'Your landscape design proposal — Formation Landscapes'
 }
@@ -79,7 +77,7 @@ function messageParagraphs(message?: string): string[] {
 /** Plain-text body (improves deliverability and covers text-only clients). */
 export function buildProposalEmailText(input: ProposalEmailInput): string {
   return [
-    `Hi ${firstName(input.clientName)},`,
+    `Hi ${clientGreetingNames(input.clientName, input.clientName2)},`,
     '',
     messageParagraphs(input.message).join('\n\n'),
     '',
@@ -100,7 +98,7 @@ export function buildProposalEmailHtml(input: ProposalEmailInput): string {
   const BODY = '#2d2d2d'
   const MUTED = '#8A8580'
   const font = `-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif`
-  const name = escapeHtml(firstName(input.clientName))
+  const name = escapeHtml(clientGreetingNames(input.clientName, input.clientName2))
   const bodyHtml = messageParagraphs(input.message)
     .map((p, i, arr) => `<p style="margin:0 0 ${i === arr.length - 1 ? 28 : 16}px 0;font-size:14px;line-height:1.7;color:${BODY};">${escapeHtml(p)}</p>`)
     .join('')
@@ -241,6 +239,7 @@ export async function sendProposalEmail(input: ProposalEmailInput): Promise<Send
 
 export interface AcceptanceInput {
   clientName: string
+  clientName2?: string   // optional second client — greeted alongside clientName
   acceptedByName?: string
   clientEmail?: string
   projectAddress?: string
@@ -252,7 +251,7 @@ export interface AcceptanceInput {
 export function buildAcceptanceClientHtml(input: AcceptanceInput): string {
   const GREEN = '#3D5A3A', INK = '#1a1a1a', BODY = '#2d2d2d', MUTED = '#8A8580'
   const font = `-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif`
-  const name = escapeHtml(firstName(input.clientName))
+  const name = escapeHtml(clientGreetingNames(input.clientName, input.clientName2))
   const url = escapeHtml(input.proposalUrl)
   const hero = `${appBaseUrl()}/proposal-hero-7.jpg`
   const address = input.projectAddress ? escapeHtml(input.projectAddress.trim()) : ''
@@ -297,7 +296,7 @@ export function buildAcceptanceClientHtml(input: AcceptanceInput): string {
 
 export function buildAcceptanceClientText(input: AcceptanceInput): string {
   return [
-    `Hi ${firstName(input.clientName)},`,
+    `Hi ${clientGreetingNames(input.clientName, input.clientName2)},`,
     '',
     'Thank you for accepting your landscape design proposal — we are really looking forward to working with you and bringing your project to life.',
     '',
