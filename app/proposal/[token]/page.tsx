@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
-import { saveProposal, generateRevenueFromProposal, saveDesignProject, loadDesignProjectByProposalId } from '@/lib/storage'
+import { generateRevenueFromProposal, saveDesignProject, loadDesignProjectByProposalId } from '@/lib/storage'
 import { getProposalByToken, acceptProposalByToken } from '@/lib/publicData'
 import { notifyProposalAccepted } from '@/lib/emailClient'
 import { formatCurrency, generateId } from '@/lib/utils'
@@ -215,6 +215,7 @@ export default function ProposalAcceptancePage() {
   const [notFound, setNotFound] = useState(false)
   const [acceptorName, setAcceptorName] = useState('')
   const [accepted, setAccepted] = useState(false)
+  const [accepting, setAccepting] = useState(false)
   const [error, setError] = useState('')
   const [showModal, setShowModal] = useState(false)
   const acceptSectionRef = useRef<HTMLDivElement>(null)
@@ -240,52 +241,63 @@ export default function ProposalAcceptancePage() {
   }, [token])
 
   const handleAccept = async () => {
+    if (accepting) return
     if (!acceptorName.trim()) return setError('Please enter your name')
     if (!proposal) return
+    setAccepting(true)
     // acceptProposalByToken hits the accept_proposal_by_token RPC which is the only path
     // anon has to mutate fg_proposals under locked RLS. The server stamps acceptedAt; we
     // use what comes back as the source of truth. Falls back to localStorage for admin tests.
     const updated = await acceptProposalByToken(token, acceptorName.trim())
     if (!updated) {
+      setAccepting(false)
       setError('Could not record acceptance — please try again or contact us directly.')
       return
     }
-    // Email the client a confirmation + notify Chris. Best-effort, non-blocking.
-    void notifyProposalAccepted(token)
-    generateRevenueFromProposal(updated)
 
-    // Create design project if doesn't exist
-    const existingProject = loadDesignProjectByProposalId(updated.id)
-    if (!existingProject) {
-      const p1DueDate = new Date()
-      p1DueDate.setDate(p1DueDate.getDate() + 42)
-      const designProject: DesignProject = {
-        id: generateId(),
-        proposalId: updated.id,
-        clientName: updated.clientName,
-        projectAddress: updated.projectAddress || '',
-        entity: 'design',
-        phase1Fee: updated.phase1Fee,
-        phase1Status: 'not_started',
-        phase1DueDate: p1DueDate.toISOString().split('T')[0],
-        phase1DepositPaid: false,
-        phase2Fee: updated.phase2Fee,
-        phase2Status: 'not_started',
-        phase3Fee: updated.phase3Fee,
-        phase3Status: updated.phase3Fee ? 'not_started' : undefined,
-        totalFee: updated.phase1Fee + updated.phase2Fee + (updated.phase3Fee || 0),
-        totalPaid: 0,
-        totalOutstanding: updated.phase1Fee + updated.phase2Fee + (updated.phase3Fee || 0),
-        notes: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        acceptedAt: updated.acceptedAt,
-      }
-      saveDesignProject(designProject)
-    }
-
+    // The DB write succeeded — confirm to the client immediately. Everything below is
+    // best-effort and must NEVER block or suppress the client's confirmation.
     setProposal(updated)
     setShowModal(true)
+
+    // Email the client a confirmation + notify Chris. Best-effort, non-blocking.
+    void notifyProposalAccepted(token)
+
+    // Internal forecasting + delivery bookkeeping. These write to localStorage, so they only
+    // take effect on the admin's own device; on a client's browser they're a harmless no-op.
+    // Wrapped so a private-mode / quota localStorage error can never break the acceptance.
+    try {
+      generateRevenueFromProposal(updated)
+      if (!loadDesignProjectByProposalId(updated.id)) {
+        const p1DueDate = new Date()
+        p1DueDate.setDate(p1DueDate.getDate() + 42)
+        const designProject: DesignProject = {
+          id: generateId(),
+          proposalId: updated.id,
+          clientName: updated.clientName,
+          projectAddress: updated.projectAddress || '',
+          entity: 'design',
+          phase1Fee: updated.phase1Fee,
+          phase1Status: 'not_started',
+          phase1DueDate: p1DueDate.toISOString().split('T')[0],
+          phase1DepositPaid: false,
+          phase2Fee: updated.phase2Fee,
+          phase2Status: 'not_started',
+          phase3Fee: updated.phase3Fee,
+          phase3Status: updated.phase3Fee ? 'not_started' : undefined,
+          totalFee: updated.phase1Fee + updated.phase2Fee + (updated.phase3Fee || 0),
+          totalPaid: 0,
+          totalOutstanding: updated.phase1Fee + updated.phase2Fee + (updated.phase3Fee || 0),
+          notes: '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          acceptedAt: updated.acceptedAt,
+        }
+        saveDesignProject(designProject)
+      }
+    } catch {
+      /* client browser (or storage disabled) — admin-only bookkeeping, safe to skip */
+    }
   }
 
   const handleModalDismiss = () => {
@@ -820,10 +832,11 @@ export default function ProposalAcceptancePage() {
                   </div>
                   <button
                     onClick={handleAccept}
-                    className="w-full text-white tracking-wide hover:opacity-90 transition-opacity rounded-full"
+                    disabled={accepting}
+                    className="w-full text-white tracking-wide hover:opacity-90 transition-opacity rounded-full disabled:opacity-60 disabled:cursor-default"
                     style={{ height: 56, fontSize: 15, backgroundColor: GREEN }}
                   >
-                    Accept Proposal
+                    {accepting ? 'Recording your acceptance...' : 'Accept Proposal'}
                   </button>
                   <p className="text-xs font-light text-center mt-3" style={{ color: LIGHT_MUTED }}>
                     By accepting, you agree to the above fee proposal and payment terms
