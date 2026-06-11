@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { loginRemote, isAuthenticatedRemote, getLastAuthError } from '@/lib/auth'
 import { isSupabaseAuthEnabled } from '@/lib/supabaseBrowser'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import NavBar from '@/components/NavBar'
 import {
   seedDemoData,
   seedAllDesignProposals,
@@ -218,8 +219,14 @@ export default function LoginGate({ children }: { children: ReactNode }) {
     )
   }
 
-  // Authenticated children wrapped in a top-level boundary so a render crash in any page
-  // (TakeoffTab, estimates, financial ops, etc) shows the recoverable fallback instead of
-  // blanking the whole app. Per-route app/error.tsx still scopes failures to the route.
-  return <ErrorBoundary label="app">{children}</ErrorBoundary>
+  // Authenticated app shell — the NavBar (and its top padding) live here, NOT in the root layout,
+  // so public routes (/proposal/[token], /foreman/[pin]) render full-bleed without the internal
+  // Formation Group nav flashing in front of the client. Wrapped in a boundary so a render crash
+  // in any page shows the recoverable fallback instead of blanking the whole app.
+  return (
+    <ErrorBoundary label="app">
+      <NavBar />
+      <main className="pt-14">{children}</main>
+    </ErrorBoundary>
+  )
 }
