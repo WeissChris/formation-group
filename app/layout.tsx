@@ -13,8 +13,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className={`${inter.className} bg-fg-bg min-h-screen`}>
+    <html lang="en-AU">
+      {/* spellCheck on the body cascades the browser spell checker to every input/textarea in the
+          app; lang="en-AU" makes it use the Australian dictionary so "colour"/"organise" aren't
+          flagged. Individual fields can still opt out with spellCheck={false}. */}
+      <body className={`${inter.className} bg-fg-bg min-h-screen`} spellCheck={true}>
         <LoginGate>{children}</LoginGate>
       </body>
     </html>
