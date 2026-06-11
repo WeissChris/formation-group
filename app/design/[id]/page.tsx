@@ -353,6 +353,16 @@ export default function ProposalDetailPage() {
                     />
                   </div>
                 </div>
+                <div>
+                  <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">CC on the email (optional)</label>
+                  <input
+                    defaultValue={proposal.ccEmails ?? ''}
+                    onBlur={e => saveProposalField({ ccEmails: e.target.value.trim() || undefined })}
+                    placeholder="partner@example.com, architect@example.com"
+                    className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors"
+                  />
+                  <p className="text-2xs font-light text-fg-muted/60 mt-1">Comma-separated. CC&apos;d recipients are visible to the client.</p>
+                </div>
               </div>
             ) : (
               <div className="space-y-1 text-sm font-light">
@@ -360,6 +370,7 @@ export default function ProposalDetailPage() {
                 {proposal.clientEmail && <p className="text-fg-muted">{proposal.clientEmail}</p>}
                 {proposal.clientPhone && <p className="text-fg-muted">{proposal.clientPhone}</p>}
                 {proposal.projectAddress && <p className="text-fg-muted">{proposal.projectAddress}</p>}
+                {proposal.ccEmails && <p className="text-fg-muted/80 text-2xs">CC: {proposal.ccEmails}</p>}
               </div>
             )}
           </div>

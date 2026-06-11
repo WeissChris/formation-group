@@ -44,6 +44,7 @@ The following outlines our proposed design process and associated fees.`
     clientName: '',
     clientEmail: '',
     clientPhone: '',
+    ccEmails: '',
     projectAddress: '',
     introText: DEFAULT_INTRO_TEXT,
     emailMessage: '',
@@ -85,6 +86,7 @@ The following outlines our proposed design process and associated fees.`
       clientName: form.clientName,
       clientEmail: form.clientEmail || undefined,
       clientPhone: form.clientPhone || undefined,
+      ccEmails: form.ccEmails || undefined,
       projectAddress: form.projectAddress,
       status,
       introText: form.introText || undefined,
@@ -176,6 +178,7 @@ The following outlines our proposed design process and associated fees.`
               <Field label="Client Phone" value={form.clientPhone} onChange={v => set('clientPhone', v)} placeholder="0400 000 000" />
             </div>
             <Field label="Project Address" value={form.projectAddress} onChange={v => set('projectAddress', v)} placeholder="123 Example St" />
+            <Field label="CC on email (optional)" value={form.ccEmails} onChange={v => set('ccEmails', v)} placeholder="partner@example.com, architect@example.com" />
           </div>
 
           <div className="h-px bg-fg-border" />

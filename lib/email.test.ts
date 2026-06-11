@@ -9,6 +9,7 @@ import {
   buildAcceptanceNotifyHtml,
   sendAcceptanceClientEmail,
   sendAcceptanceNotifyEmail,
+  parseEmailList,
 } from './email'
 
 const base = {
@@ -25,6 +26,22 @@ describe('isValidEmail', () => {
     expect(isValidEmail('a@b')).toBe(false)
     expect(isValidEmail('a b@c.com')).toBe(false)
     expect(isValidEmail('')).toBe(false)
+  })
+})
+
+describe('parseEmailList (CC recipients)', () => {
+  it('splits on commas, semicolons and spaces, keeping valid addresses', () => {
+    expect(parseEmailList('a@b.co, c@d.com; e@f.org'))
+      .toEqual(['a@b.co', 'c@d.com', 'e@f.org'])
+  })
+
+  it('drops invalid entries and de-duplicates (case-insensitive)', () => {
+    expect(parseEmailList('a@b.co, nope, A@B.CO, , x@y')).toEqual(['a@b.co'])
+  })
+
+  it('returns an empty array for blank/undefined input', () => {
+    expect(parseEmailList(undefined)).toEqual([])
+    expect(parseEmailList('   ')).toEqual([])
   })
 })
 

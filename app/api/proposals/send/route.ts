@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
   const clientName = typeof body?.clientName === 'string' ? body.clientName : ''
   const projectAddress = typeof body?.projectAddress === 'string' ? body.projectAddress : undefined
   const message = typeof body?.emailMessage === 'string' ? body.emailMessage : undefined
+  const cc = typeof body?.ccEmails === 'string' ? body.ccEmails : undefined
 
   if (!clientEmail) return NextResponse.json({ ok: false, error: 'no_client_email' }, { status: 400 })
   if (!isValidEmail(clientEmail)) return NextResponse.json({ ok: false, error: 'invalid_email' }, { status: 400 })
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest) {
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://formation-group.vercel.app').replace(/\/+$/, '')
   const proposalUrl = `${appUrl}/proposal/${encodeURIComponent(acceptanceToken)}`
 
-  const result = await sendProposalEmail({ to: clientEmail, clientName, proposalUrl, projectAddress, message })
+  const result = await sendProposalEmail({ to: clientEmail, clientName, proposalUrl, projectAddress, message, cc })
   if (!result.ok) {
     // 422 for "you haven't set it up yet" so the client can show a setup hint; 502 for send failures.
     const status = result.error === 'email_not_configured' ? 422 : 502

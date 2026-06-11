@@ -221,6 +221,7 @@ export interface DesignProposal {
   clientName: string
   clientEmail?: string
   clientPhone?: string
+  ccEmails?: string            // extra recipients CC'd on the proposal email (comma-separated)
   projectAddress: string
   status: 'draft' | 'sent' | 'pending' | 'accepted' | 'declined' | 'lost'
   archived?: boolean

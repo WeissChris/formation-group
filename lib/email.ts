@@ -19,6 +19,23 @@ export interface ProposalEmailInput {
   proposalUrl: string
   projectAddress?: string
   message?: string   // the email body message — separate from the proposal's on-page intro
+  cc?: string        // extra recipients (comma/semicolon/space separated) CC'd, visible to the client
+}
+
+/** Parse a free-text recipient list into validated, de-duplicated email addresses. */
+export function parseEmailList(input?: string): string[] {
+  if (!input) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of input.split(/[,;\s]+/)) {
+    const e = raw.trim()
+    if (!e || !isValidEmail(e)) continue
+    const key = e.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(e)
+  }
+  return out
 }
 
 const DEFAULT_EMAIL_MESSAGE =
@@ -163,6 +180,7 @@ async function sendViaResend(opts: {
   subject: string
   html: string
   text?: string
+  cc?: string[]
   bcc?: string[]
   replyTo?: string
 }): Promise<SendResult> {
@@ -179,6 +197,7 @@ async function sendViaResend(opts: {
       body: JSON.stringify({
         from,
         to: Array.isArray(opts.to) ? opts.to : [opts.to.trim()],
+        ...(opts.cc && opts.cc.length ? { cc: opts.cc } : {}),
         ...(opts.bcc && opts.bcc.length ? { bcc: opts.bcc } : {}),
         reply_to: replyTo,
         subject: opts.subject,
@@ -206,8 +225,11 @@ async function sendViaResend(opts: {
 export async function sendProposalEmail(input: ProposalEmailInput): Promise<SendResult> {
   if (!isValidEmail(input.to)) return { ok: false, error: 'invalid_email' }
   const bcc = (process.env.PROPOSAL_BCC || DEFAULT_BCC).trim()
+  const toLower = input.to.trim().toLowerCase()
+  const cc = parseEmailList(input.cc).filter(e => e.toLowerCase() !== toLower)
   return sendViaResend({
     to: input.to.trim(),
+    cc: cc.length ? cc : undefined,
     bcc: bcc ? [bcc] : undefined,
     subject: proposalEmailSubject(),
     html: buildProposalEmailHtml(input),

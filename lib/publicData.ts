@@ -173,6 +173,7 @@ function mapProposalRow(row: Record<string, unknown>): DesignProposal {
     phases: (row.phases as DesignProposal['phases']) || undefined,
     introText: (row.intro_text as string | null) || undefined,
     emailMessage: (row.email_message as string | null) || undefined,
+    ccEmails: (row.cc_emails as string | null) || undefined,
     validUntil: (row.valid_until as string) || '',
     notes: row.notes as string | undefined,
     acceptanceToken: row.acceptance_token as string,

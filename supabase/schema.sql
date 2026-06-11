@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS fg_proposals (
   phases JSONB DEFAULT '[]',   -- variable-length editable phase list (source of truth; see migration 04)
   intro_text TEXT,             -- opening paragraph shown on the proposal page
   email_message TEXT,          -- message in the delivery email (separate from intro_text)
+  cc_emails TEXT,              -- extra recipients CC'd on the proposal email (comma-separated)
   valid_until TEXT,
   notes TEXT,
   acceptance_token TEXT UNIQUE,
