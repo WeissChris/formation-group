@@ -14,6 +14,7 @@ export async function requestSendProposal(proposal: DesignProposal): Promise<Sen
         clientName: proposal.clientName,
         clientEmail: proposal.clientEmail,
         acceptanceToken: proposal.acceptanceToken,
+        projectAddress: proposal.projectAddress,
         introText: proposal.introText,
       }),
     })

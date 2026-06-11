@@ -66,6 +66,23 @@ describe('buildProposalEmailHtml', () => {
     expect(html).toContain('Hi A&amp;B,')
     expect(html).not.toContain('Hi A&B,')
   })
+
+  it('includes a hero photo and the Formation brand', () => {
+    const html = buildProposalEmailHtml(base)
+    expect(html).toContain('<img')
+    expect(html).toContain('proposal-hero-8.jpg')
+    expect(html).toContain('Formation Landscapes')
+    expect(html).toContain('formationlandscapes.com.au')
+  })
+
+  it('shows the project address when provided, and omits it (no empty line) when not', () => {
+    expect(buildProposalEmailHtml({ ...base, projectAddress: '55 Bath Road, Glen Iris' }))
+      .toContain('55 Bath Road, Glen Iris')
+    // No address → the heading is still there but no stray address markup
+    const noAddr = buildProposalEmailHtml(base)
+    expect(noAddr).toContain('Your landscape design proposal')
+    expect(noAddr).not.toContain('Glen Iris')
+  })
 })
 
 describe('sendProposalEmail (no API key configured)', () => {

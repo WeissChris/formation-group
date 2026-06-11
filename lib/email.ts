@@ -17,7 +17,13 @@ export interface ProposalEmailInput {
   to: string
   clientName: string
   proposalUrl: string
+  projectAddress?: string
   introText?: string
+}
+
+/** Absolute base URL for hosted assets (hero image) in the email. */
+function appBaseUrl(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL || 'https://formation-group.vercel.app').replace(/\/+$/, '')
 }
 
 /** Basic, permissive email-shape check (server-side guard; the real validation is delivery). */
@@ -77,51 +83,69 @@ export function buildProposalEmailText(input: ProposalEmailInput): string {
 /** Branded HTML body with inline styles (email clients ignore <style>/external CSS). */
 export function buildProposalEmailHtml(input: ProposalEmailInput): string {
   const GREEN = '#3D5A3A'
+  const INK = '#1a1a1a'
+  const BODY = '#2d2d2d'
+  const MUTED = '#8A8580'
+  const font = `-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif`
   const name = escapeHtml(firstName(input.clientName))
   const lead = escapeHtml(leadParagraph(input.introText))
   const url = escapeHtml(input.proposalUrl)
+  const hero = `${appBaseUrl()}/proposal-hero-8.jpg`
+  const address = input.projectAddress ? escapeHtml(input.projectAddress.trim()) : ''
   return `<!doctype html>
 <html>
-  <body style="margin:0;padding:0;background:#f4f3f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#2d2d2d;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f3f1;padding:32px 16px;">
+  <body style="margin:0;padding:0;background:#eceae7;font-family:${font};color:${BODY};">
+    <span style="display:none;max-height:0;overflow:hidden;opacity:0;">Your landscape design proposal from Formation Landscapes is ready to view.</span>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eceae7;">
       <tr>
-        <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e5e7eb;">
+        <td align="center" style="padding:28px 12px;">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e7e4df;">
+            <!-- Hero photo -->
             <tr>
-              <td style="padding:28px 32px 8px 32px;">
-                <p style="margin:0;font-size:13px;letter-spacing:0.12em;text-transform:uppercase;color:${GREEN};font-weight:600;">Formation Landscapes</p>
+              <td style="padding:0;line-height:0;background:${GREEN};">
+                <img src="${hero}" width="600" alt="Formation Landscapes" style="display:block;width:100%;max-width:600px;height:200px;object-fit:cover;border:0;" />
               </td>
             </tr>
+            <!-- Brand + heading -->
             <tr>
-              <td style="padding:8px 32px 0 32px;">
-                <p style="margin:0 0 16px 0;font-size:16px;color:#1a1a1a;">Hi ${name},</p>
-                <p style="margin:0 0 24px 0;font-size:14px;line-height:1.6;color:#2d2d2d;">${lead}</p>
-                <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px 0;">
+              <td style="padding:34px 44px 0 44px;">
+                <p style="margin:0 0 8px 0;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:${GREEN};font-weight:600;">Formation Landscapes</p>
+                <h1 style="margin:0;font-size:25px;font-weight:300;line-height:1.25;color:${INK};letter-spacing:0.01em;">Your landscape design proposal</h1>
+                ${address ? `<p style="margin:8px 0 0 0;font-size:13px;font-weight:300;color:${MUTED};">${address}</p>` : ''}
+              </td>
+            </tr>
+            <!-- Body -->
+            <tr>
+              <td style="padding:26px 44px 0 44px;">
+                <p style="margin:0 0 16px 0;font-size:15px;color:${INK};">Hi ${name},</p>
+                <p style="margin:0 0 28px 0;font-size:14px;line-height:1.7;color:${BODY};">${lead}</p>
+                <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 22px 0;">
                   <tr>
-                    <td style="background:${GREEN};">
-                      <a href="${url}" style="display:inline-block;padding:13px 28px;font-size:14px;color:#ffffff;text-decoration:none;letter-spacing:0.03em;">View your proposal &rarr;</a>
+                    <td style="background:${GREEN};border-radius:2px;">
+                      <a href="${url}" style="display:inline-block;padding:14px 32px;font-size:14px;color:#ffffff;text-decoration:none;letter-spacing:0.04em;">View your proposal &rarr;</a>
                     </td>
                   </tr>
                 </table>
-                <p style="margin:0 0 24px 0;font-size:12px;line-height:1.6;color:#6b6b6b;">
-                  Or copy this link into your browser:<br>
-                  <a href="${url}" style="color:${GREEN};word-break:break-all;">${url}</a>
-                </p>
+                <p style="margin:0 0 4px 0;font-size:12px;color:${MUTED};">Or paste this link into your browser:</p>
+                <p style="margin:0 0 30px 0;font-size:12px;line-height:1.5;"><a href="${url}" style="color:${GREEN};word-break:break-all;">${url}</a></p>
               </td>
             </tr>
+            <!-- Footer -->
             <tr>
-              <td style="padding:0 32px 28px 32px;border-top:1px solid #eee;">
-                <p style="margin:20px 0 0 0;font-size:14px;line-height:1.6;color:#2d2d2d;">
-                  If you have any questions, just reply to this email.
+              <td style="padding:24px 44px 34px 44px;border-top:1px solid #eeeae5;">
+                <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:${BODY};">
+                  Any questions? Just reply to this email and I&#39;d be glad to talk it through.
                 </p>
-                <p style="margin:16px 0 0 0;font-size:14px;line-height:1.5;color:#2d2d2d;">
+                <p style="margin:0;font-size:14px;line-height:1.6;color:${BODY};">
                   Kind regards,<br>
                   <strong style="font-weight:600;">Chris Weiss</strong><br>
-                  <span style="color:#6b6b6b;">Formation Landscapes</span>
+                  <span style="color:${MUTED};">Formation Landscapes</span><br>
+                  <a href="https://formationlandscapes.com.au" style="color:${GREEN};text-decoration:none;">formationlandscapes.com.au</a>
                 </p>
               </td>
             </tr>
           </table>
+          <p style="margin:16px 0 0 0;font-size:11px;letter-spacing:0.04em;color:#b3aea7;">Formation Landscapes &middot; Landscape design &amp; construction</p>
         </td>
       </tr>
     </table>
