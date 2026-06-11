@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { saveProposal, generateRevenueFromProposal, saveDesignProject, loadDesignProjectByProposalId } from '@/lib/storage'
 import { getProposalByToken, acceptProposalByToken } from '@/lib/publicData'
+import { notifyProposalAccepted } from '@/lib/emailClient'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { getProposalPhases, phasesTotal, defaultPhaseDescription, defaultPhaseOutcome } from '@/lib/proposalPhases'
 import type { DesignProposal, ProposalContentBlock, DesignProject } from '@/types'
@@ -249,6 +250,8 @@ export default function ProposalAcceptancePage() {
       setError('Could not record acceptance — please try again or contact us directly.')
       return
     }
+    // Email the client a confirmation + notify Chris. Best-effort, non-blocking.
+    void notifyProposalAccepted(token)
     generateRevenueFromProposal(updated)
 
     // Create design project if doesn't exist

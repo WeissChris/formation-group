@@ -26,6 +26,22 @@ export async function requestSendProposal(proposal: DesignProposal): Promise<Sen
   }
 }
 
+/**
+ * Fire the acceptance emails (client confirmation + Chris notification) after a proposal is
+ * accepted. Best-effort and non-blocking — the acceptance is already recorded server-side.
+ */
+export async function notifyProposalAccepted(acceptanceToken: string): Promise<void> {
+  try {
+    await fetch('/api/proposals/accepted', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ acceptanceToken }),
+    })
+  } catch {
+    /* ignore — acceptance is already recorded; emails are a best-effort follow-up */
+  }
+}
+
 /** Friendly message for a send-error code. */
 export function sendErrorMessage(error?: string): string {
   switch (error) {

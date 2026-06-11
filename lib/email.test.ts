@@ -5,6 +5,10 @@ import {
   buildProposalEmailText,
   buildProposalEmailHtml,
   sendProposalEmail,
+  buildAcceptanceClientHtml,
+  buildAcceptanceNotifyHtml,
+  sendAcceptanceClientEmail,
+  sendAcceptanceNotifyEmail,
 } from './email'
 
 const base = {
@@ -91,5 +95,44 @@ describe('sendProposalEmail (no API key configured)', () => {
     const result = await sendProposalEmail(base)
     expect(result.ok).toBe(false)
     expect(result.error).toBe('email_not_configured')
+  })
+})
+
+describe('acceptance emails', () => {
+  const accept = {
+    clientName: 'Kim Smiley',
+    acceptedByName: 'Kim Smiley',
+    clientEmail: 'kim@example.com',
+    projectAddress: '209 Mont Albert Road',
+    proposalUrl: 'https://formation-group.vercel.app/proposal/abc123',
+    totalLabel: '$13,300',
+  }
+
+  it('client confirmation greets by name, thanks them, and links back to the proposal', () => {
+    const html = buildAcceptanceClientHtml(accept)
+    expect(html).toContain('Hi Kim,')
+    expect(html).toContain('Thank you')
+    expect(html).toContain('href="https://formation-group.vercel.app/proposal/abc123"')
+    expect(html).toContain('<img')           // branded hero
+    expect(html).toContain('209 Mont Albert Road')
+  })
+
+  it('internal notification shows who accepted, the project and the fee', () => {
+    const html = buildAcceptanceNotifyHtml(accept)
+    expect(html).toContain('Kim Smiley')
+    expect(html).toContain('accepted their proposal')
+    expect(html).toContain('209 Mont Albert Road')
+    expect(html).toContain('$13,300')
+    expect(html).toContain('href="https://formation-group.vercel.app/proposal/abc123"')
+  })
+
+  it('sendAcceptanceClientEmail rejects a missing/invalid client email before sending', async () => {
+    expect((await sendAcceptanceClientEmail({ ...accept, clientEmail: undefined })).error).toBe('invalid_email')
+    expect((await sendAcceptanceClientEmail({ ...accept, clientEmail: 'nope' })).error).toBe('invalid_email')
+  })
+
+  it('both senders return email_not_configured when no API key is set', async () => {
+    expect((await sendAcceptanceClientEmail(accept)).error).toBe('email_not_configured')
+    expect((await sendAcceptanceNotifyEmail(accept)).error).toBe('email_not_configured')
   })
 })
