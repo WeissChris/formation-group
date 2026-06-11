@@ -307,9 +307,20 @@ export default function ProposalPreview({
                 </p>
               </div>
             ))}
-            <p className="text-sm font-semibold pt-2" style={{ color: HEADING }}>
-              Total Design Fee: {formatCurrency(total)} + GST
-            </p>
+            <div className="pt-2 mt-1 border-t space-y-1" style={{ borderColor: BORDER }}>
+              <div className="flex justify-between text-xs font-light" style={{ color: MUTED }}>
+                <span>Subtotal (ex GST)</span>
+                <span className="tabular-nums">{formatCurrency(total)}</span>
+              </div>
+              <div className="flex justify-between text-xs font-light" style={{ color: MUTED }}>
+                <span>GST (10%)</span>
+                <span className="tabular-nums">{formatCurrency(total * 0.1)}</span>
+              </div>
+              <div className="flex justify-between text-sm font-semibold pt-0.5" style={{ color: HEADING }}>
+                <span>Total (inc GST)</span>
+                <span className="tabular-nums">{formatCurrency(total * 1.1)}</span>
+              </div>
+            </div>
           </div>
 
           {/* Right: Payment Terms */}

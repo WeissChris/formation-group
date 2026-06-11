@@ -687,9 +687,20 @@ export default function ProposalAcceptancePage() {
                   </div>
                 ))}
 
-                <p className="text-base font-semibold pt-2" style={{ color: HEADING }}>
-                  Total Design Fee: {formatCurrency(total)} + GST
-                </p>
+                <div className="pt-3 mt-2 border-t space-y-1.5" style={{ borderColor: BORDER }}>
+                  <div className="flex justify-between text-sm font-light" style={{ color: MUTED }}>
+                    <span>Subtotal (ex GST)</span>
+                    <span className="tabular-nums">{formatCurrency(total)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-light" style={{ color: MUTED }}>
+                    <span>GST (10%)</span>
+                    <span className="tabular-nums">{formatCurrency(gst)}</span>
+                  </div>
+                  <div className="flex justify-between text-base font-semibold pt-1" style={{ color: HEADING }}>
+                    <span>Total (inc GST)</span>
+                    <span className="tabular-nums">{formatCurrency(total + gst)}</span>
+                  </div>
+                </div>
               </div>
 
               {/* Right: Payment Terms box (dark green) */}
