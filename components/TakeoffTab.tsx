@@ -88,7 +88,7 @@ function getItemLayer(t: TakeoffData, item: TakeoffItem): TakeoffLayer {
 
 /** Raw qty = sum of measurements minus deductions (no wastage) */
 function getRawQty(item: TakeoffItem): number {
-  if (item.manualOverride !== undefined) return item.manualOverride
+  if (item.manualOverride !== undefined) return Math.max(0, item.manualOverride)
   const sum = item.measurements.reduce(
     (s, m) => s + (m.isDeduction ? -m.value : m.value),
     0
@@ -722,7 +722,10 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
     }
-  }, [activePlan?.scaleSet, calib.step, isDrawing, selectedMeasurementId, stampState.phase, undo, redo, fitToScreen, deleteMeasurement])
+    // addMeasurementToSelected is intentionally omitted (declared later in the body — would be a
+    // TDZ error here); the handler closure still resolves the latest one when a key is pressed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePlan, calib.step, isDrawing, drawingPoints, activeTool, deductMode, rectDrag, selectedMeasurementId, stampState.phase, undo, redo, fitToScreen, deleteMeasurement])
 
   // ── Layer actions ──────────────────────────────────────────────────────
 
@@ -1228,8 +1231,16 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
   const confirmCalibration = () => {
     if (!activePlan || !calib.p1 || !calib.p2) return
     const realDist = parseFloat(calib.distanceInput)
-    if (!realDist || realDist <= 0) return
+    if (!Number.isFinite(realDist) || realDist <= 0) {
+      window.alert('Enter a positive real-world distance (in metres) for the line you drew.')
+      return
+    }
     const pxDist = pixelDist(calib.p1, calib.p2, activePlan.imageWidth, activePlan.imageHeight)
+    if (pxDist < 1) {
+      // Same point twice → scale 0 → every measurement silently reads 0 while looking "calibrated".
+      window.alert('The two calibration points are too close together — draw a longer known distance.')
+      return
+    }
     const scale = pxDist / realDist  // pixels per metre
     updateTakeoff(t => ({
       ...t,
@@ -1247,6 +1258,15 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
 
   const confirmLink = (lineItemId: string) => {
     if (!linkTarget) return
+    // Linking pushes the takeoff item's qty AND its unit onto the line item, overwriting the line
+    // item's uom and recomputing total = qty × unitCost. Warn if the units don't match so a count
+    // (ea) can't silently replace an area (m2) line item priced per m² — which would garble the $.
+    const li = lineItems.find(l => l.id === lineItemId)
+    const item = takeoff.groups.find(g => g.id === linkTarget.groupId)?.items.find(i => i.id === linkTarget.itemId)
+    if (li && item && li.uom !== item.unit &&
+        !window.confirm(`Unit mismatch: this line item is priced in "${li.uom}", but the takeoff item is in "${item.unit}". Linking will change the line item to "${item.unit}". Continue?`)) {
+      return
+    }
     patchItem(linkTarget.groupId, linkTarget.itemId, { linkedLineItemId: lineItemId })
     setLinkModalOpen(false)
     setLinkTarget(null)
@@ -1505,7 +1525,12 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                         <input
                           type="number"
                           value={item.manualOverride !== undefined ? item.manualOverride : rawQty}
-                          onChange={e => patchItem(group.id, item.id, { manualOverride: parseFloat(e.target.value) || 0 })}
+                          onChange={e => {
+                            const v = e.target.value.trim()
+                            if (v === '') { clearManualOverride(group.id, item.id); return }   // blank → revert to measurements
+                            const n = parseFloat(v)
+                            if (Number.isFinite(n)) patchItem(group.id, item.id, { manualOverride: Math.max(0, n) })
+                          }}
                           className={`w-14 text-xs text-right bg-fg-card/30 px-1 py-0.5 rounded outline-none tabular-nums ${item.manualOverride !== undefined ? 'text-amber-400' : 'text-fg-heading'}`}
                           title={item.manualOverride !== undefined ? 'Manual override active' : 'Qty from measurements'}
                         />
@@ -1576,7 +1601,10 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                         <input
                           type="number"
                           value={item.wastagePercent ?? 0}
-                          onChange={e => patchItem(group.id, item.id, { wastagePercent: parseFloat(e.target.value) || 0 })}
+                          onChange={e => {
+                            const n = parseFloat(e.target.value)
+                            patchItem(group.id, item.id, { wastagePercent: Number.isFinite(n) ? Math.max(0, n) : 0 })
+                          }}
                           className="w-12 text-2xs bg-fg-card/30 px-1 py-0.5 rounded outline-none border border-fg-border tabular-nums text-right"
                           placeholder="%"
                         />

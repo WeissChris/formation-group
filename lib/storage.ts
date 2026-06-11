@@ -288,12 +288,24 @@ export function deleteProgressClaim(id: string): void {
 }
 
 // Takeoff data
+let takeoffQuotaWarned = false
 export function saveTakeoff(data: TakeoffData): void {
   const all = loadAllTakeoffs()
   const idx = all.findIndex(t => t.estimateId === data.estimateId)
   if (idx >= 0) all[idx] = data
   else all.push(data)
-  localStorage.setItem('fg_takeoffs', JSON.stringify(all))
+  try {
+    localStorage.setItem('fg_takeoffs', JSON.stringify(all))
+  } catch (e) {
+    // Plan images are base64 data URIs and can be large — a big PDF/photo blows the ~5MB quota.
+    // Swallow so the throw doesn't abort the React state update (which would lose the edit the
+    // user just made); the IndexedDB backup below still runs. Warn once per session.
+    console.error('[takeoff] localStorage save failed (likely quota — plan image too large)', e)
+    if (!takeoffQuotaWarned && typeof window !== 'undefined') {
+      takeoffQuotaWarned = true
+      window.alert('This takeoff is too large to save to local storage — most likely the plan image. Recent changes are kept in memory but may not survive a reload. Use a smaller or lower-resolution plan image.')
+    }
+  }
   backupToIndexedDB('fg_takeoffs', all)
 }
 

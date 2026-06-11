@@ -71,7 +71,7 @@ export function getItemLayer(t: TakeoffData, item: TakeoffItem): TakeoffLayer {
  * Negative sums clamp to 0 (deductions can't push a quantity below zero).
  */
 export function getRawQty(item: TakeoffItem): number {
-  if (item.manualOverride !== undefined) return item.manualOverride
+  if (item.manualOverride !== undefined) return Math.max(0, item.manualOverride)
   const sum = item.measurements.reduce(
     (s, m) => s + (m.isDeduction ? -m.value : m.value),
     0,
