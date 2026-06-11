@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { loadProjects, loadWeeklyRevenue, loadDesignProjects, loadProgressPaymentStages, loadProgressClaims, loadProposals, loadGanttEntries, loadWeeklyActuals, loadEstimates, loadEstimatesByProject } from '@/lib/storage'
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
@@ -52,6 +52,25 @@ export default function DashboardPage() {
   const [liveJobsConfigured, setLiveJobsConfigured] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [snapshotting, setSnapshotting] = useState(false)
+
+  // Auto-capture a daily fade snapshot. The dashboard is the only place that can compute the
+  // Live Jobs rows (progress claims are localStorage-only), and snapshots had never been captured
+  // (the manual button was never clicked), so the fade-over-time history was empty. This fires
+  // once per day, best-effort, only when there's real Xero cost data — the server dedups by
+  // (project, date). A ref holds the latest rows so the effect stays unconditional + early-return
+  // safe regardless of the render flow below.
+  const liveJobRowsRef = useRef<LiveJobRow[]>([])
+  const autoSnapDone = useRef(false)
+  useEffect(() => {
+    if (autoSnapDone.current) return
+    const rows = liveJobRowsRef.current
+    if (rows.length === 0 || !rows.some(r => r.hasLiveCostData)) return
+    const today = new Date().toISOString().slice(0, 10)
+    if (localStorage.getItem('fg_last_auto_snapshot') === today) { autoSnapDone.current = true; return }
+    autoSnapDone.current = true
+    localStorage.setItem('fg_last_auto_snapshot', today)
+    void triggerManualSnapshot(rows.map(row => ({ row, costByAccount: {} })))
+  })
 
   // Hoisted into a callable so we can re-run from the cross-tab refresh handler below
   const reload = () => {
@@ -332,6 +351,7 @@ export default function DashboardPage() {
     .sort()
     .pop() ?? null
   const liveJobsTotals = computePortfolioTotals(liveJobRows)
+  liveJobRowsRef.current = liveJobRows   // feed the auto-snapshot effect (declared above)
 
   const handleSeedData = () => {
     seedDemoData()

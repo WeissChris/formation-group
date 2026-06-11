@@ -244,6 +244,30 @@ export async function getProjectCostPeriods(projectId: string): Promise<CostPeri
   }
 }
 
+export interface ProjectSnapshotRow {
+  snapshot_date: string
+  forecast_revenue: number
+  invoiced_to_date: number
+  cost_to_date: number
+  forecast_final_cost: number
+  forecast_gp_pct: number
+  quoted_margin_pct: number | null
+  target_margin_pct: number | null
+  status: 'on_target' | 'watch' | 'below_target'
+}
+
+/** Forecast-GP fade history for a project (dated snapshots, oldest first). */
+export async function getProjectSnapshots(projectId: string): Promise<ProjectSnapshotRow[]> {
+  try {
+    const resp = await fetch(`/api/projects/${projectId}/snapshots`, { cache: 'no-store' })
+    if (!resp.ok) return []
+    const data = await resp.json()
+    return Array.isArray(data?.snapshots) ? data.snapshots : []
+  } catch {
+    return []
+  }
+}
+
 export interface LiveJobRow {
   project_id: string
   cost_to_date: number
