@@ -7,7 +7,7 @@ import { loadEstimates, loadProposals } from '@/lib/storage'
 import { upsertEstimate, upsertProject } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals } from '@/lib/estimateCalculations'
-import { getAllLibraryItems, getCategories } from '@/lib/itemLibrary'
+import { getAllLibraryItems, getCategories, defaultMarkupForType } from '@/lib/itemLibrary'
 import type { Estimate, EstimateLineItem, LibraryItem } from '@/types'
 import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch } from 'lucide-react'
 import TakeoffTab from '@/components/TakeoffTab'
@@ -113,7 +113,7 @@ function MarginSidebar({ estimate }: { estimate: Estimate }) {
   const margins = getMarginSummary(estimate)
   const totals = getEstimateTotals(estimate)
 
-  const marginColor = (meets: boolean) => meets ? 'text-green-400' : 'text-amber-400'
+  const marginColor = (meets: boolean) => meets ? 'text-green-600' : 'text-amber-600'
   const marginLabel = (meets: boolean) => meets ? '✓ MEETS' : '⚠ BELOW'
 
   return (
@@ -127,23 +127,23 @@ function MarginSidebar({ estimate }: { estimate: Estimate }) {
           { label: 'Subcontractor', cost: totals.subCost, revenue: totals.subRevenue, margin: totals.subMargin, target: 0.34 },
         ].map(col => (
           <div key={col.label} className="bg-fg-darker/50 p-3">
-            <p className="text-2xs font-medium tracking-wide uppercase text-[#5A5550] mb-2">{col.label}</p>
+            <p className="text-xs font-medium tracking-wide uppercase text-white/70 mb-2">{col.label}</p>
             <div className="space-y-1.5">
               <div>
-                <p className="text-2xs text-fg-muted">Cost</p>
-                <p className="text-xs font-light text-fg-heading tabular-nums">{fmtCurrency(col.cost)}</p>
+                <p className="text-2xs uppercase tracking-wide text-white/40">Cost</p>
+                <p className="text-sm font-light text-white/90 tabular-nums">{fmtCurrency(col.cost)}</p>
               </div>
               <div>
-                <p className="text-2xs text-fg-muted">Revenue</p>
-                <p className="text-xs font-light text-fg-heading tabular-nums">{fmtCurrency(col.revenue)}</p>
+                <p className="text-2xs uppercase tracking-wide text-white/40">Revenue</p>
+                <p className="text-sm font-light text-white/90 tabular-nums">{fmtCurrency(col.revenue)}</p>
               </div>
               <div>
-                <p className="text-2xs text-fg-muted">Margin</p>
-                <p className={`text-sm font-light tabular-nums ${col.revenue > 0 ? marginColor(col.margin >= col.target) : 'text-fg-muted'}`}>
+                <p className="text-2xs uppercase tracking-wide text-white/40">Margin</p>
+                <p className={`text-base font-medium tabular-nums ${col.revenue > 0 ? (col.margin >= col.target ? 'text-green-400' : 'text-amber-400') : 'text-white/40'}`}>
                   {col.revenue > 0 ? fmtPct(col.margin) : '—'}
                 </p>
               </div>
-              <p className={`text-2xs font-light tracking-wide ${col.revenue > 0 ? marginColor(col.margin >= col.target) : 'text-fg-muted'}`}>
+              <p className={`text-xs font-medium tracking-wide ${col.revenue > 0 ? (col.margin >= col.target ? 'text-green-400' : 'text-amber-400') : 'text-white/40'}`}>
                 {col.revenue > 0 ? marginLabel(col.margin >= col.target) : '—'}
               </p>
             </div>
@@ -165,11 +165,11 @@ function MarginSidebar({ estimate }: { estimate: Estimate }) {
             <tbody>
               {margins.map(m => (
                 <tr key={m.category} className="border-b border-fg-border/30">
-                  <td className="py-2 pr-2 text-[#6B6560] text-2xs leading-tight">{m.category}</td>
-                  <td className={`py-2 pr-2 text-right tabular-nums ${marginColor(m.meetsTarget)}`}>
+                  <td className="py-2 pr-2 text-fg-heading text-xs leading-tight">{m.category}</td>
+                  <td className={`py-2 pr-2 text-right tabular-nums text-sm font-medium ${marginColor(m.meetsTarget)}`}>
                     {fmtPct(m.marginPercent)}
                   </td>
-                  <td className={`py-2 text-right text-2xs ${marginColor(m.meetsTarget)}`}>
+                  <td className={`py-2 text-right text-sm ${marginColor(m.meetsTarget)}`}>
                     {m.meetsTarget ? '✓' : '⚠'}
                   </td>
                 </tr>
@@ -209,15 +209,11 @@ function MarginSidebar({ estimate }: { estimate: Estimate }) {
 function LineItemRow({
   item,
   categories,
-  defaultMarkupFormation,
-  defaultMarkupSubcontractor,
   onChange,
   onDelete,
 }: {
   item: EstimateLineItem
   categories: string[]
-  defaultMarkupFormation: number
-  defaultMarkupSubcontractor: number
   onChange: (updated: EstimateLineItem) => void
   onDelete: () => void
 }) {
@@ -253,7 +249,11 @@ function LineItemRow({
       <td className="py-1.5 px-1">
         <select
           value={item.type}
-          onChange={e => update({ type: e.target.value as EstimateLineItem['type'] })}
+          onChange={e => {
+            const t = e.target.value as EstimateLineItem['type']
+            // Markup follows the item type — re-apply the type's default on change.
+            update({ type: t, markupPercent: defaultMarkupForType(t) })
+          }}
           className={`${inputCls} bg-fg-bg appearance-none`}
         >
           <option>Material</option>
@@ -264,11 +264,7 @@ function LineItemRow({
       </td>
       <td className="py-1.5 px-1">
         <button
-          onClick={() => {
-            const nextCrew = item.crewType === 'Formation' ? 'Subcontractor' : 'Formation'
-            // Markup follows crew type throughout the app — re-apply the matching default on toggle.
-            update({ crewType: nextCrew, markupPercent: nextCrew === 'Subcontractor' ? defaultMarkupSubcontractor : defaultMarkupFormation })
-          }}
+          onClick={() => update({ crewType: item.crewType === 'Formation' ? 'Subcontractor' : 'Formation' })}
           className={`text-2xs font-light tracking-wide uppercase px-1.5 py-0.5 border rounded-sm transition-colors ${
             item.crewType === 'Formation'
               ? 'text-blue-400/80 border-blue-400/40 hover:bg-blue-400/10'
@@ -405,9 +401,7 @@ export default function EstimateBuilderPage() {
   const addFromLibrary = useCallback((libraryItem: LibraryItem) => {
     if (!estimate) return
     const category = pickerCategory || libraryItem.category
-    const markup = libraryItem.crewType === 'Formation'
-      ? estimate.defaultMarkupFormation
-      : estimate.defaultMarkupSubcontractor
+    const markup = defaultMarkupForType(libraryItem.type)   // per-type default (Material 45 / Labour 75 / Sub 35 / Equip 40)
     const total = 0
     const newItem: EstimateLineItem = {
       id: generateId(),
@@ -435,14 +429,13 @@ export default function EstimateBuilderPage() {
 
   const addBlankRow = useCallback((category: string) => {
     if (!estimate) return
-    // Determine dominant crew type in this category to pick the right default markup
+    // Crew defaults to the dominant crew in the category; markup defaults by item TYPE (a blank row
+    // starts as Material → 45%) and follows the type from there.
     const catItems = estimate.lineItems.filter(i => i.category === category)
     const subCount = catItems.filter(i => i.crewType === 'Subcontractor').length
     const formCount = catItems.filter(i => i.crewType === 'Formation').length
     const defaultCrew: 'Formation' | 'Subcontractor' = subCount > formCount ? 'Subcontractor' : 'Formation'
-    const markup = defaultCrew === 'Subcontractor'
-      ? estimate.defaultMarkupSubcontractor
-      : estimate.defaultMarkupFormation
+    const markup = defaultMarkupForType('Material')
     const newItem: EstimateLineItem = {
       id: generateId(),
       estimateId: estimate.id,
@@ -863,8 +856,6 @@ export default function EstimateBuilderPage() {
                         key={item.id}
                         item={item}
                         categories={allCategories}
-                        defaultMarkupFormation={estimate.defaultMarkupFormation}
-                        defaultMarkupSubcontractor={estimate.defaultMarkupSubcontractor}
                         onChange={(updated) => updateLineItem(item.id, updated)}
                         onDelete={() => deleteLineItem(item.id)}
                       />

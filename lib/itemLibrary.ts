@@ -91,3 +91,16 @@ export const TARGET_MARGINS = {
   Formation: 0.40,
   Subcontractor: 0.34,
 }
+
+// Default MARKUP % auto-applied to a line item by its type (Chris's per-type defaults). Note this
+// is markup (on cost), distinct from the ~40% overall MARGIN target the margin checker watches.
+export const DEFAULT_MARKUP_BY_TYPE: Record<LibraryItem['type'], number> = {
+  Material: 45,
+  Labour: 75,
+  Subcontractor: 35,
+  Equipment: 40,
+}
+
+export function defaultMarkupForType(type: LibraryItem['type']): number {
+  return DEFAULT_MARKUP_BY_TYPE[type] ?? 40
+}
