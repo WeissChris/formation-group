@@ -927,16 +927,46 @@ export default function EstimateBuilderPage() {
                         />
                       </td>
                     </tr>,
-                    // Line items for this category
-                    ...catItems.map(item => (
-                      <LineItemRow
-                        key={item.id}
-                        item={item}
-                        categories={allCategories}
-                        onChange={(updated) => updateLineItem(item.id, updated)}
-                        onDelete={() => deleteLineItem(item.id)}
-                      />
-                    )),
+                    // Line items, grouped under sub-category sub-headings (no sub-category first).
+                    ...(() => {
+                      const bySub = new Map<string, EstimateLineItem[]>()
+                      for (const item of catItems) {
+                        const sub = (item.subcategory || '').trim()
+                        if (!bySub.has(sub)) bySub.set(sub, [])
+                        bySub.get(sub)!.push(item)
+                      }
+                      const subKeys = Array.from(bySub.keys()).sort((a, b) => (a === '' ? -1 : b === '' ? 1 : 0))
+                      const out: React.ReactNode[] = []
+                      for (const sub of subKeys) {
+                        const items = bySub.get(sub)!
+                        if (sub) {
+                          const subTotal = items.reduce((s, i) => s + i.total, 0)
+                          const subRevenue = items.reduce((s, i) => s + readLineItemRevenue(i), 0)
+                          out.push(
+                            <tr key={`sub-${category}-${sub}`} className="bg-fg-card/10 border-b border-fg-border/20">
+                              <td />
+                              <td colSpan={6} className="py-1 px-2 text-2xs font-medium tracking-wide uppercase text-fg-muted">↳ {sub}</td>
+                              <td className="py-1 px-1 text-right text-2xs text-fg-muted tabular-nums">{fmtCurrency(subTotal)}</td>
+                              <td />
+                              <td className="py-1 px-1 text-right text-2xs text-fg-muted tabular-nums">{fmtCurrency(subRevenue)}</td>
+                              <td />
+                            </tr>
+                          )
+                        }
+                        for (const item of items) {
+                          out.push(
+                            <LineItemRow
+                              key={item.id}
+                              item={item}
+                              categories={allCategories}
+                              onChange={(updated) => updateLineItem(item.id, updated)}
+                              onDelete={() => deleteLineItem(item.id)}
+                            />
+                          )
+                        }
+                      }
+                      return out
+                    })(),
                     // Category action buttons
                     <tr key={`cat-actions-${category}`}>
                       <td colSpan={11} className="py-1.5 px-2">
