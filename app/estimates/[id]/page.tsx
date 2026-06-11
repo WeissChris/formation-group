@@ -731,7 +731,7 @@ export default function EstimateBuilderPage() {
   const allCategories = Array.from(new Set([...getCategories(), ...categories]))
 
   return (
-    <div className="max-w-[1400px] mx-auto px-4 lg:px-6 py-12">
+    <div className="max-w-[1680px] mx-auto px-4 lg:px-8 py-12">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 mb-6 text-xs font-light text-fg-muted">
         <Link href="/estimates" className="hover:text-fg-heading transition-colors">Estimates</Link>
@@ -1059,7 +1059,7 @@ export default function EstimateBuilderPage() {
         </div>
 
         {/* Sidebar */}
-        <div className="w-72 shrink-0">
+        <div className="w-96 shrink-0">
           <MarginSidebar estimate={estimate} />
           <MarkupRoundingPanel estimate={estimate} onChange={updateEstimate} />
         </div>
