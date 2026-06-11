@@ -65,6 +65,14 @@ export default function ProposalDetailPage() {
   const addPhase = () => { applyPhases([...phases, makeBlankPhase(phases.length + 1)]); syncPhasesRemote() }
   const removePhase = (i: number) => { applyPhases(phases.filter((_, idx) => idx !== i)); syncPhasesRemote() }
 
+  // Save a top-level proposal field (client details, intro, etc.): local + UI + Supabase.
+  const saveProposalField = (patch: Partial<DesignProposal>) => {
+    const updated: DesignProposal = { ...proposal, ...patch, updatedAt: new Date().toISOString() }
+    saveProposal(updated)
+    setProposal(updated)
+    void upsertProposal(updated)
+  }
+
   const acceptanceUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/proposal/${proposal.acceptanceToken}`
     : `/proposal/${proposal.acceptanceToken}`
@@ -304,6 +312,58 @@ export default function ProposalDetailPage() {
       {/* ── Detail tab ── */}
       {tab === 'detail' && (
         <div className="max-w-lg space-y-6">
+          {/* Client details — editable in Edit mode (so a typo'd email/name can be fixed) */}
+          <div className="border border-fg-border p-4">
+            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-3">Client Details</p>
+            {editing ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Client name</label>
+                  <input
+                    defaultValue={proposal.clientName}
+                    onBlur={e => saveProposalField({ clientName: e.target.value })}
+                    className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Client email</label>
+                  <input
+                    type="email"
+                    defaultValue={proposal.clientEmail ?? ''}
+                    onBlur={e => saveProposalField({ clientEmail: e.target.value.trim() || undefined })}
+                    placeholder="client@example.com"
+                    className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Client phone</label>
+                    <input
+                      defaultValue={proposal.clientPhone ?? ''}
+                      onBlur={e => saveProposalField({ clientPhone: e.target.value.trim() || undefined })}
+                      className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Project address</label>
+                    <input
+                      defaultValue={proposal.projectAddress}
+                      onBlur={e => saveProposalField({ projectAddress: e.target.value })}
+                      className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1 text-sm font-light">
+                <p className="text-fg-heading">{proposal.clientName}</p>
+                {proposal.clientEmail && <p className="text-fg-muted">{proposal.clientEmail}</p>}
+                {proposal.clientPhone && <p className="text-fg-muted">{proposal.clientPhone}</p>}
+                {proposal.projectAddress && <p className="text-fg-muted">{proposal.projectAddress}</p>}
+              </div>
+            )}
+          </div>
+
           {/* Proposal link */}
           <div className="border border-fg-border p-4 bg-fg-card/20">
             <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-2">Acceptance Link</p>
