@@ -8,8 +8,9 @@ import {
   saveEstimate,
   loadWeeklyRevenue,
   saveWeeklyRevenue,
+  saveGanttEntries,
 } from './storage'
-import type { DesignProposal, Project, Estimate, WeeklyRevenue } from '@/types'
+import type { DesignProposal, Project, Estimate, WeeklyRevenue, GanttEntry } from '@/types'
 
 /**
  * Conflict-aware upsert primitive. Reads `updated_at` for the row currently in Supabase, and
@@ -199,11 +200,67 @@ export async function upsertRevenue(entry: WeeklyRevenue): Promise<void> {
       week_number: fresh.weekNumber,
       planned_revenue: fresh.plannedRevenue,
       actual_invoiced: fresh.actualInvoiced,
+      scheduled_cost: fresh.scheduledCost ?? null,   // the Gantt-derived weekly cost model
       is_deposit: fresh.isDeposit,
       notes: fresh.notes,
       updated_at: fresh.updatedAt ?? new Date().toISOString(),
     })
   }
+}
+
+// ── GANTT ────────────────────────────────────────────────────────────────────
+
+/**
+ * Persist a project's Gantt entries to localStorage AND Supabase. The Gantt is otherwise the one
+ * internal dataset that never reaches the DB (no per-record upsert, not in the login bulk-sync),
+ * so without this it lives only in the browser. Mirrors saveGanttEntries' replace-the-project
+ * semantics: wipe this project's fg_gantt rows, then insert the current set.
+ */
+export async function upsertGanttEntries(projectId: string, entries: GanttEntry[]): Promise<void> {
+  saveGanttEntries(projectId, entries)   // localStorage (immediate)
+  if (!isSupabaseConfigured() || !supabase) return
+  await supabase.from('fg_gantt').delete().eq('project_id', projectId)
+  if (entries.length === 0) return
+  const rows = entries.map(e => ({
+    id: e.id,
+    project_id: projectId,
+    estimate_id: e.estimateId || null,
+    category: e.category,
+    crew_type: e.crewType,
+    budgeted_revenue: e.budgetedRevenue,
+    budgeted_cost: e.budgetedCost,
+    segments: e.segments ?? [],
+    subtasks: e.subtasks ?? [],
+    notes: e.notes ?? null,
+  }))
+  await supabase.from('fg_gantt').insert(rows)
+}
+
+/**
+ * Replace this project's Gantt-generated revenue rows in Supabase (the localStorage side is handled
+ * by the caller via deleteGanttGeneratedRevenueByProject + saveWeeklyRevenue). Deletes the prior
+ * "(Gantt)"-tagged rows for the project, then inserts the fresh forecast — so regenerating a forecast
+ * doesn't leave stale rows in the DB. Manual/deposit rows (not tagged) are untouched.
+ */
+export async function replaceGanttRevenueRemote(projectId: string, rows: WeeklyRevenue[]): Promise<void> {
+  if (!isSupabaseConfigured() || !supabase) return
+  await supabase.from('fg_revenue').delete().eq('project_id', projectId).like('notes', '%(Gantt)')
+  if (rows.length === 0) return
+  const mapped = rows.map(r => ({
+    id: r.id,
+    project_id: r.projectId,
+    project_name: r.projectName,
+    entity: r.entity,
+    week_ending: r.weekEnding,
+    week_number: r.weekNumber,
+    planned_revenue: r.plannedRevenue,
+    actual_invoiced: r.actualInvoiced,
+    scheduled_cost: r.scheduledCost ?? null,
+    is_deposit: r.isDeposit,
+    notes: r.notes,
+    updated_at: r.updatedAt ?? new Date().toISOString(),
+  }))
+  await supabase.from('fg_revenue').insert(mapped)
 }
 
 // ── MAPPERS ──────────────────────────────────────────────────────────────────
@@ -300,6 +357,7 @@ function mapRevenue(row: Record<string, unknown>): WeeklyRevenue {
     weekNumber: row.week_number as number,
     plannedRevenue: row.planned_revenue as number,
     actualInvoiced: row.actual_invoiced as number,
+    scheduledCost: row.scheduled_cost != null ? Number(row.scheduled_cost) : undefined,
     isDeposit: row.is_deposit as boolean,
     notes: (row.notes as string) || '',
     updatedAt: row.updated_at as string | undefined,

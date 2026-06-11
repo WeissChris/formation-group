@@ -218,6 +218,7 @@ function mapGanttRow(row: Record<string, unknown>): GanttEntry {
     budgetedRevenue: Number(row.budgeted_revenue) || 0,
     budgetedCost: Number(row.budgeted_cost) || 0,
     segments: (row.segments as GanttEntry['segments']) || [],
+    subtasks: (row.subtasks as GanttEntry['subtasks']) || [],
     notes: row.notes as string | undefined,
   }
 }

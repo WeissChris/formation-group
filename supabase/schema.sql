@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS fg_gantt (
   budgeted_revenue NUMERIC DEFAULT 0,
   budgeted_cost NUMERIC DEFAULT 0,
   segments JSONB DEFAULT '[]',
+  subtasks JSONB DEFAULT '[]',   -- nested timeline rows; see migration 09
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );

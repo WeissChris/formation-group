@@ -7,11 +7,11 @@ import {
   loadProjects,
   loadEstimatesByProject,
   loadGanttEntries,
-  saveGanttEntries,
   deleteGanttGeneratedRevenueByProject,
   loadWeeklyRevenue,
   saveWeeklyRevenue,
 } from '@/lib/storage'
+import { upsertGanttEntries, replaceGanttRevenueRemote } from '@/lib/storageAsync'
 import {
   formatCurrency,
   generateId,
@@ -680,7 +680,7 @@ export default function GanttPage() {
 
   const handleSave = () => {
     const toSave = entries.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0))
-    saveGanttEntries(id, toSave)
+    void upsertGanttEntries(id, toSave)   // localStorage (immediate) + Supabase (background)
     setSuccessMsg('Gantt saved')
     setTimeout(() => setSuccessMsg(''), 2000)
   }
@@ -732,14 +732,14 @@ export default function GanttPage() {
     const covered = new Set(categories.map(c => c.category))
     const next = [...seeded, ...entries.filter(e => !covered.has(e.category))]
     setEntries(next)
-    saveGanttEntries(id, next.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0)))
+    void upsertGanttEntries(id, next.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0)))
     setSuccessMsg(`Seeded ${seededCount} ${seededCount === 1 ? 'category' : 'categories'} from the estimate — drag the bars to set your programme, then Generate Revenue Forecast`)
     setTimeout(() => setSuccessMsg(''), 6000)
   }
 
   // ── Generate Revenue Forecast ─────────────────────────────────────────────
 
-  const handleGenerateForecast = () => {
+  const handleGenerateForecast = async () => {
     if (!project) return
     const validEntries = entries.filter(e => e.segments.some(s => s.startDate && s.endDate && s.weekCount > 0))
     if (validEntries.length === 0) {
@@ -796,7 +796,10 @@ export default function GanttPage() {
     }
 
     for (const e of newEntries) saveWeeklyRevenue(e)
-    saveGanttEntries(id, entries.filter(e => e.segments.length > 0))
+    // Persist to Supabase too: the Gantt itself + the regenerated forecast rows (replacing the
+    // project's prior "(Gantt)" rows in the DB so nothing goes stale).
+    await upsertGanttEntries(id, entries.filter(e => e.segments.length > 0))
+    await replaceGanttRevenueRemote(id, newEntries)
 
     setSuccessMsg(`Revenue forecast generated — ${totalWeekly} weekly entries added to Revenue Calendar`)
     setTimeout(() => setSuccessMsg(''), 6000)
