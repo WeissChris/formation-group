@@ -8,8 +8,6 @@ import { ErrorBoundary } from '@/components/ErrorBoundary'
 import NavBar from '@/components/NavBar'
 import {
   seedDemoData,
-  seedAllDesignProposals,
-  seedCachiaProposal,
   seedQ1371Estimate,
   seedQ1362Estimate,
   seedQ1356Estimate,
@@ -85,10 +83,20 @@ export default function LoginGate({ children }: { children: ReactNode }) {
           }
         }
 
+        // One-time purge of the demo/test proposals. All proposals to date were tests and
+        // were cleared from Supabase on 2026-06-11 (backup: fg_proposals_backup_20260611).
+        // This clears the matching LOCAL copies so the auto-sync below can't re-push them.
+        // Guarded by a flag so it never touches real proposals created after this date.
+        if (!localStorage.getItem('fg_proposals_purged_2026_06_11')) {
+          localStorage.removeItem('fg_proposals')
+          localStorage.setItem('fg_proposals_purged_2026_06_11', '1')
+        }
+
         // Seed all Formation data (idempotent — safe to run on every login)
         seedDemoData()
-        seedAllDesignProposals()
-        seedCachiaProposal()
+        // Demo proposals retired 2026-06-11 (all were tests) — seeding disabled so they
+        // don't repopulate localStorage and get re-synced to Supabase:
+        //   seedAllDesignProposals(); seedCachiaProposal()
         seedQ1371Estimate()
         seedQ1362Estimate()
         seedQ1356Estimate()

@@ -3,8 +3,6 @@
 import { useState, useEffect } from 'react'
 import {
   seedDemoData,
-  seedAllDesignProposals,
-  seedCachiaProposal,
   seedQ1371Estimate,
   seedQ1362Estimate,
   seedQ1356Estimate,
@@ -111,8 +109,7 @@ export default function SettingsPage() {
 
   const handleReloadAll = () => {
     seedDemoData()
-    seedAllDesignProposals()
-    seedCachiaProposal()
+    // Demo proposals retired 2026-06-11 (all were tests) — not re-seeded.
     seedQ1371Estimate()
     seedQ1362Estimate()
     seedQ1356Estimate()
