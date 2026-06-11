@@ -209,11 +209,15 @@ function MarginSidebar({ estimate }: { estimate: Estimate }) {
 function LineItemRow({
   item,
   categories,
+  defaultMarkupFormation,
+  defaultMarkupSubcontractor,
   onChange,
   onDelete,
 }: {
   item: EstimateLineItem
   categories: string[]
+  defaultMarkupFormation: number
+  defaultMarkupSubcontractor: number
   onChange: (updated: EstimateLineItem) => void
   onDelete: () => void
 }) {
@@ -260,7 +264,11 @@ function LineItemRow({
       </td>
       <td className="py-1.5 px-1">
         <button
-          onClick={() => update({ crewType: item.crewType === 'Formation' ? 'Subcontractor' : 'Formation' })}
+          onClick={() => {
+            const nextCrew = item.crewType === 'Formation' ? 'Subcontractor' : 'Formation'
+            // Markup follows crew type throughout the app — re-apply the matching default on toggle.
+            update({ crewType: nextCrew, markupPercent: nextCrew === 'Subcontractor' ? defaultMarkupSubcontractor : defaultMarkupFormation })
+          }}
           className={`text-2xs font-light tracking-wide uppercase px-1.5 py-0.5 border rounded-sm transition-colors ${
             item.crewType === 'Formation'
               ? 'text-blue-400/80 border-blue-400/40 hover:bg-blue-400/10'
@@ -855,6 +863,8 @@ export default function EstimateBuilderPage() {
                         key={item.id}
                         item={item}
                         categories={allCategories}
+                        defaultMarkupFormation={estimate.defaultMarkupFormation}
+                        defaultMarkupSubcontractor={estimate.defaultMarkupSubcontractor}
                         onChange={(updated) => updateLineItem(item.id, updated)}
                         onDelete={() => deleteLineItem(item.id)}
                       />

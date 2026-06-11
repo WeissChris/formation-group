@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { loadEstimates, deleteEstimate } from '@/lib/storage'
 import { formatCurrency } from '@/lib/utils'
-import { getEstimateTotals, calculateLineItemRevenue } from '@/lib/estimateCalculations'
+import { getEstimateTotals, readLineItemRevenue } from '@/lib/estimateCalculations'
 import type { Estimate } from '@/types'
 import { Plus, Trash2, FileText, Search, GitBranch } from 'lucide-react'
 
@@ -141,15 +141,12 @@ export default function EstimatesPage() {
 
       {/* Metrics bar */}
       {estimates.length > 0 && (() => {
-        const totalEstimateValue = estimates.reduce((s, e) => s + e.lineItems.reduce((ls, li) => ls + calculateLineItemRevenue(li), 0), 0)
+        const totalEstimateValue = estimates.reduce((s, e) => s + e.lineItems.reduce((ls, li) => ls + readLineItemRevenue(li), 0), 0)
         const acceptedCount = estimates.filter(e => e.status === 'accepted').length
-        const avgMargin = estimates.length > 0
-          ? estimates.reduce((s, e) => {
-              const cost = e.lineItems.reduce((ls, li) => ls + li.total, 0)
-              const rev = e.lineItems.reduce((ls, li) => ls + calculateLineItemRevenue(li), 0)
-              return s + (rev > 0 ? (rev - cost) / rev * 100 : 0)
-            }, 0) / estimates.length
-          : 0
+        // Revenue-weighted portfolio margin: Σ(revenue − cost) / Σrevenue, so a $200k estimate
+        // counts proportionally more than a $2k one (an unweighted mean misrepresented the mix).
+        const totalEstimateCost = estimates.reduce((s, e) => s + e.lineItems.reduce((ls, li) => ls + li.total, 0), 0)
+        const avgMargin = totalEstimateValue > 0 ? (totalEstimateValue - totalEstimateCost) / totalEstimateValue * 100 : 0
         return (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-fg-border mb-8">
             {[
