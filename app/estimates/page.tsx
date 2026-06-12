@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { loadEstimates, deleteEstimate } from '@/lib/storage'
+import { loadEstimates, deleteEstimate, saveEstimate } from '@/lib/storage'
+import { getEstimates } from '@/lib/storageAsync'
 import { formatCurrency } from '@/lib/utils'
 import { getEstimateTotals, readLineItemRevenue, getEstimateContract } from '@/lib/estimateCalculations'
 import type { Estimate } from '@/types'
@@ -24,7 +25,18 @@ export default function EstimatesPage() {
   const [search, setSearch] = useState('')
 
   useEffect(() => {
-    setEstimates(loadEstimates())
+    let cancelled = false
+    ;(async () => {
+      let local = loadEstimates()
+      if (local.length === 0) {
+        // localStorage may have been cleared — fall back to the durable Supabase copy and restore it
+        // locally so the list isn't empty just because this browser lost its cache.
+        const remote = await getEstimates()
+        if (remote.length) { remote.forEach(saveEstimate); local = loadEstimates() }
+      }
+      if (!cancelled) setEstimates(local)
+    })()
+    return () => { cancelled = true }
   }, [])
 
   const handleDelete = (id: string, e: React.MouseEvent) => {

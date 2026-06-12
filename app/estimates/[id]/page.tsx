@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { loadEstimates, loadProposals } from '@/lib/storage'
-import { upsertEstimate, upsertProject } from '@/lib/storageAsync'
+import { loadEstimates, loadProposals, saveEstimate } from '@/lib/storage'
+import { upsertEstimate, upsertProject, getEstimates } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract } from '@/lib/estimateCalculations'
 import { getAllLibraryItems, getCategories, defaultMarkupForType } from '@/lib/itemLibrary'
@@ -433,15 +433,30 @@ export default function EstimateBuilderPage() {
   }, [hasUnsavedChanges])
 
   useEffect(() => {
-    const all = loadEstimates()
-    const found = all.find(e => e.id === id)
-    if (!found) return router.push('/estimates')
-    setEstimate(found)
-    // Load parent estimate if this is a variation
-    if (found.parentEstimateId) {
-      const parent = all.find(e => e.id === found.parentEstimateId)
-      setParentEstimate(parent || null)
-    }
+    let cancelled = false
+    ;(async () => {
+      // Read localStorage first; if the estimate isn't there, the local copy may have been cleared
+      // (one-time purge / browser-data clear / another device). Fall back to Supabase — the durable
+      // copy — and restore it locally so edits from here autosave normally. Only bounce to the list
+      // if neither store has it.
+      let found = loadEstimates().find(e => e.id === id)
+      if (!found) {
+        const remote = await getEstimates()
+        found = remote.find(e => e.id === id)
+        if (found) saveEstimate(found)
+      }
+      if (cancelled) return
+      if (!found) { router.push('/estimates'); return }
+      const est = found
+      setEstimate(est)
+      // Load parent estimate if this is a variation
+      if (est.parentEstimateId) {
+        let parent = loadEstimates().find(e => e.id === est.parentEstimateId)
+        if (!parent) parent = (await getEstimates()).find(e => e.id === est.parentEstimateId)
+        if (!cancelled) setParentEstimate(parent || null)
+      }
+    })()
+    return () => { cancelled = true }
   }, [id, router])
 
   // Autosave — debounce a save ~1s after the last edit (local + Supabase). The initial load-set is
