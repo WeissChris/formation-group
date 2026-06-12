@@ -940,14 +940,6 @@ export default function ProjectDetailPage() {
 
   const totalRevenuePlanned = revenueEntries.reduce((sum, r) => sum + (r.plannedRevenue ?? 0), 0)
   const totalInvoiced = revenueEntries.reduce((sum, r) => sum + (r.actualInvoiced ?? 0), 0)
-  // Authoritative invoiced-to-date for the Overview: prefer progress claims (the Invoicing tab) when
-  // the project bills that way, else fall back to the Revenue calendar's hand-typed actuals. The bare
-  // calendar sum above showed $0 on the Overview because a progress claim doesn't post to the
-  // calendar; it's kept only for the Revenue tab's column footer.
-  const totalInvoicedToDate = (() => {
-    const claims = progressClaims.filter(c => c.status === 'sent' || c.status === 'paid').reduce((s, c) => s + c.subtotalEx, 0)
-    return claims > 0 ? claims : totalInvoiced
-  })()
 
   return (
     <div className="min-h-screen bg-fg-bg">
@@ -1154,17 +1146,6 @@ export default function ProjectDetailPage() {
               )
             })()}
 
-            {/* Financial snapshot */}
-            <div className="grid grid-cols-3 gap-3 mt-4">
-              <div className="bg-fg-bg border border-fg-border rounded-sm p-4">
-                <p className="text-2xs text-fg-muted tracking-wide uppercase mb-1">Revenue Planned</p>
-                <p className="text-lg font-light text-fg-heading">{formatCurrency(totalRevenuePlanned)}</p>
-              </div>
-              <div className="bg-fg-bg border border-fg-border rounded-sm p-4">
-                <p className="text-2xs text-fg-muted tracking-wide uppercase mb-1">Revenue Invoiced</p>
-                <p className="text-lg font-light text-fg-heading">{formatCurrency(totalInvoicedToDate)}</p>
-              </div>
-            </div>
 
             {/* Project Health */}
             {(() => {
