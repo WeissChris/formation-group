@@ -116,6 +116,29 @@ export default function LoginGate({ children }: { children: ReactNode }) {
           autoBackup()
         }, 2000)
 
+        // Hydrate proposals from Supabase into localStorage — recover any the local copy is missing
+        // (after a one-time purge, a browser-data clear, or a fresh device). The app only ever pushed
+        // local → Supabase, never pulled back, so a cleared local copy looked like lost data even
+        // though Supabase still had it. Add-only: never overwrites or deletes a local proposal. Runs
+        // before the push-sync below so the local copy is complete first.
+        if (isSupabaseConfigured()) {
+          setTimeout(async () => {
+            try {
+              const { getProposals } = await import('@/lib/storageAsync')
+              const { loadProposals, saveProposal } = await import('@/lib/storage')
+              const remote = await getProposals()
+              const localIds = new Set(loadProposals().map(p => p.id))
+              let restored = 0
+              for (const p of remote) {
+                if (p?.id && !localIds.has(p.id)) { saveProposal(p); restored++ }
+              }
+              if (restored > 0) console.log(`[hydrate] restored ${restored} proposal(s) from Supabase`)
+            } catch (e) {
+              console.warn('[hydrate] proposals failed', e)
+            }
+          }, 1500)
+        }
+
         // Auto-sync to Supabase if configured and not yet synced this session
         if (isSupabaseConfigured()) {
           const lastSync = localStorage.getItem('fg_supabase_last_sync')
