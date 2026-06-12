@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { loadEstimates, loadProposals } from '@/lib/storage'
@@ -413,7 +413,6 @@ export default function EstimateBuilderPage() {
   const [estimate, setEstimate] = useState<Estimate | null>(null)
   const [showPicker, setShowPicker] = useState(false)
   const [pickerCategory, setPickerCategory] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
   const [addingCategory, setAddingCategory] = useState(false)
@@ -443,6 +442,19 @@ export default function EstimateBuilderPage() {
       setParentEstimate(parent || null)
     }
   }, [id, router])
+
+  // Autosave — debounce a save ~1s after the last edit (local + Supabase). The initial load-set is
+  // skipped so opening an estimate doesn't trigger a write.
+  const didInitialLoad = useRef(false)
+  useEffect(() => {
+    if (!estimate) return
+    if (!didInitialLoad.current) { didInitialLoad.current = true; return }
+    const handle = setTimeout(() => {
+      void upsertEstimate(estimate)
+      setHasUnsavedChanges(false)
+    }, 1000)
+    return () => clearTimeout(handle)
+  }, [estimate])
 
   const updateEstimate = useCallback((patch: Partial<Estimate>) => {
     setEstimate(prev => prev ? { ...prev, ...patch, updatedAt: new Date().toISOString() } : prev)
@@ -550,10 +562,8 @@ export default function EstimateBuilderPage() {
 
   const handleSave = () => {
     if (!estimate) return
-    void upsertEstimate(estimate)   // local (immediate) + Supabase (background)
-    setSaved(true)
+    void upsertEstimate(estimate)   // "Save now" — autosave also runs on a debounce
     setHasUnsavedChanges(false)
-    setTimeout(() => setSaved(false), 2000)
   }
 
   const handleConvertToProject = async () => {
@@ -786,13 +796,14 @@ export default function EstimateBuilderPage() {
           </button>
           <button
             onClick={handleSave}
+            title="Autosaves automatically — click to save now"
             className={`flex items-center gap-2 px-3 py-1.5 text-xs font-light tracking-architectural uppercase transition-colors ${
-              saved
-                ? 'bg-green-400/20 text-green-400 border border-green-400/40'
-                : 'border border-fg-border text-fg-muted hover:text-fg-heading'
+              hasUnsavedChanges
+                ? 'border border-fg-border text-fg-muted hover:text-fg-heading'
+                : 'bg-green-500/15 text-green-600 border border-green-500/30'
             }`}
           >
-            <Save className="w-3 h-3" /> {saved ? 'Saved' : 'Save'}
+            <Save className="w-3 h-3" /> {hasUnsavedChanges ? 'Saving…' : 'Saved'}
           </button>
           <Link
             href={`/estimates/${estimate.id}/quote`}
