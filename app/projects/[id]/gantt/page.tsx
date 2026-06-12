@@ -124,7 +124,7 @@ function extractCategories(estimate: Estimate): CategorySummary[] {
   // ex-GST contract (incl project markups + rounding), matching the baseline.
   const factor = getEstimateContract(estimate).factor
   const map: Record<string, CategorySummary> = {}
-  for (const item of estimate.lineItems) {
+  for (const item of estimate.lineItems.filter(i => i.enabled !== false)) {
     // Each (category, sub-category) is its own Gantt posting so a sub-category's cost + labour can be
     // scheduled independently. No sub-category → the category itself (unchanged for existing estimates).
     const sub = (item.subcategory || '').trim()

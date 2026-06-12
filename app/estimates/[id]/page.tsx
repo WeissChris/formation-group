@@ -9,7 +9,7 @@ import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract } from '@/lib/estimateCalculations'
 import { getAllLibraryItems, getCategories, defaultMarkupForType } from '@/lib/itemLibrary'
 import type { Estimate, EstimateLineItem, LibraryItem } from '@/types'
-import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch } from 'lucide-react'
+import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch, Copy, Eye, EyeOff } from 'lucide-react'
 import TakeoffTab from '@/components/TakeoffTab'
 
 const UOM_OPTIONS = ['m²', 'hour', 'm³', 'lm', 'EA', 'Allowance', 'Day', 'week', 'sheet', 'each']
@@ -279,11 +279,19 @@ function LineItemRow({
   categories,
   onChange,
   onDelete,
+  onDuplicate,
+  onToggle,
+  onMoveUp,
+  onMoveDown,
 }: {
   item: EstimateLineItem
   categories: string[]
   onChange: (updated: EstimateLineItem) => void
   onDelete: () => void
+  onDuplicate: () => void
+  onToggle: () => void
+  onMoveUp: () => void
+  onMoveDown: () => void
 }) {
   const update = (patch: Partial<EstimateLineItem>) => {
     const updated = { ...item, ...patch }
@@ -295,9 +303,13 @@ function LineItemRow({
 
   const inputCls = 'w-full px-1.5 py-1 bg-transparent border border-transparent hover:border-fg-border focus:border-fg-heading text-[#292929] text-xs font-light rounded-none outline-none transition-colors'
   const numCls = inputCls + ' tabular-nums text-right'
+  const off = item.enabled === false
 
   return (
-    <tr className="border-b border-fg-border/30 group hover:bg-fg-card/20">
+    <tr
+      className={`border-b border-fg-border/30 group hover:bg-fg-card/20 ${off ? 'opacity-45' : ''}`}
+      title={off ? 'Turned off — kept for reference, not counted in totals' : undefined}
+    >
       <td className="py-1.5 px-1">
         <input
           value={item.displayOrder}
@@ -393,12 +405,27 @@ function LineItemRow({
         {fmtCurrency(item.revenue)}
       </td>
       <td className="py-1.5 px-1">
-        <button
-          onClick={onDelete}
-          className="opacity-0 group-hover:opacity-100 text-fg-muted hover:text-red-400/60 transition-all p-1"
-        >
-          <Trash2 className="w-3 h-3" />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={onToggle}
+            title={off ? 'Turn on (include in totals)' : 'Turn off (keep for reference, exclude from totals)'}
+            className={`p-1 transition-colors ${off ? 'text-amber-500/80 hover:text-amber-500' : 'text-fg-muted/50 hover:text-fg-heading'}`}
+          >
+            {off ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+          </button>
+          <button onClick={onMoveUp} title="Move up" className="opacity-0 group-hover:opacity-100 text-fg-muted hover:text-fg-heading transition-all p-1">
+            <ChevronUp className="w-3 h-3" />
+          </button>
+          <button onClick={onMoveDown} title="Move down" className="opacity-0 group-hover:opacity-100 text-fg-muted hover:text-fg-heading transition-all p-1">
+            <ChevronDown className="w-3 h-3" />
+          </button>
+          <button onClick={onDuplicate} title="Duplicate" className="opacity-0 group-hover:opacity-100 text-fg-muted hover:text-fg-heading transition-all p-1">
+            <Copy className="w-3 h-3" />
+          </button>
+          <button onClick={onDelete} title="Delete" className="opacity-0 group-hover:opacity-100 text-fg-muted hover:text-red-400/60 transition-all p-1">
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
       </td>
     </tr>
   )
@@ -500,6 +527,56 @@ export default function EstimateBuilderPage() {
     })
   }, [])
 
+  // Duplicate a line item — exact copy dropped in right after the original. Use it to keep a previous
+  // option for reference: duplicate, then turn one copy off.
+  const duplicateLineItem = useCallback((itemId: string) => {
+    setEstimate(prev => {
+      if (!prev) return prev
+      const idx = prev.lineItems.findIndex(i => i.id === itemId)
+      if (idx === -1) return prev
+      const copy: EstimateLineItem = { ...prev.lineItems[idx], id: generateId() }
+      const next = [...prev.lineItems]
+      next.splice(idx + 1, 0, copy)
+      return { ...prev, lineItems: next, updatedAt: new Date().toISOString() }
+    })
+    setHasUnsavedChanges(true)
+  }, [])
+
+  // Turn a line on/off. Off lines stay visible for reference but drop out of all totals + the Gantt.
+  const toggleLineItem = useCallback((itemId: string) => {
+    setEstimate(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        lineItems: prev.lineItems.map(i => i.id === itemId ? { ...i, enabled: i.enabled === false } : i),
+        updatedAt: new Date().toISOString(),
+      }
+    })
+    setHasUnsavedChanges(true)
+  }, [])
+
+  // Move a line up/down within its own category + sub-category group (the unit the grid renders), by
+  // swapping it with the nearest same-group neighbour in that direction.
+  const moveLineItem = useCallback((itemId: string, dir: -1 | 1) => {
+    setEstimate(prev => {
+      if (!prev) return prev
+      const items = prev.lineItems
+      const idx = items.findIndex(i => i.id === itemId)
+      if (idx === -1) return prev
+      const me = items[idx]
+      const sameGroup = (o: EstimateLineItem) => o.category === me.category && (o.subcategory || '') === (me.subcategory || '')
+      let swap = -1
+      for (let j = idx + dir; j >= 0 && j < items.length; j += dir) {
+        if (sameGroup(items[j])) { swap = j; break }
+      }
+      if (swap === -1) return prev
+      const next = [...items]
+      ;[next[idx], next[swap]] = [next[swap], next[idx]]
+      return { ...prev, lineItems: next, updatedAt: new Date().toISOString() }
+    })
+    setHasUnsavedChanges(true)
+  }, [])
+
   const addFromLibrary = useCallback((libraryItem: LibraryItem) => {
     if (!estimate) return
     const category = pickerCategory || libraryItem.category
@@ -587,7 +664,7 @@ export default function EstimateBuilderPage() {
     if (!confirm('Convert this estimate to a project? The estimate will be locked as the financial baseline.')) return
 
     const totals = getEstimateTotals(estimate)
-    const categories = Array.from(new Set(estimate.lineItems.map(i => i.category).filter(Boolean)))
+    const categories = Array.from(new Set(estimate.lineItems.filter(i => i.enabled !== false).map(i => i.category).filter(Boolean)))
 
     // Derive project name and client name — prefer linked proposal if available
     const projectName = estimate.projectName || estimate.name || 'New Project'
@@ -602,7 +679,7 @@ export default function EstimateBuilderPage() {
     // bare line subtotal.
     const factor = getEstimateContract(estimate).factor
     const categoryMap: Record<string, { revenue: number; cost: number }> = {}
-    estimate.lineItems.forEach(li => {
+    estimate.lineItems.filter(li => li.enabled !== false).forEach(li => {
       const cat = li.category || 'General'
       if (!categoryMap[cat]) categoryMap[cat] = { revenue: 0, cost: 0 }
       categoryMap[cat].revenue += readLineItemRevenue(li) * factor
@@ -927,8 +1004,9 @@ export default function EstimateBuilderPage() {
               <tbody>
                 {categories.map(category => {
                   const catItems = estimate.lineItems.filter(i => i.category === category)
-                  const catTotal = catItems.reduce((s, i) => s + i.total, 0)
-                  const catRevenue = catItems.reduce((s, i) => s + readLineItemRevenue(i), 0)
+                  const catActive = catItems.filter(i => i.enabled !== false)
+                  const catTotal = catActive.reduce((s, i) => s + i.total, 0)
+                  const catRevenue = catActive.reduce((s, i) => s + readLineItemRevenue(i), 0)
                   const catIdx = categories.indexOf(category)
 
                   return [
@@ -976,8 +1054,9 @@ export default function EstimateBuilderPage() {
                       for (const sub of subKeys) {
                         const items = bySub.get(sub)!
                         if (sub) {
-                          const subTotal = items.reduce((s, i) => s + i.total, 0)
-                          const subRevenue = items.reduce((s, i) => s + readLineItemRevenue(i), 0)
+                          const subActive = items.filter(i => i.enabled !== false)
+                          const subTotal = subActive.reduce((s, i) => s + i.total, 0)
+                          const subRevenue = subActive.reduce((s, i) => s + readLineItemRevenue(i), 0)
                           out.push(
                             <tr key={`sub-${category}-${sub}`} className="bg-fg-card/10 border-b border-fg-border/20">
                               <td />
@@ -997,6 +1076,10 @@ export default function EstimateBuilderPage() {
                               categories={allCategories}
                               onChange={(updated) => updateLineItem(item.id, updated)}
                               onDelete={() => deleteLineItem(item.id)}
+                              onDuplicate={() => duplicateLineItem(item.id)}
+                              onToggle={() => toggleLineItem(item.id)}
+                              onMoveUp={() => moveLineItem(item.id, -1)}
+                              onMoveDown={() => moveLineItem(item.id, 1)}
                             />
                           )
                         }

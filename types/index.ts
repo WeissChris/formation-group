@@ -117,6 +117,7 @@ export interface EstimateLineItem {
   markupPercent: number
   revenue: number
   crewType: 'Formation' | 'Subcontractor'
+  enabled?: boolean      // false = turned off: kept on the estimate for reference, excluded from totals/Gantt
   xeroCategory?: string
   notes?: string
 }

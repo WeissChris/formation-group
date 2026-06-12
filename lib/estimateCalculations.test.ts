@@ -159,6 +159,20 @@ describe('getEstimateTotals', () => {
     expect(totals.totalIncGst).toBeCloseTo(2310, 4)
   })
 
+  it('excludes turned-off lines (enabled === false) from totals & margin', () => {
+    const e = estimate([
+      line({ id: 'on', total: 1000, revenue: 1400, crewType: 'Formation' }),
+      line({ id: 'off', total: 500, revenue: 700, crewType: 'Formation', enabled: false }),
+    ])
+    const totals = getEstimateTotals(e)
+    expect(totals.totalCost).toBe(1000) // the off line's 500 is excluded
+    expect(totals.totalRevenue).toBe(1400) // the off line's 700 is excluded
+    expect(totals.formationCost).toBe(1000)
+    // a category whose only line is off should not appear in the margin summary
+    const e2 = estimate([line({ id: 'x', category: 'Demo', total: 100, revenue: 140, enabled: false })])
+    expect(getMarginSummary(e2)).toHaveLength(0)
+  })
+
   it('splits cost and revenue by crewType', () => {
     const e = estimate([
       line({ total: 1000, revenue: 1400, crewType: 'Formation' }),

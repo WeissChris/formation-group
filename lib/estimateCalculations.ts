@@ -24,15 +24,25 @@ export function readLineItemRevenue(item: EstimateLineItem): number {
   return typeof item.revenue === 'number' ? item.revenue : calculateLineItemRevenue(item)
 }
 
+/**
+ * Line items that count toward the contract. A line turned off (`enabled === false`) stays on the
+ * estimate for reference — a previous option, an alternative — but is excluded from every total,
+ * margin, the contract value, and the Gantt. Items with no `enabled` field are on (back-compat).
+ */
+export function activeLineItems(estimate: Estimate): EstimateLineItem[] {
+  return estimate.lineItems.filter(i => i.enabled !== false)
+}
+
 export function getMarginSummary(estimate: Estimate): CategoryMargin[] {
-  const categories = Array.from(new Set(estimate.lineItems.map(i => i.category)))
+  const active = activeLineItems(estimate)
+  const categories = Array.from(new Set(active.map(i => i.category)))
   // Spread the project-level markups (waste, contingency) + rounding across categories in proportion
   // to line revenue, so each category's margin reflects the real contract price, not just the line
   // markup. `factor` is 1 when there are no project markups, so plain estimates are unaffected.
   const factor = getEstimateContract(estimate).factor
 
   return categories.map(category => {
-    const items = estimate.lineItems.filter(i => i.category === category)
+    const items = active.filter(i => i.category === category)
     const totalCost = items.reduce((s, i) => s + i.total, 0)
     const totalRevenue = items.reduce((s, i) => s + readLineItemRevenue(i), 0) * factor
     const marginPercent = totalRevenue > 0 ? (totalRevenue - totalCost) / totalRevenue : 0
@@ -89,7 +99,7 @@ export function roundToMode(value: number, mode?: Estimate['roundingMode']): num
 export function getEstimateContract(estimate: Estimate): {
   lineRevenue: number; markupPct: number; markupAmount: number; markedUp: number; rounding: number; exGst: number; factor: number
 } {
-  const lineRevenue = estimate.lineItems.reduce((s, i) => s + readLineItemRevenue(i), 0)
+  const lineRevenue = activeLineItems(estimate).reduce((s, i) => s + readLineItemRevenue(i), 0)
   const markupPct = projectMarkupPct(estimate)
   const markedUp = lineRevenue * (1 + markupPct / 100)
   const exGst = roundToMode(markedUp, estimate.roundingMode)
@@ -105,21 +115,22 @@ export function getEstimateContract(estimate: Estimate): {
 }
 
 export function getEstimateTotals(estimate: Estimate) {
-  const totalCost = estimate.lineItems.reduce((s, i) => s + i.total, 0)
-  const lineRevenue = estimate.lineItems.reduce((s, i) => s + readLineItemRevenue(i), 0)
+  const active = activeLineItems(estimate)
+  const totalCost = active.reduce((s, i) => s + i.total, 0)
+  const lineRevenue = active.reduce((s, i) => s + readLineItemRevenue(i), 0)
   const contract = getEstimateContract(estimate)
   const totalRevenue = contract.exGst   // ex-GST contract incl project markups + rounding
   const gst = totalRevenue * 0.1
   const totalIncGst = totalRevenue + gst
   const overallMargin = totalRevenue > 0 ? (totalRevenue - totalCost) / totalRevenue : 0
 
-  const formationCost = estimate.lineItems.filter(i => i.crewType === 'Formation').reduce((s, i) => s + i.total, 0)
-  const subCost = estimate.lineItems.filter(i => i.crewType === 'Subcontractor').reduce((s, i) => s + i.total, 0)
+  const formationCost = active.filter(i => i.crewType === 'Formation').reduce((s, i) => s + i.total, 0)
+  const subCost = active.filter(i => i.crewType === 'Subcontractor').reduce((s, i) => s + i.total, 0)
   // Crew revenue includes the project markups (waste, contingency) + rounding, distributed in
   // proportion to line revenue, so the Margin Checker's Formation/Sub split reflects the real
   // contract. `contract.factor` is 1 when there are no project markups.
-  const formationRevenue = estimate.lineItems.filter(i => i.crewType === 'Formation').reduce((s, i) => s + readLineItemRevenue(i), 0) * contract.factor
-  const subRevenue = estimate.lineItems.filter(i => i.crewType === 'Subcontractor').reduce((s, i) => s + readLineItemRevenue(i), 0) * contract.factor
+  const formationRevenue = active.filter(i => i.crewType === 'Formation').reduce((s, i) => s + readLineItemRevenue(i), 0) * contract.factor
+  const subRevenue = active.filter(i => i.crewType === 'Subcontractor').reduce((s, i) => s + readLineItemRevenue(i), 0) * contract.factor
 
   return {
     totalCost,
