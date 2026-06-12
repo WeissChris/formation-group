@@ -920,13 +920,18 @@ export default function EstimateBuilderPage() {
   )
 
   const categories = Array.from(new Set(estimate.lineItems.map(i => i.category)))
-  const allCategories = Array.from(new Set([...getCategories(), ...categories]))
+  // For a variation, fold in the parent estimate's categories + sub-categories so it allocates to the
+  // same structure (it rolls up to the same project), alongside the global library. Free-text still
+  // adds a genuinely new one.
+  const parentCategories = parentEstimate ? parentEstimate.lineItems.map(i => i.category).filter(Boolean) : []
+  const parentSubcategories = parentEstimate ? parentEstimate.lineItems.map(i => (i.subcategory || '').trim()).filter(Boolean) : []
+  const allCategories = Array.from(new Set([...getCategories(), ...parentCategories, ...categories]))
   // Subcontractor pricing must carry a quote before going to contract (active lines only).
   const subbieMissingQuotes = estimate.lineItems.filter(i => (i.type === 'Subcontractor' || i.crewType === 'Subcontractor') && i.enabled !== false && !i.quoteFileName)
-  // Distinct sub-categories already used — fed to a shared <datalist> so each row can pick an
-  // existing one (avoids typos splitting a sub-category into two Gantt postings).
+  // Distinct sub-categories already used (+ the parent's for variations) — fed to a shared <datalist>
+  // so each row can pick an existing one (avoids typos splitting a sub-category into two Gantt postings).
   const allSubcategories = Array.from(
-    new Set(estimate.lineItems.map(i => (i.subcategory || '').trim()).filter(Boolean)),
+    new Set([...estimate.lineItems.map(i => (i.subcategory || '').trim()).filter(Boolean), ...parentSubcategories]),
   ).sort()
 
   return (
@@ -1093,6 +1098,9 @@ export default function EstimateBuilderPage() {
           <datalist id="estimate-subcategories">
             {allSubcategories.map(s => <option key={s} value={s} />)}
           </datalist>
+          <datalist id="estimate-categories">
+            {allCategories.map(c => <option key={c} value={c} />)}
+          </datalist>
           {categories.length === 0 ? (
             <div className="border border-fg-border py-16 text-center">
               <p className="text-sm font-light text-fg-muted mb-4">No line items yet.</p>
@@ -1254,6 +1262,7 @@ export default function EstimateBuilderPage() {
                 <input
                   autoFocus
                   type="text"
+                  list="estimate-categories"
                   value={newCategoryName}
                   onChange={e => setNewCategoryName(e.target.value)}
                   onKeyDown={e => {
@@ -1264,7 +1273,7 @@ export default function EstimateBuilderPage() {
                     }
                     if (e.key === 'Escape') setAddingCategory(false)
                   }}
-                  placeholder="Category name…"
+                  placeholder={parentEstimate ? 'Pick from original estimate or type new…' : 'Category name…'}
                   className="px-3 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading transition-colors"
                 />
                 <button
