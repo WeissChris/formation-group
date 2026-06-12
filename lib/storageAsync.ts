@@ -45,9 +45,18 @@ async function safeUpsert<T extends Record<string, unknown> & { id: string; upda
   const remoteStamp = remote?.updated_at as string | undefined
   const localStamp = row.updated_at
 
-  if (remoteStamp && localStamp && remoteStamp > localStamp) {
-    // Remote is strictly newer — don't clobber. Caller should pull and merge before retrying.
-    return { wrote: false, skippedReason: 'remote_newer' }
+  if (remoteStamp && localStamp) {
+    // Compare as dates, not raw strings. Supabase serialises timestamps as "2026-06-12 07:32:35+00"
+    // while the app writes ISO "2026-06-12T07:32:35Z"; a string compare ranks the space-form below the
+    // T-form regardless of actual time, which let stale local copies clobber newer remote rows. Parse
+    // both and only fall back to a string compare if either is unparseable.
+    const rt = Date.parse(remoteStamp)
+    const lt = Date.parse(localStamp as string)
+    const remoteNewer = Number.isFinite(rt) && Number.isFinite(lt) ? rt > lt : remoteStamp > localStamp
+    if (remoteNewer) {
+      // Remote is strictly newer — don't clobber. Caller should pull and merge before retrying.
+      return { wrote: false, skippedReason: 'remote_newer' }
+    }
   }
 
   const { error } = await supabase.from(table).upsert(row)
@@ -105,7 +114,28 @@ export async function getProposals(): Promise<DesignProposal[]> {
 export async function upsertProposal(proposal: DesignProposal): Promise<void> {
   saveProposal(proposal)
   if (isSupabaseConfigured() && supabase) {
-    const fresh = loadProposals().find(p => p.id === proposal.id) ?? proposal
+    let fresh = loadProposals().find(p => p.id === proposal.id) ?? proposal
+    // Guard against wiping a client's acceptance. Acceptance is recorded straight to Supabase from the
+    // client's browser (the public proposal page), so the office copy can still say "sent". Pushing
+    // that stale copy would overwrite the acceptance back to "sent". If Supabase already has this
+    // proposal accepted and our copy doesn't, pull the acceptance down first — heals localStorage and
+    // makes the push reflect the acceptance instead of downgrading it.
+    if (fresh.status !== 'accepted') {
+      const { data: remote } = await supabase
+        .from('fg_proposals')
+        .select('status, accepted_at, accepted_by_name')
+        .eq('id', fresh.id)
+        .maybeSingle()
+      if (remote && (remote.status === 'accepted' || remote.accepted_at)) {
+        fresh = {
+          ...fresh,
+          status: 'accepted',
+          acceptedAt: (remote.accepted_at as string) ?? fresh.acceptedAt,
+          acceptedByName: (remote.accepted_by_name as string) ?? fresh.acceptedByName,
+        }
+        saveProposal(fresh)
+      }
+    }
     await safeUpsert('fg_proposals', {
       id: fresh.id,
       client_name: fresh.clientName,

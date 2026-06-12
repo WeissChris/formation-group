@@ -117,22 +117,40 @@ export default function LoginGate({ children }: { children: ReactNode }) {
         }, 2000)
 
         // Hydrate proposals from Supabase into localStorage — recover any the local copy is missing
-        // (after a one-time purge, a browser-data clear, or a fresh device). The app only ever pushed
-        // local → Supabase, never pulled back, so a cleared local copy looked like lost data even
-        // though Supabase still had it. Add-only: never overwrites or deletes a local proposal. Runs
-        // before the push-sync below so the local copy is complete first.
+        // (after a one-time purge, a browser-data clear, or a fresh device) and pull down acceptances
+        // the office browser never saw. The app only ever pushed local → Supabase, never pulled back,
+        // so a cleared local copy looked like lost data and a client's acceptance could be overwritten
+        // back to "sent". Never overwrites your own edits or deletes a proposal — only adds missing
+        // ones and lifts a "sent" copy to "accepted" when Supabase says it was accepted. Runs before
+        // the push-sync below so the local copy is complete first.
         if (isSupabaseConfigured()) {
           setTimeout(async () => {
             try {
               const { getProposals } = await import('@/lib/storageAsync')
               const { loadProposals, saveProposal } = await import('@/lib/storage')
               const remote = await getProposals()
-              const localIds = new Set(loadProposals().map(p => p.id))
+              const localById = new Map(loadProposals().map(p => [p.id, p]))
               let restored = 0
-              for (const p of remote) {
-                if (p?.id && !localIds.has(p.id)) { saveProposal(p); restored++ }
+              let reconciled = 0
+              for (const r of remote) {
+                if (!r?.id) continue
+                const local = localById.get(r.id)
+                if (!local) { saveProposal(r); restored++; continue }
+                // A client accepts on the public proposal page, which writes the acceptance straight
+                // to Supabase — the office browser never sees it. If Supabase shows accepted but the
+                // local copy doesn't, pull the acceptance down so it shows correctly here and a later
+                // push can't downgrade it back to "sent".
+                if (r.status === 'accepted' && local.status !== 'accepted') {
+                  saveProposal({
+                    ...local,
+                    status: 'accepted',
+                    acceptedAt: r.acceptedAt ?? local.acceptedAt,
+                    acceptedByName: r.acceptedByName ?? local.acceptedByName,
+                  })
+                  reconciled++
+                }
               }
-              if (restored > 0) console.log(`[hydrate] restored ${restored} proposal(s) from Supabase`)
+              if (restored || reconciled) console.log(`[hydrate] proposals restored=${restored} reconciled=${reconciled}`)
             } catch (e) {
               console.warn('[hydrate] proposals failed', e)
             }
