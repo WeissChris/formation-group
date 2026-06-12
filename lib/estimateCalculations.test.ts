@@ -133,6 +133,17 @@ describe('getMarginSummary', () => {
     expect(summary[0].marginPercent).toBe(0)
     expect(summary[0].markupPercent).toBe(-1) // (0 - 100) / 100
   })
+
+  it('folds project markups (waste/contingency) into category revenue & margin', () => {
+    // 10% project markup on top of the line markup, no rounding → factor = 1.10
+    const e = estimate(
+      [line({ id: 'a', category: 'Excavation', total: 1000, revenue: 1400, crewType: 'Formation' })],
+      { projectMarkups: [{ id: 'm1', description: 'Waste', percent: 10 }] },
+    )
+    const summary = getMarginSummary(e)
+    expect(summary[0].totalRevenue).toBeCloseTo(1540, 4) // 1400 × 1.10
+    expect(summary[0].marginPercent).toBeCloseTo((1540 - 1000) / 1540, 4)
+  })
 })
 
 describe('getEstimateTotals', () => {
@@ -158,6 +169,22 @@ describe('getEstimateTotals', () => {
     expect(totals.subCost).toBe(2000)
     expect(totals.formationRevenue).toBe(1400)
     expect(totals.subRevenue).toBe(2680)
+  })
+
+  it('folds project markups into the Formation/Sub revenue split', () => {
+    // 10% project markup, no rounding → factor = 1.10
+    const e = estimate(
+      [
+        line({ total: 1000, revenue: 1400, crewType: 'Formation' }),
+        line({ total: 2000, revenue: 2680, crewType: 'Subcontractor' }),
+      ],
+      { projectMarkups: [{ id: 'm1', description: 'Contingency', percent: 10 }] },
+    )
+    const totals = getEstimateTotals(e)
+    expect(totals.formationRevenue).toBeCloseTo(1540, 4) // 1400 × 1.10
+    expect(totals.subRevenue).toBeCloseTo(2948, 4) // 2680 × 1.10
+    // crew revenue sums to the ex-GST contract
+    expect(totals.formationRevenue + totals.subRevenue).toBeCloseTo(totals.totalRevenue, 4)
   })
 
   it('uses readLineItemRevenue (stored field) rather than recomputing', () => {

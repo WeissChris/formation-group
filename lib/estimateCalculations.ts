@@ -26,11 +26,15 @@ export function readLineItemRevenue(item: EstimateLineItem): number {
 
 export function getMarginSummary(estimate: Estimate): CategoryMargin[] {
   const categories = Array.from(new Set(estimate.lineItems.map(i => i.category)))
+  // Spread the project-level markups (waste, contingency) + rounding across categories in proportion
+  // to line revenue, so each category's margin reflects the real contract price, not just the line
+  // markup. `factor` is 1 when there are no project markups, so plain estimates are unaffected.
+  const factor = getEstimateContract(estimate).factor
 
   return categories.map(category => {
     const items = estimate.lineItems.filter(i => i.category === category)
     const totalCost = items.reduce((s, i) => s + i.total, 0)
-    const totalRevenue = items.reduce((s, i) => s + readLineItemRevenue(i), 0)
+    const totalRevenue = items.reduce((s, i) => s + readLineItemRevenue(i), 0) * factor
     const marginPercent = totalRevenue > 0 ? (totalRevenue - totalCost) / totalRevenue : 0
     const markupPercent = totalCost > 0 ? (totalRevenue - totalCost) / totalCost : 0
 
@@ -111,8 +115,11 @@ export function getEstimateTotals(estimate: Estimate) {
 
   const formationCost = estimate.lineItems.filter(i => i.crewType === 'Formation').reduce((s, i) => s + i.total, 0)
   const subCost = estimate.lineItems.filter(i => i.crewType === 'Subcontractor').reduce((s, i) => s + i.total, 0)
-  const formationRevenue = estimate.lineItems.filter(i => i.crewType === 'Formation').reduce((s, i) => s + readLineItemRevenue(i), 0)
-  const subRevenue = estimate.lineItems.filter(i => i.crewType === 'Subcontractor').reduce((s, i) => s + readLineItemRevenue(i), 0)
+  // Crew revenue includes the project markups (waste, contingency) + rounding, distributed in
+  // proportion to line revenue, so the Margin Checker's Formation/Sub split reflects the real
+  // contract. `contract.factor` is 1 when there are no project markups.
+  const formationRevenue = estimate.lineItems.filter(i => i.crewType === 'Formation').reduce((s, i) => s + readLineItemRevenue(i), 0) * contract.factor
+  const subRevenue = estimate.lineItems.filter(i => i.crewType === 'Subcontractor').reduce((s, i) => s + readLineItemRevenue(i), 0) * contract.factor
 
   return {
     totalCost,
