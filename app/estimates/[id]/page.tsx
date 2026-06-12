@@ -316,6 +316,7 @@ function LineItemRow({
         <input
           value={item.subcategory ?? ''}
           onChange={e => update({ subcategory: e.target.value || undefined })}
+          list="estimate-subcategories"
           className={`${inputCls} text-2xs text-fg-muted mt-0.5`}
           placeholder="Sub-category (Gantt posting)…"
         />
@@ -739,6 +740,11 @@ export default function EstimateBuilderPage() {
 
   const categories = Array.from(new Set(estimate.lineItems.map(i => i.category)))
   const allCategories = Array.from(new Set([...getCategories(), ...categories]))
+  // Distinct sub-categories already used — fed to a shared <datalist> so each row can pick an
+  // existing one (avoids typos splitting a sub-category into two Gantt postings).
+  const allSubcategories = Array.from(
+    new Set(estimate.lineItems.map(i => (i.subcategory || '').trim()).filter(Boolean)),
+  ).sort()
 
   return (
     <div className="max-w-[1680px] mx-auto px-4 lg:px-8 py-12">
@@ -878,6 +884,10 @@ export default function EstimateBuilderPage() {
       <div className={`flex gap-6 items-start ${activeTab !== 'estimate' ? 'hidden' : ''}`}>
         {/* Main table */}
         <div className="flex-1 min-w-0 overflow-x-auto" style={{ overflowX: 'auto' }}>
+          {/* Shared sub-category suggestions — every row's sub-category input picks from here. */}
+          <datalist id="estimate-subcategories">
+            {allSubcategories.map(s => <option key={s} value={s} />)}
+          </datalist>
           {categories.length === 0 ? (
             <div className="border border-fg-border py-16 text-center">
               <p className="text-sm font-light text-fg-muted mb-4">No line items yet.</p>
