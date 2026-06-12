@@ -824,6 +824,44 @@ export default function EstimateBuilderPage() {
     })
   }
 
+  // Copy a whole category (all its line items) as a new "<name> (copy)" category, dropped in right
+  // after the original — for keeping a previous version of a section while you rework it.
+  const duplicateCategory = (category: string) => {
+    setEstimate(prev => {
+      if (!prev) return prev
+      const items = prev.lineItems
+      const existing = new Set(items.map(i => i.category))
+      let newName = `${category} (copy)`
+      let n = 2
+      while (existing.has(newName)) { newName = `${category} (copy ${n})`; n++ }
+      const clones = items.filter(i => i.category === category).map(i => ({ ...i, id: generateId(), category: newName }))
+      if (clones.length === 0) return prev
+      let lastIdx = -1
+      items.forEach((i, idx) => { if (i.category === category) lastIdx = idx })
+      const next = [...items]
+      next.splice(lastIdx + 1, 0, ...clones)
+      return { ...prev, lineItems: next, updatedAt: new Date().toISOString() }
+    })
+    setHasUnsavedChanges(true)
+  }
+
+  // Hide/show a whole category by toggling all its line items. If every line is already off, showing
+  // turns them all on; otherwise hiding turns them all off. Hidden categories stay visible (greyed)
+  // for reference but drop out of every total and the Gantt.
+  const toggleCategory = (category: string) => {
+    setEstimate(prev => {
+      if (!prev) return prev
+      const catItems = prev.lineItems.filter(i => i.category === category)
+      const allOff = catItems.length > 0 && catItems.every(i => i.enabled === false)
+      return {
+        ...prev,
+        lineItems: prev.lineItems.map(i => i.category === category ? { ...i, enabled: allOff } : i),
+        updatedAt: new Date().toISOString(),
+      }
+    })
+    setHasUnsavedChanges(true)
+  }
+
   if (!estimate) return (
     <div className="max-w-[1200px] mx-auto px-6 py-12">
       <p className="text-sm font-light text-fg-muted">Loading…</p>
@@ -1005,6 +1043,7 @@ export default function EstimateBuilderPage() {
                 {categories.map(category => {
                   const catItems = estimate.lineItems.filter(i => i.category === category)
                   const catActive = catItems.filter(i => i.enabled !== false)
+                  const catHidden = catItems.length > 0 && catActive.length === 0
                   const catTotal = catActive.reduce((s, i) => s + i.total, 0)
                   const catRevenue = catActive.reduce((s, i) => s + readLineItemRevenue(i), 0)
                   const catIdx = categories.indexOf(category)
@@ -1016,12 +1055,15 @@ export default function EstimateBuilderPage() {
                       category={category}
                       total={catTotal}
                       revenue={catRevenue}
+                      hidden={catHidden}
                       isFirst={catIdx === 0}
                       isLast={catIdx === categories.length - 1}
                       onRename={(newName) => renameCategory(category, newName)}
                       onMoveUp={() => moveCategoryUp(category)}
                       onMoveDown={() => moveCategoryDown(category)}
                       onAddRow={() => addBlankRow(category)}
+                      onDuplicate={() => duplicateCategory(category)}
+                      onToggle={() => toggleCategory(category)}
                     />,
                     // Internal notes row
                     <tr key={`notes-${category}`}>
@@ -1202,28 +1244,34 @@ function CategoryHeaderRow({
   category,
   total,
   revenue,
+  hidden,
   isFirst,
   isLast,
   onRename,
   onMoveUp,
   onMoveDown,
   onAddRow,
+  onDuplicate,
+  onToggle,
 }: {
   category: string
   total: number
   revenue: number
+  hidden: boolean
   isFirst: boolean
   isLast: boolean
   onRename: (newName: string) => void
   onMoveUp: () => void
   onMoveDown: () => void
   onAddRow: () => void
+  onDuplicate: () => void
+  onToggle: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(category)
 
   return (
-    <tr className="bg-fg-card/30 border-b border-fg-border border-t border-t-fg-border group/cat">
+    <tr className={`bg-fg-card/30 border-b border-fg-border border-t border-t-fg-border group/cat ${hidden ? 'opacity-50' : ''}`}>
       <td colSpan={8} className="py-2 px-2">
         {editing ? (
           <input
@@ -1253,16 +1301,28 @@ function CategoryHeaderRow({
         {fmtCurrency(revenue)}
       </td>
       <td className="py-2 px-1">
-        <div className="flex items-center gap-0.5 opacity-0 group-hover/cat:opacity-100 transition-opacity">
-          <button onClick={onMoveUp} disabled={isFirst} className="p-0.5 text-fg-muted hover:text-fg-heading disabled:opacity-20 transition-colors">
-            <ChevronUp className="w-3 h-3" />
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={onToggle}
+            title={hidden ? 'Show category (include in totals)' : 'Hide category (keep for reference, exclude from totals)'}
+            className={`p-0.5 transition-colors ${hidden ? 'text-amber-500/80 hover:text-amber-500' : 'text-fg-muted/50 hover:text-fg-heading'}`}
+          >
+            {hidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
           </button>
-          <button onClick={onMoveDown} disabled={isLast} className="p-0.5 text-fg-muted hover:text-fg-heading disabled:opacity-20 transition-colors">
-            <ChevronDown className="w-3 h-3" />
-          </button>
-          <button onClick={onAddRow} className="p-0.5 text-fg-muted hover:text-fg-heading transition-colors">
-            <Plus className="w-3 h-3" />
-          </button>
+          <div className="flex items-center gap-0.5 opacity-0 group-hover/cat:opacity-100 transition-opacity">
+            <button onClick={onMoveUp} disabled={isFirst} title="Move up" className="p-0.5 text-fg-muted hover:text-fg-heading disabled:opacity-20 transition-colors">
+              <ChevronUp className="w-3 h-3" />
+            </button>
+            <button onClick={onMoveDown} disabled={isLast} title="Move down" className="p-0.5 text-fg-muted hover:text-fg-heading disabled:opacity-20 transition-colors">
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            <button onClick={onDuplicate} title="Copy category" className="p-0.5 text-fg-muted hover:text-fg-heading transition-colors">
+              <Copy className="w-3 h-3" />
+            </button>
+            <button onClick={onAddRow} title="Add row" className="p-0.5 text-fg-muted hover:text-fg-heading transition-colors">
+              <Plus className="w-3 h-3" />
+            </button>
+          </div>
         </div>
       </td>
     </tr>
