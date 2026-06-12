@@ -385,6 +385,8 @@ export interface ProgressClaim {
   id: string
   projectId: string
   invoiceNumber: string
+  xeroInvoiceId?: string        // Xero InvoiceID once a draft has been pushed to Xero
+  xeroInvoiceNumber?: string    // the number Xero assigned to the draft (may differ from invoiceNumber)
   description: string
   status: 'draft' | 'pending' | 'sent' | 'paid'
   lineItems: ProgressClaimLineItem[]

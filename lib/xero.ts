@@ -79,6 +79,34 @@ export async function getXeroInvoices(): Promise<unknown[]> {
   }
 }
 
+/**
+ * Create a DRAFT accounts-receivable invoice in Xero from a progress claim. Returns the new Xero
+ * InvoiceID/Number on success, or an error (with `needsReconnect` when the connection is still
+ * read-only). Draft only — the user reviews and approves/sends it in Xero.
+ */
+export async function createXeroDraftInvoice(body: {
+  contactName: string
+  reference?: string
+  dueDate?: string
+  lineItems: { description: string; amount: number }[]
+}): Promise<
+  | { ok: true; invoiceId: string | null; invoiceNumber: string | null }
+  | { ok: false; error: string; needsReconnect?: boolean }
+> {
+  try {
+    const resp = await fetch('/api/xero/invoices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await resp.json().catch(() => ({}))
+    if (!resp.ok) return { ok: false, error: data?.error || `Failed (${resp.status})`, needsReconnect: !!data?.needsReconnect }
+    return { ok: true, invoiceId: data.invoiceId ?? null, invoiceNumber: data.invoiceNumber ?? null }
+  } catch {
+    return { ok: false, error: 'Could not reach the server.' }
+  }
+}
+
 export async function getXeroTrackingCategories(): Promise<unknown[]> {
   try {
     const resp = await fetch('/api/xero/tracking-categories', { cache: 'no-store' })

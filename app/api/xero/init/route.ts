@@ -39,8 +39,10 @@ export async function GET(_request: NextRequest) {
     //   accounting.banktransactions.read      — /BankTransactions?Type=SPEND (Spend Money)
     //   accounting.reports.profitandloss.read — /Reports/ProfitAndLoss by tracking (production
     //                                           wages + super, which post via payroll not bills)
+    //   accounting.transactions               — create draft ACCREC invoices from progress claims (write)
+    //   accounting.contacts                   — find/create the client contact when drafting an invoice
     //   offline_access                        — refresh tokens for unattended hourly cron
-    scope: 'accounting.settings.read accounting.invoices.read accounting.banktransactions.read accounting.reports.profitandloss.read offline_access',
+    scope: 'accounting.settings.read accounting.invoices.read accounting.banktransactions.read accounting.reports.profitandloss.read accounting.transactions accounting.contacts offline_access',
     state,
   })
 

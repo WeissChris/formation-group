@@ -8,6 +8,7 @@ import {
   loadProgressClaims, saveProgressClaim, deleteProgressClaim,
 } from '@/lib/storage'
 import { upsertEstimate } from '@/lib/storageAsync'
+import { createXeroDraftInvoice } from '@/lib/xero'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { getEstimateTotals, readLineItemRevenue } from '@/lib/estimateCalculations'
 import type { ProgressPaymentStage, Estimate, WeeklyActual, ProgressClaim, ProgressClaimLineItem } from '@/types'
@@ -738,10 +739,12 @@ function ProgressClaimBuilder({
 function InvoicesSubTab({
   projectId,
   projectName,
+  clientName,
   estimates,
 }: {
   projectId: string
   projectName: string
+  clientName: string
   estimates: Estimate[]
 }) {
   const [claims, setClaims] = useState<ProgressClaim[]>(() => loadProgressClaims(projectId))
@@ -794,6 +797,38 @@ function InvoicesSubTab({
   const handleCreate = () => {
     setEditingClaim(null)
     setShowBuilder(true)
+  }
+
+  const [sendingXeroId, setSendingXeroId] = useState<string | null>(null)
+
+  const handleSendToXero = async (claim: ProgressClaim) => {
+    if (claim.xeroInvoiceId && !confirm('This claim already has a Xero draft. Create another?')) return
+    if (!clientName.trim()) {
+      alert('This project has no client name set — Xero needs it for the contact. Add a client on the project, then try again.')
+      return
+    }
+    const detail = claim.lineItems
+      .filter(li => li.included && Math.abs(li.claimAmount) > 0.005)
+      .map(li => ({ description: li.description, amount: li.claimAmount }))
+    const lineItems = detail.length > 0
+      ? detail
+      : [{ description: claim.description || `Progress claim ${claim.invoiceNumber}`, amount: claim.subtotalEx }]
+    setSendingXeroId(claim.id)
+    const res = await createXeroDraftInvoice({
+      contactName: clientName,
+      reference: `${projectName} — ${claim.invoiceNumber}`,
+      lineItems,
+    })
+    setSendingXeroId(null)
+    if (!res.ok) {
+      alert(res.needsReconnect
+        ? 'Xero is connected read-only. Open Settings and reconnect Xero to grant invoice-create access, then try again.'
+        : `Could not create the Xero draft: ${res.error}`)
+      return
+    }
+    saveProgressClaim({ ...claim, xeroInvoiceId: res.invoiceId ?? undefined, xeroInvoiceNumber: res.invoiceNumber ?? undefined })
+    refreshClaims()
+    alert(`Draft invoice created in Xero${res.invoiceNumber ? ` (${res.invoiceNumber})` : ''}. Review and approve it in Xero.`)
   }
 
   // Totals
@@ -898,6 +933,22 @@ function InvoicesSubTab({
                             >
                               Edit
                             </button>
+                            {claim.xeroInvoiceId ? (
+                              <span
+                                title={claim.xeroInvoiceNumber ? `Xero draft ${claim.xeroInvoiceNumber}` : 'Draft created in Xero'}
+                                className="text-2xs font-light tracking-wide uppercase text-teal-400/80 border border-teal-400/40 px-2 py-0.5 whitespace-nowrap"
+                              >
+                                ✓ Xero
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => handleSendToXero(claim)}
+                                disabled={sendingXeroId === claim.id}
+                                className="text-2xs font-light tracking-wide uppercase text-fg-muted border border-fg-border px-2 py-0.5 hover:text-fg-heading hover:border-fg-heading transition-colors whitespace-nowrap disabled:opacity-50"
+                              >
+                                {sendingXeroId === claim.id ? 'Sending…' : 'Send to Xero'}
+                              </button>
+                            )}
                             {claim.status !== 'paid' && (
                               <button
                                 onClick={() => handleMarkPaid(claim)}
@@ -1171,6 +1222,7 @@ function ActivityFeedSubTab({
 export default function FinancialOperations({
   projectId,
   projectName,
+  clientName,
   stages,
   estimates,
   onStagesChange,
@@ -1178,6 +1230,7 @@ export default function FinancialOperations({
 }: {
   projectId: string
   projectName: string
+  clientName: string
   stages: ProgressPaymentStage[]
   estimates: Estimate[]
   onStagesChange: (stages: ProgressPaymentStage[]) => void
@@ -1217,6 +1270,7 @@ export default function FinancialOperations({
         <InvoicesSubTab
           projectId={projectId}
           projectName={projectName}
+          clientName={clientName}
           estimates={estimates}
         />
       )}

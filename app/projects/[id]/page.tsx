@@ -1371,6 +1371,7 @@ export default function ProjectDetailPage() {
           <FinancialOperations
             projectId={project.id}
             projectName={project.name}
+            clientName={project.clientName || ''}
             stages={stages}
             estimates={estimates}
             onStagesChange={(newStages) => setStages(newStages)}
