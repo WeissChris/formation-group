@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { loadDesignProjects, saveDesignProject } from '@/lib/storage'
+import { getDesignProjects } from '@/lib/storageAsync'
 import { formatCurrency } from '@/lib/utils'
 import type { DesignProject } from '@/types'
 import { Check } from 'lucide-react'
@@ -83,10 +84,19 @@ export default function DesignProjectDetailPage() {
   const [saveTimer, setSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    const all = loadDesignProjects()
-    const p = all.find(p => p.id === id)
-    if (!p) return router.push('/design')
-    setProject(p)
+    let cancelled = false
+    ;(async () => {
+      let p = loadDesignProjects().find(dp => dp.id === id)
+      if (!p) {
+        // Local copy may have been cleared — fall back to Supabase and restore it locally
+        p = (await getDesignProjects()).find(dp => dp.id === id)
+        if (p) saveDesignProject(p)
+      }
+      if (cancelled) return
+      if (!p) { router.push('/design'); return }
+      setProject(p)
+    })()
+    return () => { cancelled = true }
   }, [id, router])
 
   const autoSave = useCallback((updated: DesignProject) => {

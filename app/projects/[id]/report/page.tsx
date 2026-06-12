@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { loadProjects, loadEstimatesByProject, loadProgressClaims } from '@/lib/storage'
+import { loadProjects, loadEstimatesByProject, loadProgressClaims, saveProject } from '@/lib/storage'
+import { getProjects } from '@/lib/storageAsync'
 import { getProjectCosts, type ProjectCostRow } from '@/lib/xero'
 import { computeLiveJobRow, type LiveJobRow } from '@/lib/liveJobs'
 import { getMarginSummary, getEstimateTotals } from '@/lib/estimateCalculations'
@@ -25,7 +26,12 @@ export default function ProjectReportPage() {
 
   useEffect(() => {
     ;(async () => {
-      const p = loadProjects().find(x => x.id === id) ?? null
+      let p = loadProjects().find(x => x.id === id) ?? null
+      if (!p) {
+        // Local copy may have been cleared — fall back to Supabase and restore it locally
+        p = (await getProjects()).find(x => x.id === id) ?? null
+        if (p) saveProject(p)
+      }
       setProject(p)
       const accepted = loadEstimatesByProject(id).filter(e => e.status === 'accepted')
       const base = accepted.find(e => !e.parentEstimateId)

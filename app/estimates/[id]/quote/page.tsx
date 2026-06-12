@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { loadEstimates, loadProjects, loadProposals } from '@/lib/storage'
+import { loadEstimates, loadProjects, loadProposals, saveEstimate } from '@/lib/storage'
+import { getEstimates } from '@/lib/storageAsync'
 import { formatCurrency } from '@/lib/utils'
 import { getEstimateTotals, readLineItemRevenue } from '@/lib/estimateCalculations'
 import type { Estimate, Project } from '@/types'
@@ -20,21 +21,29 @@ export default function QuotePage() {
   const [clientAddress, setClientAddress] = useState('')
 
   useEffect(() => {
-    const all = loadEstimates()
-    const found = all.find(e => e.id === id)
-    if (!found) return router.push('/estimates')
-    setEstimate(found)
+    let cancelled = false
+    ;(async () => {
+      let found = loadEstimates().find(e => e.id === id)
+      if (!found) {
+        // Local copy may have been cleared — fall back to Supabase and restore it locally
+        found = (await getEstimates()).find(e => e.id === id)
+        if (found) saveEstimate(found)
+      }
+      if (cancelled) return
+      if (!found) { router.push('/estimates'); return }
+      setEstimate(found)
 
-    const projects = loadProjects()
-    const p = projects.find(p => p.id === found.projectId)
-    if (p) setProject(p)
+      const p = loadProjects().find(p => p.id === found.projectId)
+      if (p) setProject(p)
 
-    // Resolve client details: project > linked proposal > estimate name
-    const linkedProposal = found.proposalId
-      ? loadProposals().find(pr => pr.id === found.proposalId)
-      : null
-    setClientName(p?.clientName || linkedProposal?.clientName || found.projectName || 'Client')
-    setClientAddress(p?.address || linkedProposal?.projectAddress || found.projectName || '')
+      // Resolve client details: project > linked proposal > estimate name
+      const linkedProposal = found.proposalId
+        ? loadProposals().find(pr => pr.id === found.proposalId)
+        : null
+      setClientName(p?.clientName || linkedProposal?.clientName || found.projectName || 'Client')
+      setClientAddress(p?.address || linkedProposal?.projectAddress || found.projectName || '')
+    })()
+    return () => { cancelled = true }
   }, [id, router])
 
   if (!estimate) return (

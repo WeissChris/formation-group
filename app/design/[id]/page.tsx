@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { loadProposals, saveProposal, deleteProposal, generateRevenueFromProposal, generateInvoiceStages, saveDesignProject, loadDesignProjectByProposalId } from '@/lib/storage'
-import { upsertProposal } from '@/lib/storageAsync'
+import { upsertProposal, getProposals } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { getProposalPhases, syncLegacyPhaseFields, phasesTotal, makeBlankPhase, defaultPhaseDescription, defaultPhaseOutcome, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 import { requestSendProposal, sendErrorMessage } from '@/lib/emailClient'
@@ -29,17 +29,27 @@ export default function ProposalDetailPage() {
   const [sentMsg, setSentMsg] = useState('')
 
   useEffect(() => {
-    const p = loadProposals().find(p => p.id === id)
-    if (!p) return router.push('/design')
-    setContentBlocks(p.contentBlocks ?? [])
-    if (p.status === 'accepted' && (!p.invoiceStages || p.invoiceStages.length === 0)) {
-      const stages = generateInvoiceStages(p)
-      const withStages = { ...p, invoiceStages: stages }
-      saveProposal(withStages)
-      setProposal(withStages)
-    } else {
-      setProposal(p)
-    }
+    let cancelled = false
+    ;(async () => {
+      let p = loadProposals().find(pr => pr.id === id)
+      if (!p) {
+        // Local copy may have been cleared — fall back to Supabase and restore it locally
+        p = (await getProposals()).find(pr => pr.id === id)
+        if (p) saveProposal(p)
+      }
+      if (cancelled) return
+      if (!p) { router.push('/design'); return }
+      setContentBlocks(p.contentBlocks ?? [])
+      if (p.status === 'accepted' && (!p.invoiceStages || p.invoiceStages.length === 0)) {
+        const stages = generateInvoiceStages(p)
+        const withStages = { ...p, invoiceStages: stages }
+        saveProposal(withStages)
+        setProposal(withStages)
+      } else {
+        setProposal(p)
+      }
+    })()
+    return () => { cancelled = true }
   }, [id, router])
 
   if (!proposal) return (

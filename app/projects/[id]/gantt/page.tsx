@@ -11,7 +11,8 @@ import {
   loadWeeklyRevenue,
   saveWeeklyRevenue,
 } from '@/lib/storage'
-import { upsertGanttEntries, replaceGanttRevenueRemote } from '@/lib/storageAsync'
+import { upsertGanttEntries, replaceGanttRevenueRemote, getProjects } from '@/lib/storageAsync'
+import { saveProject } from '@/lib/storage'
 import {
   formatCurrency,
   generateId,
@@ -337,14 +338,23 @@ export default function GanttPage() {
   const colCount = columns.length
 
   useEffect(() => {
-    const projs = loadProjects()
-    const p = projs.find(p => p.id === id)
-    if (!p) return router.push('/projects')
-    setProject(p)
-    const ests = loadEstimatesByProject(id)
-    setEstimate(ests.find(e => e.status === 'accepted') ?? ests[0] ?? null)
-    setEntries(loadGanttEntries(id))
-    setMilestones(loadMilestones(id))
+    let cancelled = false
+    ;(async () => {
+      let p = loadProjects().find(p => p.id === id)
+      if (!p) {
+        // Local copy may have been cleared — fall back to Supabase and restore it locally
+        p = (await getProjects()).find(p => p.id === id)
+        if (p) saveProject(p)
+      }
+      if (cancelled) return
+      if (!p) { router.push('/projects'); return }
+      setProject(p)
+      const ests = loadEstimatesByProject(id)
+      setEstimate(ests.find(e => e.status === 'accepted') ?? ests[0] ?? null)
+      setEntries(loadGanttEntries(id))
+      setMilestones(loadMilestones(id))
+    })()
+    return () => { cancelled = true }
   }, [id, router])
 
   const categories: CategorySummary[] = estimate ? extractCategories(estimate) : []

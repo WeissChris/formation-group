@@ -11,6 +11,7 @@ import {
   loadProgressPaymentStages, saveProject, deleteProject,
   loadSubcontractors, saveSubcontractor, deleteSubcontractor,
 } from '@/lib/storage'
+import { getProjects } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import type { Project, Estimate, WeeklyRevenue, GanttEntry, WeeklyActual, ProgressClaim, ProgressPaymentStage, SubcontractorPackage } from '@/types'
 import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, PROGRESSION_WARNINGS, buildChecklist, defaultStageForStatus } from '@/lib/stageConfig'
@@ -788,10 +789,17 @@ export default function ProjectDetailPage() {
   // Load all data
   useEffect(() => {
     if (!id) return
-    const projects = loadProjects()
-    const found = projects.find(p => p.id === id)
-    if (!found) { router.push('/projects'); return }
-    setNotesValue(found.notes || '')
+    let cancelled = false
+    ;(async () => {
+      let found = loadProjects().find(p => p.id === id)
+      if (!found) {
+        // Local copy may have been cleared — fall back to Supabase and restore it locally
+        found = (await getProjects()).find(p => p.id === id)
+        if (found) saveProject(found)
+      }
+      if (cancelled) return
+      if (!found) { router.push('/projects'); return }
+      setNotesValue(found.notes || '')
     // Auto-initialise or fix stage checklist
     const loaded = found
     const currentStage: ProjectStage = (loaded.stage as ProjectStage) || defaultStageForStatus(loaded.status || 'planning')
@@ -808,10 +816,12 @@ export default function ProjectDetailPage() {
     }
     setRevenueEntries(loadWeeklyRevenue().filter(r => r.projectId === id))
     setEstimates(loadEstimates().filter(e => e.projectId === id))
-    setGanttEntries(loadGanttEntries(id))
-    setActuals(loadWeeklyActuals(id))
-    setProgressClaims(loadProgressClaims(id))
-    setStages(loadProgressPaymentStages(id))
+      setGanttEntries(loadGanttEntries(id))
+      setActuals(loadWeeklyActuals(id))
+      setProgressClaims(loadProgressClaims(id))
+      setStages(loadProgressPaymentStages(id))
+    })()
+    return () => { cancelled = true }
   }, [id, router])
 
   // Auto-save notes

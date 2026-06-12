@@ -9,7 +9,9 @@ import {
   loadWeeklyActuals,
   loadWeeklyRevenue,
   saveWeeklyActual,
+  saveProject,
 } from '@/lib/storage'
+import { getProjects } from '@/lib/storageAsync'
 import { formatCurrency, generateId, snapToFriday, toISODate, formatDayMonth } from '@/lib/utils'
 import type { Project, GanttEntry, GanttSegment, WeeklyActual, WeeklyRevenue } from '@/types'
 import { Check } from 'lucide-react'
@@ -88,22 +90,31 @@ export default function ActualsPage() {
   const fridays = getPastAndFutureFridays(12, 4)
 
   useEffect(() => {
-    const projs = loadProjects()
-    const p = projs.find(p => p.id === id)
-    if (!p) return router.push('/projects')
-    setProject(p)
+    let cancelled = false
+    ;(async () => {
+      let p = loadProjects().find(p => p.id === id)
+      if (!p) {
+        // Local copy may have been cleared — fall back to Supabase and restore it locally
+        p = (await getProjects()).find(p => p.id === id)
+        if (p) saveProject(p)
+      }
+      if (cancelled) return
+      if (!p) { router.push('/projects'); return }
+      setProject(p)
 
-    const gantt = loadGanttEntries(id)
-    setGanttEntries(gantt)
+      const gantt = loadGanttEntries(id)
+      setGanttEntries(gantt)
 
-    const actuals = loadWeeklyActuals(id)
-    setAllActuals(actuals)
+      const actuals = loadWeeklyActuals(id)
+      setAllActuals(actuals)
 
-    const rev = loadWeeklyRevenue().filter(r => r.projectId === id)
-    setRevEntries(rev)
+      const rev = loadWeeklyRevenue().filter(r => r.projectId === id)
+      setRevEntries(rev)
 
-    const thisWeek = toISODate(snapToFriday(new Date()))
-    setSelectedWeek(thisWeek)
+      const thisWeek = toISODate(snapToFriday(new Date()))
+      setSelectedWeek(thisWeek)
+    })()
+    return () => { cancelled = true }
   }, [id, router])
 
   const buildRows = useCallback((weekIso: string, gantt: GanttEntry[], actuals: WeeklyActual[], rev: WeeklyRevenue[]): RowState[] => {
