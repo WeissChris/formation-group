@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { loadEstimates, deleteEstimate, saveEstimate } from '@/lib/storage'
 import { getEstimates } from '@/lib/storageAsync'
 import { formatCurrency } from '@/lib/utils'
 import { getEstimateTotals, readLineItemRevenue, getEstimateContract } from '@/lib/estimateCalculations'
 import type { Estimate } from '@/types'
-import { Plus, Trash2, FileText, Search, GitBranch } from 'lucide-react'
+import { Plus, Trash2, FileText, Search, GitBranch, ArrowRight } from 'lucide-react'
 
 type FilterStatus = 'all' | Estimate['status']
 
@@ -23,6 +24,7 @@ export default function EstimatesPage() {
   const [estimates, setEstimates] = useState<Estimate[]>([])
   const [filter, setFilter] = useState<FilterStatus>('all')
   const [search, setSearch] = useState('')
+  const router = useRouter()
 
   useEffect(() => {
     let cancelled = false
@@ -244,6 +246,15 @@ export default function EstimatesPage() {
                                   {(totals.overallMargin * 100).toFixed(1)}% margin
                                 </p>
                               </div>
+                              {est.status === 'accepted' && est.projectId && (
+                                <button
+                                  onClick={e => { e.preventDefault(); e.stopPropagation(); router.push(`/projects/${est.projectId}`) }}
+                                  title="Open this project's dashboard"
+                                  className="flex items-center gap-1 text-2xs font-light tracking-wide uppercase text-blue-400/80 border border-blue-400/40 px-2 py-0.5 hover:bg-blue-400/10 transition-colors whitespace-nowrap"
+                                >
+                                  Project <ArrowRight className="w-3 h-3" />
+                                </button>
+                              )}
                               <span className={`text-2xs font-light tracking-wide uppercase border rounded-sm px-1.5 py-0.5 ${STATUS_COLORS[est.status]}`}>
                                 {est.status}
                               </span>

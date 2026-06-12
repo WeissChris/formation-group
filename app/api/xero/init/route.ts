@@ -46,12 +46,14 @@ export async function GET(request: NextRequest) {
     //   accounting.banktransactions.read      — /BankTransactions?Type=SPEND (Spend Money)
     //   accounting.reports.profitandloss.read — /Reports/ProfitAndLoss by tracking (production
     //                                           wages + super, which post via payroll not bills)
-    //   accounting.contacts                   — find/create the client contact when drafting an invoice
     //   offline_access                        — refresh tokens for unattended hourly cron
-    // Granular-scope app (created after 2 Mar 2026): the broad `accounting.transactions` scope is
-    // INVALID here (Xero returns invalid_scope) — the granular `accounting.invoices` replaces it and
-    // also covers the Bills read the cost feed already relied on.
-    scope: 'accounting.settings.read accounting.invoices accounting.banktransactions.read accounting.reports.profitandloss.read accounting.contacts offline_access',
+    // This is a granular-scope app (created after 2 Mar 2026). The broad `accounting.transactions`
+    // scope is invalid here, and `accounting.contacts` was also rejected with invalid_scope — so it's
+    // dropped. The only change from the proven-working read set is `accounting.invoices.read` →
+    // `accounting.invoices` (read+write), which both reads Bills and creates draft invoices. Xero
+    // matches the client to an existing Xero contact by name when the invoice is posted, so no
+    // separate contacts scope is needed for clients already in Xero (all of ours).
+    scope: 'accounting.settings.read accounting.invoices accounting.banktransactions.read accounting.reports.profitandloss.read offline_access',
     state,
   })
 
