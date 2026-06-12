@@ -39,9 +39,15 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Revenue account the draft invoice lines post to. Override via env if the org's Sales account
-// isn't the Xero default "200". Drafts are reviewable, so a wrong code is easily fixed in Xero.
-const SALES_ACCOUNT_CODE = (process.env.XERO_SALES_ACCOUNT_CODE || '200').trim()
+// Revenue account the draft invoice lines post to, per org. Formation and Lume can have different
+// charts of accounts, so each has its own override; falls back to the shared var, then Xero's default
+// Sales account "200". Drafts are reviewable, so a wrong code is easily fixed in Xero.
+function salesAccountCode(entity: 'formation' | 'lume'): string {
+  const perEntity = entity === 'lume'
+    ? process.env.XERO_SALES_ACCOUNT_CODE_LUME
+    : process.env.XERO_SALES_ACCOUNT_CODE_FORMATION
+  return (perEntity || process.env.XERO_SALES_ACCOUNT_CODE || '200').trim()
+}
 
 type DraftInvoiceBody = {
   entity?: 'formation' | 'lume'   // which Xero org — Formation and Lume are separate accounts
@@ -87,7 +93,7 @@ export async function POST(request: NextRequest) {
       Description: (l.description || 'Progress claim').slice(0, 3900),
       Quantity: 1,
       UnitAmount: Math.round(Number(l.amount) * 100) / 100,
-      AccountCode: SALES_ACCOUNT_CODE,
+      AccountCode: salesAccountCode(entity),
       TaxType: 'OUTPUT',            // GST on Income (10%) — AU
     })),
   }
