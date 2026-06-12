@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { loadEstimates, loadProposals, saveEstimate } from '@/lib/storage'
+import { loadEstimates, loadProposals, saveEstimate, saveSubcontractor } from '@/lib/storage'
 import { upsertEstimate, upsertProject, getEstimates } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract } from '@/lib/estimateCalculations'
@@ -332,6 +332,23 @@ function LineItemRow({
           className={`${inputCls} text-2xs text-fg-muted mt-0.5`}
           placeholder="Sub-category (Gantt posting)…"
         />
+        {(item.type === 'Subcontractor' || item.crewType === 'Subcontractor') && (
+          <div className="mt-0.5 flex items-center gap-1.5 text-2xs px-1.5">
+            <label className={`cursor-pointer inline-flex items-center gap-1 ${item.quoteFileName ? 'text-fg-muted' : 'text-amber-600'}`} title={item.quoteFileName ? 'Replace quote' : 'A subcontractor quote is required before going to contract'}>
+              <input type="file" accept=".pdf,.doc,.docx,.xlsx,.jpg,.jpeg,.png" className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0]; if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = ev => update({ quoteFileName: file.name, quoteFileData: ev.target?.result as string })
+                  reader.readAsDataURL(file)
+                }} />
+              {item.quoteFileName ? `📎 ${item.quoteFileName}` : '⚠ Attach quote'}
+            </label>
+            {item.quoteFileName && (
+              <button onClick={() => update({ quoteFileName: undefined, quoteFileData: undefined })} className="text-fg-muted/40 hover:text-red-400 transition-colors">remove</button>
+            )}
+          </div>
+        )}
       </td>
       <td className="py-1.5 px-1">
         <select
@@ -661,6 +678,11 @@ export default function EstimateBuilderPage() {
 
   const handleConvertToProject = async () => {
     if (!estimate) return
+    const missingQuotes = estimate.lineItems.filter(i => (i.type === 'Subcontractor' || i.crewType === 'Subcontractor') && i.enabled !== false && !i.quoteFileName)
+    if (missingQuotes.length > 0) {
+      const proceed = confirm(`${missingQuotes.length} subcontractor line${missingQuotes.length !== 1 ? 's have' : ' has'} no quote attached:\n\n${missingQuotes.map(i => `• ${i.description || 'Untitled'}`).join('\n')}\n\nYou shouldn't go to contract without their quotes. Convert anyway?`)
+      if (!proceed) return
+    }
     if (!confirm('Convert this estimate to a project? The estimate will be locked as the financial baseline.')) return
 
     const totals = getEstimateTotals(estimate)
@@ -732,6 +754,35 @@ export default function EstimateBuilderPage() {
 
     // Project first (estimate.project_id has an FK to fg_projects), then the estimate.
     await upsertProject(newProject)
+
+    // Seed subcontractor packages: lines sharing a quote file group into one package (a quote covers a
+    // trade); un-quoted subbie lines each get their own. Quoted value = our cost for that work.
+    const subbieLines = estimate.lineItems.filter(i => (i.type === 'Subcontractor' || i.crewType === 'Subcontractor') && i.enabled !== false)
+    const subbieGroups = new Map<string, EstimateLineItem[]>()
+    subbieLines.forEach(li => {
+      const key = li.quoteFileName ? `q:${li.quoteFileName}` : `l:${li.id}`
+      const arr = subbieGroups.get(key) ?? []
+      arr.push(li)
+      subbieGroups.set(key, arr)
+    })
+    subbieGroups.forEach(lines => {
+      const first = lines[0]
+      saveSubcontractor({
+        id: generateId(),
+        projectId: newProject.id,
+        name: '',
+        trade: first.subcategory || first.category || first.description || 'Subcontractor',
+        approvedValue: lines.reduce((s, l) => s + l.total, 0),
+        variations: 0,
+        invoicedToDate: 0,
+        claims: [],
+        quoteFileName: first.quoteFileName,
+        quoteFileData: first.quoteFileData,
+        sourceEstimateId: estimate.id,
+        sourceLineItemIds: lines.map(l => l.id),
+        createdAt: new Date().toISOString(),
+      })
+    })
 
     // Lock estimate as baseline and link to project
     const updated = {
@@ -870,6 +921,8 @@ export default function EstimateBuilderPage() {
 
   const categories = Array.from(new Set(estimate.lineItems.map(i => i.category)))
   const allCategories = Array.from(new Set([...getCategories(), ...categories]))
+  // Subcontractor pricing must carry a quote before going to contract (active lines only).
+  const subbieMissingQuotes = estimate.lineItems.filter(i => (i.type === 'Subcontractor' || i.crewType === 'Subcontractor') && i.enabled !== false && !i.quoteFileName)
   // Distinct sub-categories already used — fed to a shared <datalist> so each row can pick an
   // existing one (avoids typos splitting a sub-category into two Gantt postings).
   const allSubcategories = Array.from(
@@ -911,6 +964,19 @@ export default function EstimateBuilderPage() {
               )}
             </p>
             <p className="text-2xs font-light text-amber-400/60 mt-0.5">Changes here represent additional scope only</p>
+          </div>
+        </div>
+      )}
+
+      {/* Subcontractor quote warning — must be resolved before going to contract */}
+      {subbieMissingQuotes.length > 0 && (
+        <div className="mb-4 border border-amber-400/40 bg-amber-400/5 px-4 py-3 flex items-start gap-3">
+          <span className="text-amber-500 text-sm leading-none mt-0.5">⚠</span>
+          <div>
+            <p className="text-xs font-light text-amber-600">
+              {subbieMissingQuotes.length} subcontractor line{subbieMissingQuotes.length !== 1 ? 's need' : ' needs'} a quote attached before going to contract.
+            </p>
+            <p className="text-2xs font-light text-amber-600/70 mt-0.5">{subbieMissingQuotes.map(i => i.description || 'Untitled').join(' · ')}</p>
           </div>
         </div>
       )}
