@@ -9,8 +9,23 @@ import {
   loadWeeklyRevenue,
   saveWeeklyRevenue,
   saveGanttEntries,
+  loadDesignProjects,
+  saveDesignProject,
+  loadProgressPaymentStages,
+  saveProgressPaymentStage,
+  loadWeeklyActuals,
+  saveWeeklyActual,
 } from './storage'
-import type { DesignProposal, Project, Estimate, WeeklyRevenue, GanttEntry } from '@/types'
+import type {
+  DesignProposal,
+  Project,
+  Estimate,
+  WeeklyRevenue,
+  GanttEntry,
+  DesignProject,
+  ProgressPaymentStage,
+  WeeklyActual,
+} from '@/types'
 
 /**
  * Conflict-aware upsert primitive. Reads `updated_at` for the row currently in Supabase, and
@@ -412,5 +427,213 @@ function mapRevenue(row: Record<string, unknown>): WeeklyRevenue {
     isDeposit: row.is_deposit as boolean,
     notes: (row.notes as string) || '',
     updatedAt: row.updated_at as string | undefined,
+  }
+}
+
+// ── DESIGN PROJECTS (accepted-job delivery tracker) ───────────────────────────
+
+export async function getDesignProjects(): Promise<DesignProject[]> {
+  if (isSupabaseConfigured() && supabase) {
+    const { data } = await supabase.from('fg_design_projects').select('*').order('created_at', { ascending: false })
+    if (data) return data.map(mapDesignProject)
+  }
+  return loadDesignProjects()
+}
+
+export async function upsertDesignProject(dp: DesignProject): Promise<void> {
+  saveDesignProject(dp)
+  if (isSupabaseConfigured() && supabase) {
+    const fresh = loadDesignProjects().find(d => d.id === dp.id) ?? dp
+    await safeUpsert('fg_design_projects', {
+      id: fresh.id,
+      proposal_id: fresh.proposalId,
+      client_name: fresh.clientName,
+      project_address: fresh.projectAddress,
+      entity: fresh.entity,
+      phase1_fee: fresh.phase1Fee,
+      phase1_status: fresh.phase1Status,
+      phase1_start_date: fresh.phase1StartDate ?? null,
+      phase1_due_date: fresh.phase1DueDate ?? null,
+      phase1_completed_date: fresh.phase1CompletedDate ?? null,
+      phase1_invoiced_date: fresh.phase1InvoicedDate ?? null,
+      phase1_paid_date: fresh.phase1PaidDate ?? null,
+      phase1_invoice_number: fresh.phase1InvoiceNumber ?? null,
+      phase1_deposit_paid: fresh.phase1DepositPaid,
+      phase1_deposit_date: fresh.phase1DepositDate ?? null,
+      phase2_fee: fresh.phase2Fee,
+      phase2_status: fresh.phase2Status,
+      phase2_start_date: fresh.phase2StartDate ?? null,
+      phase2_due_date: fresh.phase2DueDate ?? null,
+      phase2_completed_date: fresh.phase2CompletedDate ?? null,
+      phase2_invoiced_date: fresh.phase2InvoicedDate ?? null,
+      phase2_paid_date: fresh.phase2PaidDate ?? null,
+      phase2_invoice_number: fresh.phase2InvoiceNumber ?? null,
+      phase3_fee: fresh.phase3Fee ?? null,
+      phase3_status: fresh.phase3Status ?? null,
+      phase3_due_date: fresh.phase3DueDate ?? null,
+      phase3_paid_date: fresh.phase3PaidDate ?? null,
+      total_fee: fresh.totalFee,
+      total_paid: fresh.totalPaid,
+      total_outstanding: fresh.totalOutstanding,
+      notes: fresh.notes ?? null,
+      accepted_at: fresh.acceptedAt ?? null,
+      updated_at: fresh.updatedAt ?? new Date().toISOString(),
+    })
+  }
+}
+
+// ── PROGRESS-CLAIM STAGES ─────────────────────────────────────────────────────
+
+export async function getPaymentStages(): Promise<ProgressPaymentStage[]> {
+  if (isSupabaseConfigured() && supabase) {
+    const { data } = await supabase.from('fg_payment_stages').select('*')
+    if (data) return data.map(mapPaymentStage)
+  }
+  return loadProgressPaymentStages()
+}
+
+export async function upsertPaymentStage(stage: ProgressPaymentStage): Promise<void> {
+  saveProgressPaymentStage(stage)
+  if (isSupabaseConfigured() && supabase) {
+    const fresh = loadProgressPaymentStages().find(s => s.id === stage.id) ?? stage
+    // fg_payment_stages has no updated_at column, so plain upsert by id (no conflict guard).
+    await supabase.from('fg_payment_stages').upsert({
+      id: fresh.id,
+      project_id: fresh.projectId,
+      stage_number: fresh.stageNumber,
+      description: fresh.description,
+      quoted_amount: fresh.quotedAmount,
+      paid_to_date: fresh.paidToDate,
+      status: fresh.status,
+      invoice_id: fresh.invoiceId ?? null,
+      invoice_number: fresh.invoiceNumber ?? null,
+      invoiced_date: fresh.invoicedDate ?? null,
+      invoiced_amount: fresh.invoicedAmount ?? null,
+      override_amount: fresh.overrideAmount ?? null,
+      invoice_description: fresh.invoiceDescription ?? null,
+    })
+  }
+}
+
+// ── COST ACTUALS ──────────────────────────────────────────────────────────────
+
+export async function getActuals(): Promise<WeeklyActual[]> {
+  if (isSupabaseConfigured() && supabase) {
+    const { data } = await supabase.from('fg_actuals').select('*')
+    if (data) return data.map(mapActual)
+  }
+  return loadWeeklyActuals()
+}
+
+export async function upsertActual(actual: WeeklyActual): Promise<void> {
+  saveWeeklyActual(actual)
+  if (isSupabaseConfigured() && supabase) {
+    // fg_actuals has no updated_at; cost rows are immutable, so plain upsert by id.
+    await supabase.from('fg_actuals').upsert({
+      id: actual.id,
+      project_id: actual.projectId,
+      category: actual.category,
+      week_ending: actual.weekEnding,
+      supply_cost: actual.supplyCost,
+      labour_cost: actual.labourCost,
+      notes: actual.notes ?? null,
+    })
+  }
+}
+
+// ── GANTT (recovery read) ─────────────────────────────────────────────────────
+
+/** All Gantt rows across all projects — used by the login recovery to restore a wiped browser. */
+export async function getAllGanttEntries(): Promise<GanttEntry[]> {
+  if (isSupabaseConfigured() && supabase) {
+    const { data } = await supabase.from('fg_gantt').select('*')
+    if (data) return data.map(mapGanttEntry)
+  }
+  return []
+}
+
+// ── MAPPERS (new) ─────────────────────────────────────────────────────────────
+
+function mapDesignProject(row: Record<string, unknown>): DesignProject {
+  return {
+    id: row.id as string,
+    proposalId: row.proposal_id as string,
+    clientName: (row.client_name as string) || '',
+    projectAddress: (row.project_address as string) || '',
+    entity: 'design',
+    phase1Fee: Number(row.phase1_fee) || 0,
+    phase1Status: row.phase1_status as DesignProject['phase1Status'],
+    phase1StartDate: (row.phase1_start_date as string | null) || undefined,
+    phase1DueDate: (row.phase1_due_date as string | null) || undefined,
+    phase1CompletedDate: (row.phase1_completed_date as string | null) || undefined,
+    phase1InvoicedDate: (row.phase1_invoiced_date as string | null) || undefined,
+    phase1PaidDate: (row.phase1_paid_date as string | null) || undefined,
+    phase1InvoiceNumber: (row.phase1_invoice_number as string | null) || undefined,
+    phase1DepositPaid: Boolean(row.phase1_deposit_paid),
+    phase1DepositDate: (row.phase1_deposit_date as string | null) || undefined,
+    phase2Fee: Number(row.phase2_fee) || 0,
+    phase2Status: row.phase2_status as DesignProject['phase2Status'],
+    phase2StartDate: (row.phase2_start_date as string | null) || undefined,
+    phase2DueDate: (row.phase2_due_date as string | null) || undefined,
+    phase2CompletedDate: (row.phase2_completed_date as string | null) || undefined,
+    phase2InvoicedDate: (row.phase2_invoiced_date as string | null) || undefined,
+    phase2PaidDate: (row.phase2_paid_date as string | null) || undefined,
+    phase2InvoiceNumber: (row.phase2_invoice_number as string | null) || undefined,
+    phase3Fee: row.phase3_fee != null ? Number(row.phase3_fee) : undefined,
+    phase3Status: (row.phase3_status as DesignProject['phase3Status']) || undefined,
+    phase3DueDate: (row.phase3_due_date as string | null) || undefined,
+    phase3PaidDate: (row.phase3_paid_date as string | null) || undefined,
+    totalFee: Number(row.total_fee) || 0,
+    totalPaid: Number(row.total_paid) || 0,
+    totalOutstanding: Number(row.total_outstanding) || 0,
+    notes: (row.notes as string | null) || undefined,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    acceptedAt: (row.accepted_at as string | null) || undefined,
+  }
+}
+
+function mapPaymentStage(row: Record<string, unknown>): ProgressPaymentStage {
+  return {
+    id: row.id as string,
+    projectId: row.project_id as string,
+    stageNumber: (row.stage_number as string) || '',
+    description: (row.description as string) || '',
+    quotedAmount: Number(row.quoted_amount) || 0,
+    paidToDate: Number(row.paid_to_date) || 0,
+    status: row.status as ProgressPaymentStage['status'],
+    invoiceId: (row.invoice_id as string | null) || undefined,
+    invoicedDate: (row.invoiced_date as string | null) || undefined,
+    invoiceNumber: (row.invoice_number as string | null) || undefined,
+    invoicedAmount: row.invoiced_amount != null ? Number(row.invoiced_amount) : undefined,
+    overrideAmount: row.override_amount != null ? Number(row.override_amount) : undefined,
+    invoiceDescription: (row.invoice_description as string | null) || undefined,
+  }
+}
+
+function mapActual(row: Record<string, unknown>): WeeklyActual {
+  return {
+    id: row.id as string,
+    projectId: row.project_id as string,
+    category: row.category as string,
+    weekEnding: row.week_ending as string,
+    supplyCost: Number(row.supply_cost) || 0,
+    labourCost: Number(row.labour_cost) || 0,
+    notes: (row.notes as string | null) || undefined,
+  }
+}
+
+function mapGanttEntry(row: Record<string, unknown>): GanttEntry {
+  return {
+    id: row.id as string,
+    projectId: row.project_id as string,
+    estimateId: (row.estimate_id as string | null) || '',
+    category: row.category as string,
+    crewType: row.crew_type as GanttEntry['crewType'],
+    budgetedRevenue: Number(row.budgeted_revenue) || 0,
+    budgetedCost: Number(row.budgeted_cost) || 0,
+    segments: (row.segments as GanttEntry['segments']) || [],
+    subtasks: (row.subtasks as GanttEntry['subtasks']) || [],
+    notes: (row.notes as string | null) || undefined,
   }
 }

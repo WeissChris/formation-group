@@ -14,7 +14,7 @@ import {
 import { recoverFromIndexedDB } from '@/lib/storage'
 import { autoBackup } from '@/lib/backup'
 import { isSupabaseConfigured } from '@/lib/supabase'
-import { upsertProject, upsertProposal, upsertEstimate, upsertRevenue } from '@/lib/storageAsync'
+import { upsertProject, upsertProposal, upsertEstimate, upsertRevenue, upsertDesignProject, upsertPaymentStage, upsertActual } from '@/lib/storageAsync'
 
 // Routes that are publicly accessible without auth
 const PUBLIC_PATHS = ['/proposal/', '/foreman/']
@@ -167,6 +167,42 @@ export default function LoginGate({ children }: { children: ReactNode }) {
                 const r = await sa.getRevenue()
                 if (r.length) { r.forEach(x => st.saveWeeklyRevenue(x)); console.log(`[hydrate] restored ${r.length} revenue row(s)`) }
               }
+
+              // Design-delivery tracker / progress-claim stages — restore only when empty
+              if (st.loadDesignProjects().length === 0) {
+                const r = await sa.getDesignProjects()
+                if (r.length) { r.forEach(x => st.saveDesignProject(x)); console.log(`[hydrate] restored ${r.length} design project(s)`) }
+              }
+              if (st.loadProgressPaymentStages().length === 0) {
+                const r = await sa.getPaymentStages()
+                if (r.length) { r.forEach(x => st.saveProgressPaymentStage(x)); console.log(`[hydrate] restored ${r.length} payment stage(s)`) }
+              }
+
+              // Gantt — restore per-project where that project's local copy is empty
+              const remoteGantt = await sa.getAllGanttEntries()
+              if (remoteGantt.length) {
+                const byProject = new Map()
+                for (const g of remoteGantt) {
+                  const arr = byProject.get(g.projectId) || []
+                  arr.push(g)
+                  byProject.set(g.projectId, arr)
+                }
+                let restoredG = 0
+                byProject.forEach((entries, pid) => {
+                  if (st.loadGanttEntries(pid).length === 0) { st.saveGanttEntries(pid, entries); restoredG += entries.length }
+                })
+                if (restoredG) console.log(`[hydrate] restored ${restoredG} gantt row(s)`)
+              }
+
+              // Foreman actuals — add any the office hasn't seen. A foreman submits straight to the DB
+              // from their phone, so add-missing (not restore-if-empty) is needed to surface new rows.
+              const remoteActuals = await sa.getActuals()
+              const localActualIds = new Set(st.loadWeeklyActuals().map(a => a.id))
+              let addedActuals = 0
+              for (const a of remoteActuals) {
+                if (a?.id && !localActualIds.has(a.id)) { st.saveWeeklyActual(a); addedActuals++ }
+              }
+              if (addedActuals) console.log(`[hydrate] pulled ${addedActuals} foreman actual(s)`)
             } catch (e) {
               console.warn('[hydrate] recovery failed', e)
             }
@@ -183,17 +219,23 @@ export default function LoginGate({ children }: { children: ReactNode }) {
             // Sync in background - don't block login
             setTimeout(async () => {
               try {
-                const { loadProjects, loadProposals, loadEstimates, loadWeeklyRevenue } = await import('@/lib/storage')
+                const { loadProjects, loadProposals, loadEstimates, loadWeeklyRevenue, loadDesignProjects, loadProgressPaymentStages, loadWeeklyActuals } = await import('@/lib/storage')
                 const projects = loadProjects()
                 const proposals = loadProposals()
                 const estimates = loadEstimates()
                 const revenue = loadWeeklyRevenue()
+                const designProjects = loadDesignProjects()
+                const paymentStages = loadProgressPaymentStages()
+                const actuals = loadWeeklyActuals()
 
                 await Promise.all([
                   ...projects.map((p: any) => upsertProject(p)),
                   ...proposals.map((p: any) => upsertProposal(p)),
                   ...estimates.map((e: any) => upsertEstimate(e)),
                   ...revenue.map((r: any) => upsertRevenue(r)),
+                  ...designProjects.map((d: any) => upsertDesignProject(d)),
+                  ...paymentStages.map((s: any) => upsertPaymentStage(s)),
+                  ...actuals.map((a: any) => upsertActual(a)),
                 ])
 
                 localStorage.setItem('fg_supabase_last_sync', now.toString())
