@@ -96,6 +96,15 @@ export async function upsertProject(project: Project): Promise<void> {
       next_action: fresh.nextAction || null,
       invoice_model: fresh.invoiceModel || null,
       target_margin_pct: fresh.targetMarginPct ?? null,
+      project_type: fresh.projectType ?? null,
+      scopes: fresh.scopes ?? null,
+      baseline: fresh.baseline ?? null,
+      forecast_completion: fresh.forecastCompletion ?? null,
+      forecast_cost: fresh.forecastCost ?? null,
+      // Only push the foreman PIN when we actually have one — never null out an existing PIN in the
+      // DB. It's used by the foreman portal, not edited in the office UI, so the office copy can lack
+      // it; a blanket `foreman_pin: null` would lock foremen out.
+      ...(fresh.foremanPin ? { foreman_pin: fresh.foremanPin } : {}),
       updated_at: fresh.updatedAt ?? new Date().toISOString(),
     })
   }
@@ -316,6 +325,12 @@ function mapProject(row: Record<string, unknown>): Project {
     nextAction: (row.next_action as string) || undefined,
     invoiceModel: (row.invoice_model as 'stage_based' | 'progress_claim') || undefined,
     targetMarginPct: row.target_margin_pct != null ? Number(row.target_margin_pct) : undefined,
+    projectType: (row.project_type as Project['projectType']) || undefined,
+    scopes: (row.scopes as Project['scopes']) || undefined,
+    baseline: (row.baseline as Project['baseline']) || undefined,
+    forecastCompletion: (row.forecast_completion as string | null) || undefined,
+    forecastCost: row.forecast_cost != null ? Number(row.forecast_cost) : undefined,
+    foremanPin: (row.foreman_pin as string | null) || undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string | undefined,
   }

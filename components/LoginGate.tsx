@@ -116,43 +116,59 @@ export default function LoginGate({ children }: { children: ReactNode }) {
           autoBackup()
         }, 2000)
 
-        // Hydrate proposals from Supabase into localStorage — recover any the local copy is missing
-        // (after a one-time purge, a browser-data clear, or a fresh device) and pull down acceptances
-        // the office browser never saw. The app only ever pushed local → Supabase, never pulled back,
-        // so a cleared local copy looked like lost data and a client's acceptance could be overwritten
-        // back to "sent". Never overwrites your own edits or deletes a proposal — only adds missing
-        // ones and lifts a "sent" copy to "accepted" when Supabase says it was accepted. Runs before
-        // the push-sync below so the local copy is complete first.
+        // Recover data from Supabase into localStorage on login. The app only ever pushed local →
+        // Supabase, never pulled back — so a cleared local copy (browser-data clear, fresh device, or a
+        // one-time purge) looked like lost data even though Supabase still had it. For each dataset: if
+        // the local copy is completely empty but Supabase has rows, restore them. "Only when empty"
+        // means a full wipe / new device is rescued without resurrecting a record deleted during normal
+        // use. Proposals additionally reconcile acceptance — a client accepts straight to Supabase and
+        // the office browser never sees it, so a local "sent" is lifted to "accepted" when Supabase
+        // says so (and a later push then can't downgrade it). Runs before the push-sync below.
         if (isSupabaseConfigured()) {
           setTimeout(async () => {
             try {
-              const { getProposals } = await import('@/lib/storageAsync')
-              const { loadProposals, saveProposal } = await import('@/lib/storage')
-              const remote = await getProposals()
-              const localById = new Map(loadProposals().map(p => [p.id, p]))
-              let restored = 0
-              let reconciled = 0
-              for (const r of remote) {
-                if (!r?.id) continue
-                const local = localById.get(r.id)
-                if (!local) { saveProposal(r); restored++; continue }
-                // A client accepts on the public proposal page, which writes the acceptance straight
-                // to Supabase — the office browser never sees it. If Supabase shows accepted but the
-                // local copy doesn't, pull the acceptance down so it shows correctly here and a later
-                // push can't downgrade it back to "sent".
-                if (r.status === 'accepted' && local.status !== 'accepted') {
-                  saveProposal({
-                    ...local,
-                    status: 'accepted',
-                    acceptedAt: r.acceptedAt ?? local.acceptedAt,
-                    acceptedByName: r.acceptedByName ?? local.acceptedByName,
-                  })
-                  reconciled++
+              const sa = await import('@/lib/storageAsync')
+              const st = await import('@/lib/storage')
+
+              // Proposals — restore-if-empty, otherwise reconcile acceptances on the rows we have
+              const remoteProps = await sa.getProposals()
+              const localProps = st.loadProposals()
+              if (localProps.length === 0 && remoteProps.length > 0) {
+                remoteProps.forEach(p => st.saveProposal(p))
+                console.log(`[hydrate] restored ${remoteProps.length} proposal(s)`)
+              } else {
+                const byId = new Map(remoteProps.map(p => [p.id, p]))
+                let reconciled = 0
+                for (const local of localProps) {
+                  const r = byId.get(local.id)
+                  if (r && r.status === 'accepted' && local.status !== 'accepted') {
+                    st.saveProposal({
+                      ...local,
+                      status: 'accepted',
+                      acceptedAt: r.acceptedAt ?? local.acceptedAt,
+                      acceptedByName: r.acceptedByName ?? local.acceptedByName,
+                    })
+                    reconciled++
+                  }
                 }
+                if (reconciled) console.log(`[hydrate] reconciled ${reconciled} acceptance(s)`)
               }
-              if (restored || reconciled) console.log(`[hydrate] proposals restored=${restored} reconciled=${reconciled}`)
+
+              // Projects / estimates / revenue — restore only when the local copy is empty
+              if (st.loadProjects().length === 0) {
+                const r = await sa.getProjects()
+                if (r.length) { r.forEach(x => st.saveProject(x)); console.log(`[hydrate] restored ${r.length} project(s)`) }
+              }
+              if (st.loadEstimates().length === 0) {
+                const r = await sa.getEstimates()
+                if (r.length) { r.forEach(x => st.saveEstimate(x)); console.log(`[hydrate] restored ${r.length} estimate(s)`) }
+              }
+              if (st.loadWeeklyRevenue().length === 0) {
+                const r = await sa.getRevenue()
+                if (r.length) { r.forEach(x => st.saveWeeklyRevenue(x)); console.log(`[hydrate] restored ${r.length} revenue row(s)`) }
+              }
             } catch (e) {
-              console.warn('[hydrate] proposals failed', e)
+              console.warn('[hydrate] recovery failed', e)
             }
           }, 1500)
         }
