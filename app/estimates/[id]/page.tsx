@@ -121,13 +121,13 @@ function MarginSidebar({ estimate }: { estimate: Estimate }) {
       <h3 className="text-2xs font-medium tracking-wide uppercase text-[#5A5550]">Margin Checker</h3>
 
       {/* Formation vs Sub split */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2">
         {[
           { label: 'Formation', cost: totals.formationCost, revenue: totals.formationRevenue, margin: totals.formationMargin, target: 0.40 },
           { label: 'Subcontractor', cost: totals.subCost, revenue: totals.subRevenue, margin: totals.subMargin, target: 0.34 },
         ].map(col => (
-          <div key={col.label} className="bg-fg-darker/50 p-3">
-            <p className="text-xs font-medium tracking-wide uppercase text-white/70 mb-2">{col.label}</p>
+          <div key={col.label} className="bg-fg-darker/50 p-2.5 min-w-0">
+            <p className="text-2xs font-semibold uppercase text-white/70 mb-2 truncate" title={col.label}>{col.label}</p>
             <div className="space-y-1.5">
               <div>
                 <p className="text-2xs uppercase tracking-wide text-white/40">Cost</p>
