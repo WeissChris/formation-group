@@ -41,14 +41,17 @@ export async function GET(request: NextRequest) {
     // New granular scopes (apps created after 2 March 2026 use these, not the broad scopes).
     // All are needed by the cost puller (xeroCostSync.ts):
     //   accounting.settings.read              — /Accounts (classify DIRECTCOSTS vs EXPENSE; resolve labour accounts)
-    //   accounting.invoices.read              — /Invoices?Type=ACCPAY (Bills from suppliers)
+    //   accounting.invoices                   — read Bills (ACCPAY) for the cost feed + create draft
+    //                                           ACCREC invoices from progress claims (read+write)
     //   accounting.banktransactions.read      — /BankTransactions?Type=SPEND (Spend Money)
     //   accounting.reports.profitandloss.read — /Reports/ProfitAndLoss by tracking (production
     //                                           wages + super, which post via payroll not bills)
-    //   accounting.transactions               — create draft ACCREC invoices from progress claims (write)
     //   accounting.contacts                   — find/create the client contact when drafting an invoice
     //   offline_access                        — refresh tokens for unattended hourly cron
-    scope: 'accounting.settings.read accounting.invoices.read accounting.banktransactions.read accounting.reports.profitandloss.read accounting.transactions accounting.contacts offline_access',
+    // Granular-scope app (created after 2 Mar 2026): the broad `accounting.transactions` scope is
+    // INVALID here (Xero returns invalid_scope) — the granular `accounting.invoices` replaces it and
+    // also covers the Bills read the cost feed already relied on.
+    scope: 'accounting.settings.read accounting.invoices accounting.banktransactions.read accounting.reports.profitandloss.read accounting.contacts offline_access',
     state,
   })
 
