@@ -963,6 +963,15 @@ export default function EstimateBuilderPage() {
             </span>
           )}
 
+          {estimate.projectId && estimate.isBaseline && (
+            <Link
+              href={`/projects/${estimate.projectId}`}
+              className="flex items-center gap-2 px-3 py-1.5 border border-blue-400/40 text-blue-500 text-xs font-light tracking-architectural uppercase hover:bg-blue-400/10 transition-colors"
+            >
+              Open Project →
+            </Link>
+          )}
+
         </div>
         <div className="flex items-center gap-3">
           <select
