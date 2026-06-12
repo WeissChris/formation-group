@@ -11,7 +11,7 @@ import { upsertEstimate } from '@/lib/storageAsync'
 import { createXeroDraftInvoice } from '@/lib/xero'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { getEstimateTotals, readLineItemRevenue } from '@/lib/estimateCalculations'
-import type { ProgressPaymentStage, Estimate, WeeklyActual, ProgressClaim, ProgressClaimLineItem } from '@/types'
+import type { ProgressPaymentStage, Estimate, WeeklyActual, ProgressClaim, ProgressClaimLineItem, EntityType } from '@/types'
 import { Plus, X, FileText, Receipt, GitBranch, Eye, Check, ChevronRight, ArrowLeft } from 'lucide-react'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -740,11 +740,13 @@ function InvoicesSubTab({
   projectId,
   projectName,
   clientName,
+  entity,
   estimates,
 }: {
   projectId: string
   projectName: string
   clientName: string
+  entity: EntityType
   estimates: Estimate[]
 }) {
   const [claims, setClaims] = useState<ProgressClaim[]>(() => loadProgressClaims(projectId))
@@ -815,6 +817,7 @@ function InvoicesSubTab({
       : [{ description: claim.description || `Progress claim ${claim.invoiceNumber}`, amount: claim.subtotalEx }]
     setSendingXeroId(claim.id)
     const res = await createXeroDraftInvoice({
+      entity: entity === 'lume' ? 'lume' : 'formation',
       contactName: clientName,
       reference: `${projectName} — ${claim.invoiceNumber}`,
       lineItems,
@@ -1223,6 +1226,7 @@ export default function FinancialOperations({
   projectId,
   projectName,
   clientName,
+  entity,
   stages,
   estimates,
   onStagesChange,
@@ -1231,6 +1235,7 @@ export default function FinancialOperations({
   projectId: string
   projectName: string
   clientName: string
+  entity: EntityType
   stages: ProgressPaymentStage[]
   estimates: Estimate[]
   onStagesChange: (stages: ProgressPaymentStage[]) => void
@@ -1271,6 +1276,7 @@ export default function FinancialOperations({
           projectId={projectId}
           projectName={projectName}
           clientName={clientName}
+          entity={entity}
           estimates={estimates}
         />
       )}

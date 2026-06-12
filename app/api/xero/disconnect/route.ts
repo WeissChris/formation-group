@@ -21,6 +21,11 @@ export async function POST(request: NextRequest) {
   if (!isSameOrigin(request)) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
-  const ok = await clearTokens()
+  let entity: 'formation' | 'lume' = 'formation'
+  try {
+    const body = await request.json()
+    if (body?.entity === 'lume') entity = 'lume'
+  } catch { /* no body → default formation */ }
+  const ok = await clearTokens(entity)
   return NextResponse.json({ ok })
 }

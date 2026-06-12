@@ -14,7 +14,7 @@ import {
 } from '@/lib/seed'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { downloadBackup, restoreFromBackup } from '@/lib/backup'
-import { getXeroAuthUrl, getXeroStatus, disconnectXero, triggerXeroSync } from '@/lib/xero'
+import { getXeroAuthUrl, getXeroStatus, disconnectXero, triggerXeroSync, type XeroStatus } from '@/lib/xero'
 import { XeroMappingSection } from '@/components/XeroMappingSection'
 import { Check } from 'lucide-react'
 
@@ -25,18 +25,17 @@ export default function SettingsPage() {
   const [syncing, setSyncing] = useState(false)
   const [synced, setSynced] = useState(false)
   const [lastBackupText, setLastBackupText] = useState('No backup recorded')
-  const [xeroConnected, setXeroConnected] = useState(false)
   const [xeroSyncing, setXeroSyncing] = useState(false)
-  const [xeroOrgName, setXeroOrgName] = useState('')
-  const [xeroConfigured, setXeroConfigured] = useState(true) // assume yes until status proves otherwise
+  const [xeroStatus, setXeroStatus] = useState<Record<'formation' | 'lume', XeroStatus>>({
+    formation: { connected: false, configured: true },
+    lume: { connected: false, configured: true },
+  })
   const supabaseConnected = isSupabaseConfigured()
 
-  // Pull connection status from the server (tokens are server-only now).
+  // Pull connection status from the server for both orgs (tokens are server-only now).
   const refreshXeroStatus = async () => {
-    const status = await getXeroStatus()
-    setXeroConnected(status.connected)
-    setXeroOrgName(status.tenantName || '')
-    setXeroConfigured(status.configured)
+    const [formation, lume] = await Promise.all([getXeroStatus('formation'), getXeroStatus('lume')])
+    setXeroStatus({ formation, lume })
   }
 
   useEffect(() => {
@@ -325,23 +324,58 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Xero Integration */}
+      {/* Xero Integration — Formation and Lume are separate Xero organisations */}
       <div className="border border-fg-border p-6 mt-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-sm font-medium text-fg-heading">Xero Integration</h3>
-            <p className="text-xs text-fg-muted mt-1">
-              Connect to Xero to automatically import bills, invoices and financial data.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${xeroConnected ? 'bg-green-500' : 'bg-gray-300'}`} />
-            <span className="text-xs text-fg-muted">{xeroConnected ? `Connected: ${xeroOrgName}` : 'Not connected'}</span>
-          </div>
+        <div className="mb-4">
+          <h3 className="text-sm font-medium text-fg-heading">Xero Integration</h3>
+          <p className="text-xs text-fg-muted mt-1">
+            Formation and Lume are separate Xero organisations — connect each one. Invoices route to the
+            matching org by project. (The cost feed currently pulls Formation only.)
+          </p>
         </div>
 
-        {xeroConnected ? (
-          <div className="flex items-center gap-3">
+        {([
+          { key: 'formation' as const, label: 'Formation Landscapes' },
+          { key: 'lume' as const, label: 'Lume Pools' },
+        ]).map(org => {
+          const st = xeroStatus[org.key]
+          return (
+            <div key={org.key} className="flex items-center justify-between py-3 border-t border-fg-border first:border-t-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className={`w-2 h-2 rounded-full shrink-0 ${st.connected ? 'bg-green-500' : 'bg-gray-300'}`} />
+                <span className="text-xs text-fg-heading whitespace-nowrap">{org.label}</span>
+                <span className="text-xs text-fg-muted truncate">{st.connected ? `· ${st.tenantName || 'Connected'}` : '· Not connected'}</span>
+              </div>
+              {st.connected ? (
+                <button
+                  onClick={async () => {
+                    if (!window.confirm(`Disconnect ${org.label} from Xero? Tokens will be deleted server-side.`)) return
+                    await disconnectXero(org.key)
+                    await refreshXeroStatus()
+                  }}
+                  className="shrink-0 px-3 py-1.5 border border-red-200 text-red-400 text-2xs font-light tracking-wide uppercase hover:bg-red-50 transition-colors"
+                >
+                  Disconnect
+                </button>
+              ) : (
+                <button
+                  onClick={async () => {
+                    const url = await getXeroAuthUrl(org.key)
+                    if (url) window.location.href = url
+                    else window.alert('Xero connect is not configured. Check NEXT_PUBLIC_XERO_CLIENT_ID.')
+                  }}
+                  disabled={!process.env.NEXT_PUBLIC_XERO_CLIENT_ID}
+                  className="shrink-0 px-3 py-1.5 bg-[#13B5EA] text-white text-2xs font-light tracking-wide uppercase hover:bg-[#0EA5D4] transition-colors disabled:opacity-50"
+                >
+                  Connect
+                </button>
+              )}
+            </div>
+          )
+        })}
+
+        {xeroStatus.formation.connected && (
+          <div className="mt-4 pt-4 border-t border-fg-border">
             <button
               onClick={async () => {
                 setXeroSyncing(true)
@@ -360,48 +394,27 @@ export default function SettingsPage() {
               disabled={xeroSyncing}
               className="px-4 py-2 bg-fg-dark text-white text-xs font-light tracking-wide uppercase hover:bg-fg-darker transition-colors disabled:opacity-50"
             >
-              {xeroSyncing ? 'Syncing…' : 'Sync Now'}
+              {xeroSyncing ? 'Syncing…' : 'Sync cost feed now'}
             </button>
-            <button
-              onClick={async () => {
-                if (!window.confirm('Disconnect Xero? Tokens will be deleted server-side.')) return
-                await disconnectXero()
-                await refreshXeroStatus()
-              }}
-              className="px-4 py-2 border border-red-200 text-red-400 text-xs font-light tracking-wide uppercase hover:bg-red-50 transition-colors"
-            >
-              Disconnect
-            </button>
+            <p className="text-2xs text-fg-muted mt-2">Pulls job costs from Formation.</p>
           </div>
-        ) : (
-          <button
-            onClick={async () => {
-              const url = await getXeroAuthUrl()
-              if (url) window.location.href = url
-              else window.alert('Xero connect is not configured. Check NEXT_PUBLIC_XERO_CLIENT_ID.')
-            }}
-            className="px-4 py-2 bg-[#13B5EA] text-white text-xs font-light tracking-wide uppercase hover:bg-[#0EA5D4] transition-colors"
-            disabled={!process.env.NEXT_PUBLIC_XERO_CLIENT_ID}
-          >
-            Connect Xero
-          </button>
         )}
 
         {!process.env.NEXT_PUBLIC_XERO_CLIENT_ID && (
-          <p className="text-xs text-amber-600 mt-2">
+          <p className="text-xs text-amber-600 mt-3">
             Add NEXT_PUBLIC_XERO_CLIENT_ID and XERO_CLIENT_SECRET to Vercel environment variables to enable.
           </p>
         )}
-        {process.env.NEXT_PUBLIC_XERO_CLIENT_ID && !xeroConfigured && (
-          <p className="text-xs text-amber-600 mt-2">
+        {process.env.NEXT_PUBLIC_XERO_CLIENT_ID && !xeroStatus.formation.configured && (
+          <p className="text-xs text-amber-600 mt-3">
             Xero token storage requires SUPABASE_SERVICE_ROLE_KEY (server-only env var) and the
             fg_xero_tokens table — see supabase/schema.sql.
           </p>
         )}
       </div>
 
-      {/* Project ↔ Xero mapping (only shows when Xero is connected) */}
-      {xeroConnected && <XeroMappingSection />}
+      {/* Project ↔ Xero mapping (Formation cost feed) */}
+      {xeroStatus.formation.connected && <XeroMappingSection />}
 
       {/* Footer version */}
       <p className="text-2xs font-light text-fg-muted/40 mt-12">v1.0.0</p>

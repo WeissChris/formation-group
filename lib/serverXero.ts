@@ -6,14 +6,21 @@
 //   - Tokens no longer sit in localStorage (XSS-readable)
 //   - Refresh route no longer accepts arbitrary refresh tokens from the body
 //
-// Storage: singleton row in `fg_xero_tokens` accessed via supabaseAdmin (service role bypasses RLS).
-// Without SUPABASE_SERVICE_ROLE_KEY configured, every call returns null/false; the UI surfaces
+// Storage: one row per entity in `fg_xero_tokens` (id = 'formation' | 'lume'), accessed via
+// supabaseAdmin (service role bypasses RLS). Formation and Lume are separate Xero organisations, so
+// each holds its own connection; reads/writes are routed by the project's entity. Without
+// SUPABASE_SERVICE_ROLE_KEY configured, every call returns null/false and the UI surfaces
 // "not configured" rather than silently falling back to insecure storage.
 
 import { supabaseAdmin } from './supabaseAdmin'
 
 const XERO_TOKEN_URL = 'https://identity.xero.com/connect/token'
-const SINGLETON_ID = 'singleton'
+
+/** Xero-connectable entities. 'design' has no Xero organisation. */
+export type XeroEntity = 'formation' | 'lume'
+export function isXeroEntity(v: unknown): v is XeroEntity {
+  return v === 'formation' || v === 'lume'
+}
 
 export interface XeroTokenRow {
   accessToken: string
@@ -43,25 +50,39 @@ function rowToTokens(row: DbRow): XeroTokenRow {
   }
 }
 
-/** Read the current Xero tokens (or null if none stored / admin not configured). */
-export async function getTokens(): Promise<XeroTokenRow | null> {
+/**
+ * Read an entity's Xero tokens (or null if none stored / admin not configured).
+ *
+ * Migration fallback: the original single connection lived under id='singleton' (it was the Formation
+ * org). Read it for 'formation' until a Formation reconnect writes the 'formation' row, so the cost
+ * feed keeps working without an immediate reconnect.
+ */
+export async function getTokens(entity: XeroEntity = 'formation'): Promise<XeroTokenRow | null> {
   if (!supabaseAdmin) return null
   const { data, error } = await supabaseAdmin
     .from('fg_xero_tokens')
     .select('*')
-    .eq('id', SINGLETON_ID)
+    .eq('id', entity)
     .maybeSingle()
-  if (error || !data) return null
-  return rowToTokens(data as DbRow)
+  if (!error && data) return rowToTokens(data as DbRow)
+  if (entity === 'formation') {
+    const { data: legacy } = await supabaseAdmin
+      .from('fg_xero_tokens')
+      .select('*')
+      .eq('id', 'singleton')
+      .maybeSingle()
+    if (legacy) return rowToTokens(legacy as DbRow)
+  }
+  return null
 }
 
-/** Upsert the singleton Xero tokens row. */
-export async function saveTokens(tokens: XeroTokenRow): Promise<boolean> {
+/** Upsert an entity's Xero tokens row. */
+export async function saveTokens(entity: XeroEntity, tokens: XeroTokenRow): Promise<boolean> {
   if (!supabaseAdmin) return false
   const { error } = await supabaseAdmin
     .from('fg_xero_tokens')
     .upsert({
-      id: SINGLETON_ID,
+      id: entity,
       access_token: tokens.accessToken,
       refresh_token: tokens.refreshToken,
       expires_at: tokens.expiresAt,
@@ -72,23 +93,24 @@ export async function saveTokens(tokens: XeroTokenRow): Promise<boolean> {
   return !error
 }
 
-/** Delete the stored Xero tokens (disconnect flow). */
-export async function clearTokens(): Promise<boolean> {
+/** Delete an entity's stored Xero tokens (disconnect flow). */
+export async function clearTokens(entity: XeroEntity = 'formation'): Promise<boolean> {
   if (!supabaseAdmin) return false
-  const { error } = await supabaseAdmin
-    .from('fg_xero_tokens')
-    .delete()
-    .eq('id', SINGLETON_ID)
+  const { error } = await supabaseAdmin.from('fg_xero_tokens').delete().eq('id', entity)
+  // Also drop the legacy singleton row when disconnecting Formation, so it can't shadow a reconnect.
+  if (entity === 'formation') {
+    await supabaseAdmin.from('fg_xero_tokens').delete().eq('id', 'singleton')
+  }
   return !error
 }
 
 /**
- * Refresh the access token using Xero's token endpoint.
+ * Refresh an entity's access token using Xero's token endpoint.
  * Preserves tenantId / tenantName from the existing row (Xero's refresh response doesn't include them).
  * On failure, returns null without modifying stored tokens.
  */
-async function refreshTokens(): Promise<XeroTokenRow | null> {
-  const prior = await getTokens()
+async function refreshTokens(entity: XeroEntity): Promise<XeroTokenRow | null> {
+  const prior = await getTokens(entity)
   if (!prior) return null
   // `.trim()` defends against trailing whitespace in env values — see init/callback for why.
   const clientId = (process.env.NEXT_PUBLIC_XERO_CLIENT_ID || '').trim()
@@ -116,23 +138,24 @@ async function refreshTokens(): Promise<XeroTokenRow | null> {
     tenantId: prior.tenantId,    // refresh response does NOT include tenant info — carry forward
     tenantName: prior.tenantName,
   }
-  const saved = await saveTokens(next)
+  const saved = await saveTokens(entity, next)
   return saved ? next : null
 }
 
 /**
- * Get tokens valid right now — refreshes if they expire within 5 minutes.
+ * Get an entity's tokens valid right now — refreshes if they expire within 5 minutes.
+ * Defaults to 'formation' so existing single-org callers (cost feed, read proxies) are unaffected.
  * Returns null if no tokens are stored or refresh fails (e.g. expired refresh token).
  */
-export async function getValidTokens(): Promise<XeroTokenRow | null> {
-  const tokens = await getTokens()
+export async function getValidTokens(entity: XeroEntity = 'formation'): Promise<XeroTokenRow | null> {
+  const tokens = await getTokens(entity)
   if (!tokens) return null
   if (Date.now() < tokens.expiresAt - 5 * 60 * 1000) return tokens
-  return refreshTokens()
+  return refreshTokens(entity)
 }
 
-/** Public-facing connection status — what /api/xero/status returns to the client. */
-export async function getStatus(): Promise<{
+/** Public-facing connection status — what /api/xero/status returns to the client, per entity. */
+export async function getStatus(entity: XeroEntity = 'formation'): Promise<{
   connected: boolean
   tenantName?: string
   expiresAt?: number
@@ -141,13 +164,11 @@ export async function getStatus(): Promise<{
   if (!supabaseAdmin) {
     return { connected: false, configured: false }
   }
-  const tokens = await getTokens()
+  const tokens = await getTokens(entity)
   if (!tokens) return { connected: false, configured: true }
   // Connection is live whenever a token row exists with a refresh token: Xero access tokens
   // expire every 30 min, but getValidTokens() refreshes them on demand, so an expired access
   // token does NOT mean disconnected. (Disconnect deletes the row — presence is the signal.)
-  // Reporting connected:false purely on access-token expiry made the Settings page flip to
-  // "not connected" half an hour after every reconnect.
   return {
     connected: !!tokens.refreshToken,
     tenantName: tokens.tenantName,

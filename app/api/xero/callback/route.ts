@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { saveTokens } from '@/lib/serverXero'
+import { saveTokens, type XeroEntity } from '@/lib/serverXero'
 
 export const runtime = 'nodejs'
 
@@ -23,6 +23,9 @@ export async function GET(request: NextRequest) {
     reject.cookies.delete(STATE_COOKIE)
     return reject
   }
+
+  // The init route prefixed `state` with the entity (`formation.<hex>` / `lume.<hex>`).
+  const entity: XeroEntity = state.split('.')[0] === 'lume' ? 'lume' : 'formation'
 
   try {
     // `.trim()` on every env value — Vercel UI sometimes carries trailing whitespace/newlines
@@ -77,12 +80,12 @@ export async function GET(request: NextRequest) {
     // Persist tokens server-side. Previous version embedded tokens in the redirect URL
     // (history/referrer/log leakage) AND stored them in localStorage (XSS-readable).
     // Now tokens never touch the client — only connection status is exposed.
-    const saved = await saveTokens({
+    const saved = await saveTokens(entity, {
       accessToken: tokenData.access_token,
       refreshToken: tokenData.refresh_token,
       expiresAt: Date.now() + (Number(tokenData.expires_in) * 1000),
       tenantId: tenant.tenantId,
-      tenantName: tenant.tenantName || 'Formation Landscapes',
+      tenantName: tenant.tenantName || (entity === 'lume' ? 'Lume Pools' : 'Formation Landscapes'),
     })
 
     if (!saved) {
@@ -91,7 +94,7 @@ export async function GET(request: NextRequest) {
       return reject
     }
 
-    const success = NextResponse.redirect(`${appUrl}/settings?xero=success`)
+    const success = NextResponse.redirect(`${appUrl}/settings?xero=success&entity=${entity}`)
     success.cookies.delete(STATE_COOKIE)
     return success
   } catch {

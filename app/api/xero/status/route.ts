@@ -11,7 +11,8 @@ export const dynamic = 'force-dynamic'
  * Connection status for the Settings page.
  * Returns only safe public fields — never the tokens themselves.
  */
-export async function GET() {
-  const status = await getStatus()
+export async function GET(request: Request) {
+  const entity = new URL(request.url).searchParams.get('entity') === 'lume' ? 'lume' : 'formation'
+  const status = await getStatus(entity)
   return NextResponse.json(status)
 }

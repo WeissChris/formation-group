@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
 const SALES_ACCOUNT_CODE = (process.env.XERO_SALES_ACCOUNT_CODE || '200').trim()
 
 type DraftInvoiceBody = {
+  entity?: 'formation' | 'lume'   // which Xero org — Formation and Lume are separate accounts
   contactName: string
   reference?: string
   dueDate?: string  // ISO yyyy-mm-dd
@@ -58,11 +59,15 @@ type DraftInvoiceBody = {
  */
 export async function POST(request: NextRequest) {
   if (!isSameOrigin(request)) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
-  const tokens = await getValidTokens()
-  if (!tokens) return NextResponse.json({ error: 'Xero is not connected.' }, { status: 401 })
 
   let body: DraftInvoiceBody
   try { body = await request.json() } catch { return NextResponse.json({ error: 'bad_request' }, { status: 400 }) }
+
+  // Formation and Lume are separate Xero orgs — post the invoice to the project's org.
+  const entity = body.entity === 'lume' ? 'lume' : 'formation'
+  const orgLabel = entity === 'lume' ? 'Lume' : 'Formation'
+  const tokens = await getValidTokens(entity)
+  if (!tokens) return NextResponse.json({ error: `${orgLabel} isn't connected to Xero — connect it in Settings, then try again.` }, { status: 401 })
 
   const contactName = (body.contactName || '').trim()
   const lines = (body.lineItems || []).filter(l => l && Math.abs(Number(l.amount)) > 0.005)

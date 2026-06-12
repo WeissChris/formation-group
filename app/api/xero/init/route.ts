@@ -11,7 +11,12 @@ const STATE_COOKIE = 'xero_oauth_state'
  *
  * GET /api/xero/init  →  { url: string }
  */
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
+  // Which org is being connected — Formation and Lume are separate Xero organisations. The entity is
+  // carried inside `state` (which is also CSRF-verified against the cookie) so the callback knows
+  // which connection to save the tokens under.
+  const entity = new URL(request.url).searchParams.get('entity') === 'lume' ? 'lume' : 'formation'
+
   // `.trim()` defends against trailing whitespace/newlines accidentally pasted into env
   // values via the Vercel UI — those get URL-encoded as %0D%0A and Xero rejects the request
   // with the unhelpful "unauthorized_client - Unknown client" error.
@@ -25,8 +30,9 @@ export async function GET(_request: NextRequest) {
     return NextResponse.json({ error: 'Xero not configured' }, { status: 500 })
   }
 
-  // crypto-strong 32-byte random (vs Math.random which gives only ~52 bits of entropy)
-  const state = randomBytes(32).toString('hex')
+  // crypto-strong 32-byte random (vs Math.random which gives only ~52 bits of entropy), prefixed
+  // with the entity so the callback can route the tokens. The whole string is still CSRF-checked.
+  const state = `${entity}.${randomBytes(32).toString('hex')}`
 
   const params = new URLSearchParams({
     response_type: 'code',

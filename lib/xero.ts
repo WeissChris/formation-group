@@ -21,9 +21,9 @@ export interface XeroStatus {
  * Server generates a crypto-random `state` and sets it as an httpOnly cookie that the
  * callback validates — closes the CSRF gap on the OAuth flow.
  */
-export async function getXeroAuthUrl(): Promise<string | null> {
+export async function getXeroAuthUrl(entity: 'formation' | 'lume' = 'formation'): Promise<string | null> {
   try {
-    const resp = await fetch('/api/xero/init')
+    const resp = await fetch(`/api/xero/init?entity=${entity}`)
     if (!resp.ok) return null
     const data = await resp.json()
     return typeof data.url === 'string' ? data.url : null
@@ -32,10 +32,10 @@ export async function getXeroAuthUrl(): Promise<string | null> {
   }
 }
 
-/** Fetch the current Xero connection status. Safe for the client — exposes only metadata. */
-export async function getXeroStatus(): Promise<XeroStatus> {
+/** Fetch an entity's Xero connection status. Safe for the client — exposes only metadata. */
+export async function getXeroStatus(entity: 'formation' | 'lume' = 'formation'): Promise<XeroStatus> {
   try {
-    const resp = await fetch('/api/xero/status', { cache: 'no-store' })
+    const resp = await fetch(`/api/xero/status?entity=${entity}`, { cache: 'no-store' })
     if (!resp.ok) return { connected: false, configured: false }
     return await resp.json()
   } catch {
@@ -43,10 +43,14 @@ export async function getXeroStatus(): Promise<XeroStatus> {
   }
 }
 
-/** Disconnect Xero (deletes the server-side tokens row). */
-export async function disconnectXero(): Promise<boolean> {
+/** Disconnect an entity's Xero connection (deletes the server-side tokens row). */
+export async function disconnectXero(entity: 'formation' | 'lume' = 'formation'): Promise<boolean> {
   try {
-    const resp = await fetch('/api/xero/disconnect', { method: 'POST' })
+    const resp = await fetch('/api/xero/disconnect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entity }),
+    })
     if (!resp.ok) return false
     const data = await resp.json()
     return !!data.ok
@@ -85,6 +89,7 @@ export async function getXeroInvoices(): Promise<unknown[]> {
  * read-only). Draft only — the user reviews and approves/sends it in Xero.
  */
 export async function createXeroDraftInvoice(body: {
+  entity: 'formation' | 'lume'
   contactName: string
   reference?: string
   dueDate?: string

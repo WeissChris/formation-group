@@ -1372,6 +1372,7 @@ export default function ProjectDetailPage() {
             projectId={project.id}
             projectName={project.name}
             clientName={project.clientName || ''}
+            entity={project.entity}
             stages={stages}
             estimates={estimates}
             onStagesChange={(newStages) => setStages(newStages)}
