@@ -117,7 +117,7 @@ function MarginSidebar({ estimate }: { estimate: Estimate }) {
   const marginLabel = (meets: boolean) => meets ? '✓ MEETS' : '⚠ BELOW'
 
   return (
-    <div className="bg-fg-card/20 border border-fg-border p-5 sticky top-20 space-y-6">
+    <div className="bg-fg-card/20 border border-fg-border p-5 space-y-6">
       <h3 className="text-2xs font-medium tracking-wide uppercase text-[#5A5550]">Margin Checker</h3>
 
       {/* Formation vs Sub split */}
