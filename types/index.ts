@@ -50,6 +50,14 @@ export interface Project {
   updatedAt?: string
 }
 
+export interface SubcontractorClaim {
+  id: string
+  date: string         // ISO date of the claim
+  amount: number       // ex-GST amount claimed this progress claim
+  reference?: string   // the subbie's invoice / claim number
+  notes?: string
+}
+
 export interface SubcontractorPackage {
   id: string
   projectId: string
@@ -57,10 +65,13 @@ export interface SubcontractorPackage {
   trade: string         // trade / package (e.g. Excavation, Concrete, Electrical)
   approvedValue: number // original approved quote value
   variations: number    // sum of approved variations
-  invoicedToDate: number
-  quoteFileName?: string  // name of uploaded file
-  quoteFileData?: string  // base64 data URI
+  invoicedToDate: number // kept = sum(claims) when claims exist; manual entry for legacy packages
+  claims?: SubcontractorClaim[]  // individual progress claims the subbie makes against the quoted total
+  quoteFileName?: string  // name of uploaded quote file
+  quoteFileData?: string  // base64 data URI of the quote
   notes?: string
+  sourceEstimateId?: string      // set when seeded from an estimate's subcontractor lines
+  sourceLineItemIds?: string[]
   createdAt: string
 }
 
@@ -118,6 +129,8 @@ export interface EstimateLineItem {
   revenue: number
   crewType: 'Formation' | 'Subcontractor'
   enabled?: boolean      // false = turned off: kept on the estimate for reference, excluded from totals/Gantt
+  quoteFileName?: string // subcontractor quote attached to this line (required before contract for Subcontractor lines)
+  quoteFileData?: string // base64 data URI of the attached quote
   xeroCategory?: string
   notes?: string
 }

@@ -13,14 +13,14 @@ import {
 } from '@/lib/storage'
 import { getProjects } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
-import type { Project, Estimate, WeeklyRevenue, GanttEntry, WeeklyActual, ProgressClaim, ProgressPaymentStage, SubcontractorPackage } from '@/types'
+import type { Project, Estimate, WeeklyRevenue, GanttEntry, WeeklyActual, ProgressClaim, ProgressPaymentStage, SubcontractorPackage, SubcontractorClaim } from '@/types'
 import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, PROGRESSION_WARNINGS, buildChecklist, defaultStageForStatus } from '@/lib/stageConfig'
 import type { ProjectScope } from '@/types'
 import type { ProjectStage } from '@/types'
 import { calcProjectHealth, scheduleStatus, healthColour, healthBg, healthBorder, getForecastCompletion } from '@/lib/projectHealth'
 import FinancialOperations from '@/components/FinancialOperations'
 import EntityBadge from '@/components/EntityBadge'
-import { Pencil, Trash2, ChevronRight, Plus, ExternalLink, Copy, Check } from 'lucide-react'
+import { Pencil, Trash2, ChevronRight, Plus, ExternalLink, Copy, Check, X } from 'lucide-react'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -89,15 +89,23 @@ function SubcontractorsTab({ projectId }: { projectId: string }) {
     refresh()
   }
 
+  // Claimed-to-date = sum of the individual progress claims when present, else the legacy single number.
+  const claimedOf = (p: SubcontractorPackage) => (p.claims && p.claims.length ? p.claims.reduce((s, c) => s + (c.amount || 0), 0) : p.invoicedToDate)
   const totalApproved = packages.reduce((s, p) => s + p.approvedValue, 0)
   const totalVariations = packages.reduce((s, p) => s + p.variations, 0)
   const totalRevised = totalApproved + totalVariations
-  const totalInvoiced = packages.reduce((s, p) => s + p.invoicedToDate, 0)
+  const totalInvoiced = packages.reduce((s, p) => s + claimedOf(p), 0)
   const totalRemaining = totalRevised - totalInvoiced
 
   const Form = ({ pkg, onSave, onCancel }: { pkg: SubcontractorPackage; onSave: (p: SubcontractorPackage) => void; onCancel: () => void }) => {
     const [form, setForm] = useState({ ...pkg })
     const set = (k: keyof SubcontractorPackage, v: string | number) => setForm(f => ({ ...f, [k]: v }))
+    const claims = form.claims ?? []
+    const claimedSum = claims.reduce((s, c) => s + (c.amount || 0), 0)
+    const revisedTotal = (form.approvedValue || 0) + (form.variations || 0)
+    const addClaim = () => setForm(f => ({ ...f, claims: [...(f.claims ?? []), { id: generateId(), date: new Date().toISOString().slice(0, 10), amount: 0 }] }))
+    const updateClaim = (idx: number, patch: Partial<SubcontractorClaim>) => setForm(f => ({ ...f, claims: (f.claims ?? []).map((c, i) => i === idx ? { ...c, ...patch } : c) }))
+    const removeClaim = (idx: number) => setForm(f => ({ ...f, claims: (f.claims ?? []).filter((_, i) => i !== idx) }))
     return (
       <div className="border border-fg-border p-5 bg-fg-card/20 mb-4">
         <div className="grid grid-cols-2 gap-4 mb-4">
@@ -112,20 +120,15 @@ function SubcontractorsTab({ projectId }: { projectId: string }) {
               className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors" />
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
-            <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Approved Value ($)</label>
+            <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Quoted Value ($)</label>
             <input type="number" value={form.approvedValue || ''} onChange={e => set('approvedValue', parseFloat(e.target.value) || 0)}
               className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors tabular-nums" />
           </div>
           <div>
             <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Variations ($)</label>
             <input type="number" value={form.variations || ''} onChange={e => set('variations', parseFloat(e.target.value) || 0)}
-              className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors tabular-nums" />
-          </div>
-          <div>
-            <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Invoiced to Date ($)</label>
-            <input type="number" value={form.invoicedToDate || ''} onChange={e => set('invoicedToDate', parseFloat(e.target.value) || 0)}
               className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors tabular-nums" />
           </div>
         </div>
@@ -147,15 +150,35 @@ function SubcontractorsTab({ projectId }: { projectId: string }) {
           <textarea value={form.notes || ''} onChange={e => set('notes', e.target.value)} rows={2}
             className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors resize-none" />
         </div>
+        {/* Progress claims against the quote */}
+        <div className="mb-4">
+          <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-2">Progress Claims</label>
+          {claims.length === 0 && <p className="text-2xs text-fg-muted/60 mb-2">Add each progress claim the subbie makes against their quote.</p>}
+          {claims.map((c, i) => (
+            <div key={c.id} className="flex items-center gap-2 mb-1.5">
+              <input type="date" value={(c.date || '').slice(0, 10)} onChange={e => updateClaim(i, { date: e.target.value })}
+                className="px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light outline-none focus:border-fg-heading transition-colors" />
+              <input type="number" value={c.amount || ''} onChange={e => updateClaim(i, { amount: parseFloat(e.target.value) || 0 })} placeholder="Amount"
+                className="w-28 px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light text-right tabular-nums outline-none focus:border-fg-heading transition-colors" />
+              <input value={c.reference || ''} onChange={e => updateClaim(i, { reference: e.target.value })} placeholder="Ref / invoice #"
+                className="flex-1 min-w-0 px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light outline-none focus:border-fg-heading transition-colors" />
+              <button onClick={() => removeClaim(i)} className="text-red-400/50 hover:text-red-400 transition-colors p-1 shrink-0"><X className="w-3.5 h-3.5" /></button>
+            </div>
+          ))}
+          <button onClick={addClaim} className="mt-1 flex items-center gap-1 text-2xs font-light tracking-wide uppercase text-fg-muted hover:text-fg-heading transition-colors">
+            <Plus className="w-3 h-3" /> Add Claim
+          </button>
+        </div>
         {/* Revised total preview */}
         <div className="flex items-center gap-6 mb-4 text-xs font-light text-fg-muted">
-          <span>Revised Total: <strong className="text-fg-heading">{formatCurrency((form.approvedValue || 0) + (form.variations || 0))}</strong></span>
-          <span>Remaining: <strong className={`${((form.approvedValue + form.variations) - form.invoicedToDate) >= 0 ? 'text-fg-heading' : 'text-red-500'}`}>
-            {formatCurrency(Math.max(0, (form.approvedValue + form.variations) - form.invoicedToDate))}
+          <span>Revised Total: <strong className="text-fg-heading">{formatCurrency(revisedTotal)}</strong></span>
+          <span>Claimed: <strong className="text-fg-heading">{formatCurrency(claimedSum)}</strong></span>
+          <span>Remaining: <strong className={`${(revisedTotal - claimedSum) >= 0 ? 'text-fg-heading' : 'text-red-500'}`}>
+            {formatCurrency(Math.max(0, revisedTotal - claimedSum))}
           </strong></span>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => onSave(form)} className="px-5 py-2 bg-fg-dark text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-fg-darker transition-colors">Save</button>
+          <button onClick={() => onSave({ ...form, invoicedToDate: claims.length ? claimedSum : form.invoicedToDate })} className="px-5 py-2 bg-fg-dark text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-fg-darker transition-colors">Save</button>
           <button onClick={onCancel} className="text-xs font-light tracking-wide uppercase text-fg-muted hover:text-fg-heading transition-colors">Cancel</button>
         </div>
       </div>
@@ -208,13 +231,14 @@ function SubcontractorsTab({ projectId }: { projectId: string }) {
               <span className="text-right">Approved</span>
               <span className="text-right">Variations</span>
               <span className="text-right">Revised</span>
-              <span className="text-right">Invoiced</span>
+              <span className="text-right">Claimed</span>
               <span className="text-right">Remaining</span>
             </div>
             {packages.map(pkg => {
               const revised = pkg.approvedValue + pkg.variations
-              const remaining = revised - pkg.invoicedToDate
-              const pct = revised > 0 ? Math.round((pkg.invoicedToDate / revised) * 100) : 0
+              const claimed = claimedOf(pkg)
+              const remaining = revised - claimed
+              const pct = revised > 0 ? Math.round((claimed / revised) * 100) : 0
               return (
                 <div key={pkg.id} className="grid grid-cols-7 px-4 py-3 hover:bg-fg-card/20 transition-colors group">
                   <div className="col-span-2">
@@ -239,7 +263,7 @@ function SubcontractorsTab({ projectId }: { projectId: string }) {
                   </p>
                   <p className="text-xs font-light tabular-nums text-right text-fg-heading self-center">{formatCurrency(revised)}</p>
                   <div className="self-center text-right">
-                    <p className="text-xs font-light tabular-nums text-fg-heading">{formatCurrency(pkg.invoicedToDate)}</p>
+                    <p className="text-xs font-light tabular-nums text-fg-heading">{formatCurrency(claimed)}</p>
                     <div className="h-1 bg-fg-border/40 rounded-full overflow-hidden mt-1 w-16 ml-auto">
                       <div className="h-full bg-fg-dark/50 rounded-full" style={{ width: `${Math.min(100, pct)}%` }} />
                     </div>
