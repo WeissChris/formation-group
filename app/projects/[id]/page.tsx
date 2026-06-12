@@ -750,17 +750,21 @@ function ProjectFinancialPosition({
 
 type TabId = 'overview' | 'operations' | 'position' | 'costs' | 'revenue' | 'estimates' | 'notes' | 'gantt' | 'costtracker' | 'subcontractors'
 
+// Ordered to follow the project lifecycle: define (Overview/Estimates) → plan (Gantt) →
+// monitor (Position/Costs/Cost Tracker/Revenue/Subcontractors) → admin (Notes) → bill (Invoicing).
+// The Gantt drives the cost + revenue model, so it sits up front near the estimate it's built from;
+// Invoicing is the last step, so it sits at the end.
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview',     label: 'Overview' },
-  { id: 'operations',   label: 'Invoicing' },
+  { id: 'estimates',    label: 'Estimates' },
+  { id: 'gantt',        label: 'Gantt' },
   { id: 'position',     label: 'Position' },
   { id: 'costs',        label: 'Costs (Xero)' },  // Live Xero cost feed + per-account forecast override
-  { id: 'revenue',      label: 'Revenue' },
-  { id: 'estimates',    label: 'Estimates' },
-  { id: 'notes',        label: 'Notes' },
-  { id: 'gantt',        label: 'Gantt' },
   { id: 'costtracker',  label: 'Cost Tracker' },
+  { id: 'revenue',      label: 'Revenue' },
   { id: 'subcontractors', label: 'Subcontractors' },
+  { id: 'notes',        label: 'Notes' },
+  { id: 'operations',   label: 'Invoicing' },
 ]
 
 export default function ProjectDetailPage() {
