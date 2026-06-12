@@ -58,7 +58,8 @@ export default function SettingsPage() {
       window.history.replaceState({}, '', '/settings')
       const msg = reason === 'csrf' ? 'Xero connection rejected (CSRF check failed). Try again.'
         : reason === 'no_tenant' ? 'Xero connection completed but no organisation was authorised. Re-run and select an org.'
-        : reason === 'storage' ? 'Xero tokens could not be saved. Check SUPABASE_SERVICE_ROLE_KEY env var.'
+        : reason === 'same_org' ? 'That authorised the same Xero organisation already linked to the other entity. Sign into the correct Xero account/organisation for this one — easiest is to open the app in a private/incognito window and sign into that Xero account — then connect again.'
+        : reason === 'storage' ? 'Xero tokens could not be saved (a database write was rejected).'
         : reason === 'misconfigured' ? 'Xero is not fully configured on the server. Check Xero env vars.'
         : 'Xero connection failed. Please try again.'
       alert(msg)

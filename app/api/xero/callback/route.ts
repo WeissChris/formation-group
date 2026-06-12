@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { saveTokens, type XeroEntity } from '@/lib/serverXero'
+import { saveTokens, getTokens, type XeroEntity } from '@/lib/serverXero'
 
 export const runtime = 'nodejs'
 
@@ -69,10 +69,25 @@ export async function GET(request: NextRequest) {
       headers: { 'Authorization': `Bearer ${tokenData.access_token}` },
     })
     const connections = await connectionsResponse.json()
-    const tenant = Array.isArray(connections) ? connections[0] : undefined
+    const list: Array<{ tenantId?: string; tenantName?: string }> = Array.isArray(connections) ? connections : []
+
+    // Formation and Lume are different Xero orgs, but the app can be authorised to several tenants at
+    // once and /connections lists them all — so don't just take [0]. Prefer a tenant NOT already linked
+    // to the other entity, then refuse to save the SAME org for both (that means the wrong org was
+    // authorised — e.g. the browser was signed into the other org's Xero account).
+    const otherEntity: XeroEntity = entity === 'lume' ? 'formation' : 'lume'
+    const other = await getTokens(otherEntity)
+    const candidates = other?.tenantId ? list.filter(c => c.tenantId !== other.tenantId) : list
+    const tenant = candidates[0] ?? list[0]
 
     if (!tenant?.tenantId) {
       const reject = NextResponse.redirect(`${appUrl}/settings?xero=error&reason=no_tenant`)
+      reject.cookies.delete(STATE_COOKIE)
+      return reject
+    }
+    if (other?.tenantId && tenant.tenantId === other.tenantId) {
+      // The only org authorised is the one already linked to the other entity — don't clobber it.
+      const reject = NextResponse.redirect(`${appUrl}/settings?xero=error&reason=same_org`)
       reject.cookies.delete(STATE_COOKIE)
       return reject
     }
