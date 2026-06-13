@@ -73,8 +73,14 @@ export default function VariationSendPage() {
       ccEmails: cc,
     })
     setSending(false)
-    if (res.ok) { setSentOk(true); alert(`${label} sent to ${clientEmail} for approval.`) }
-    else alert(`Saved, but the email couldn't be sent: ${sendErrorMessage(res.error)}\n\nYou can try again.`)
+    if (res.ok) {
+      // Sent — head back to the project, where the variation now shows under Variations and will roll
+      // into the contract once the client approves.
+      const projectId = estimate.projectId || loadEstimates().find(e => e.id === estimate.parentEstimateId)?.projectId
+      router.push(projectId ? `/projects/${projectId}` : '/projects')
+    } else {
+      alert(`Saved, but the email couldn't be sent: ${sendErrorMessage(res.error)}\n\nYou can try again — the approval link below still works.`)
+    }
   }
 
   const inputCls = 'w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors'
