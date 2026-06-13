@@ -114,6 +114,11 @@ function subtaskBarColour(crewType: 'Formation' | 'Subcontractor'): string {
   return crewType === 'Formation' ? '#ABA89880' : '#CFC2B080'
 }
 
+function daysBetweenIso(aIso: string, bIso: string): number {
+  if (!aIso || !bIso) return 0
+  return Math.round((new Date(bIso).getTime() - new Date(aIso).getTime()) / 86400000)
+}
+
 function addDays(isoDate: string, days: number): string {
   const d = new Date(isoDate)
   d.setDate(d.getDate() + days)
@@ -759,16 +764,19 @@ export default function GanttPage() {
   // ── Schedule a task by start date + duration (foreman-friendly — no drawing) ──
   // Edits the task's primary (first) segment, creating one with the full budget if there are none.
   // Duration is in weeks; additional split work-periods are left untouched.
-  const setTaskSchedule = (category: string, startIso: string, weeks: number, subtaskId?: string) => {
+  // `duration` is in the current view's unit — weeks in Weeks view, days in Days view. weekCount is
+  // kept as the number of weeks the span covers, so the revenue/cost forecast still spreads weekly.
+  const setTaskSchedule = (category: string, startIso: string, duration: number, subtaskId?: string) => {
     const entry = getEntry(category)
-    const w = Math.max(1, Math.floor(weeks) || 1)
-    const endIso = startIso ? addDays(startIso, (w - 1) * 7) : ''
+    const n = Math.max(1, Math.floor(duration) || 1)
+    const endIso = startIso ? addDays(startIso, timeView === 'days' ? n - 1 : (n - 1) * 7) : ''
+    const weekCount = timeView === 'days' ? Math.max(1, Math.ceil(n / 7)) : n
     // Set/clear the primary (first) segment; keep any extra split periods. Sub-task segments carry no
     // budget allocation (they sub-schedule a category), category segments carry the category budget.
     const applySeg = (segs: GanttSegment[], rev: number, cost: number): GanttSegment[] => {
       if (!startIso) return segs.slice(1)
-      if (segs.length === 0) return [{ id: generateId(), startDate: startIso, endDate: endIso, weekCount: w, revenueAllocation: rev, costAllocation: cost }]
-      return segs.map((s, i) => i === 0 ? { ...s, startDate: startIso, endDate: endIso, weekCount: w } : s)
+      if (segs.length === 0) return [{ id: generateId(), startDate: startIso, endDate: endIso, weekCount, revenueAllocation: rev, costAllocation: cost }]
+      return segs.map((s, i) => i === 0 ? { ...s, startDate: startIso, endDate: endIso, weekCount } : s)
     }
     if (subtaskId) {
       const subtasks = (entry.subtasks ?? []).map(st => st.id === subtaskId ? { ...st, segments: applySeg(st.segments, 0, 0) } : st)
@@ -776,6 +784,13 @@ export default function GanttPage() {
     } else {
       updateEntry({ ...entry, segments: applySeg(entry.segments, entry.budgetedRevenue, entry.budgetedCost) })
     }
+  }
+
+  // A task's current duration in the active view's unit (weeks or days), for the input.
+  const durationOf = (segs: GanttSegment[]): number | '' => {
+    const s = segs[0]
+    if (!s) return ''
+    return timeView === 'days' ? daysBetweenIso(s.startDate, s.endDate) + 1 : (s.weekCount || 1)
   }
 
   // ── Generate Revenue Forecast ─────────────────────────────────────────────
@@ -1247,20 +1262,20 @@ export default function GanttPage() {
                           <input
                             type="date"
                             value={segs[0]?.startDate ?? ''}
-                            onChange={e => setTaskSchedule(cat.category, e.target.value, segs[0]?.weekCount || 1)}
+                            onChange={e => setTaskSchedule(cat.category, e.target.value, durationOf(segs) || 1)}
                             title="Start date — the bar places itself"
                             className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading outline-none focus:border-fg-heading w-[104px]"
                           />
                           <input
                             type="number"
                             min={1}
-                            value={segs[0]?.weekCount || ''}
-                            onChange={e => { if (segs[0]?.startDate) { const w = parseInt(e.target.value); setTaskSchedule(cat.category, segs[0].startDate, Number.isFinite(w) ? w : 1) } }}
+                            value={durationOf(segs)}
+                            onChange={e => { if (segs[0]?.startDate) { const n = parseInt(e.target.value); setTaskSchedule(cat.category, segs[0].startDate, Number.isFinite(n) ? n : 1) } }}
                             placeholder="–"
-                            title="Duration in weeks"
+                            title={timeView === 'days' ? 'Duration in days' : 'Duration in weeks'}
                             className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading text-right tabular-nums outline-none focus:border-fg-heading w-8"
                           />
-                          <span className="text-[9px] text-fg-muted/60">wk</span>
+                          <span className="text-[9px] text-fg-muted/60">{timeView === 'days' ? 'day' : 'wk'}</span>
                           <button
                             onClick={() => handleAddSplit(cat.category)}
                             title="Add another work period (split)"
@@ -1301,20 +1316,20 @@ export default function GanttPage() {
                             <input
                               type="date"
                               value={subtask.segments[0]?.startDate ?? ''}
-                              onChange={e => setTaskSchedule(cat.category, e.target.value, subtask.segments[0]?.weekCount || 1, subtask.id)}
+                              onChange={e => setTaskSchedule(cat.category, e.target.value, durationOf(subtask.segments) || 1, subtask.id)}
                               title="Start date"
                               className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading outline-none focus:border-fg-heading w-[104px]"
                             />
                             <input
                               type="number"
                               min={1}
-                              value={subtask.segments[0]?.weekCount || ''}
-                              onChange={e => { if (subtask.segments[0]?.startDate) { const w = parseInt(e.target.value); setTaskSchedule(cat.category, subtask.segments[0].startDate, Number.isFinite(w) ? w : 1, subtask.id) } }}
+                              value={durationOf(subtask.segments)}
+                              onChange={e => { if (subtask.segments[0]?.startDate) { const n = parseInt(e.target.value); setTaskSchedule(cat.category, subtask.segments[0].startDate, Number.isFinite(n) ? n : 1, subtask.id) } }}
                               placeholder="–"
-                              title="Duration in weeks"
+                              title={timeView === 'days' ? 'Duration in days' : 'Duration in weeks'}
                               className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading text-right tabular-nums outline-none focus:border-fg-heading w-8"
                             />
-                            <span className="text-[9px] text-fg-muted/60">wk</span>
+                            <span className="text-[9px] text-fg-muted/60">{timeView === 'days' ? 'day' : 'wk'}</span>
                           </div>
                         </td>
                         {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true)}
