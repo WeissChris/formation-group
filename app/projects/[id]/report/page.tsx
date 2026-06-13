@@ -64,9 +64,30 @@ export default function ProjectReportPage() {
   }
 
   const baseline = project.baseline
-  const variationsTotal = variations.reduce((s, v) => s + (v.variationAmount || getEstimateTotals(v).totalRevenue), 0)
+  // Per-variation revenue / cost / GP so variations are tracked like the estimate's own line items.
+  const variationRows = variations.map(v => {
+    const t = getEstimateTotals(v)
+    const revenue = v.variationAmount || t.totalRevenue
+    return {
+      id: v.id,
+      name: v.name || `Variation ${v.variationNumber ?? ''}`,
+      revenue,
+      cost: t.totalCost,
+      gpPct: revenue !== 0 ? ((revenue - t.totalCost) / revenue) * 100 : 0,
+    }
+  })
+  const variationsTotal = variationRows.reduce((s, r) => s + r.revenue, 0)
+  const variationsCost = variationRows.reduce((s, r) => s + r.cost, 0)
+  const baseRevenue = margins.reduce((s, m) => s + m.totalRevenue, 0)
+  const baseCostSum = margins.reduce((s, m) => s + m.totalCost, 0)
   const origContract = baseline?.contractValue ?? (row.forecastRevenue - variationsTotal)
-  const budgetCost = baseline?.costEstimate ?? null
+  // Budget cost folds in accepted variation costs so the quoted margin tracks the revised contract.
+  const baseCost = baseline?.costEstimate ?? (margins.length > 0 ? baseCostSum : null)
+  const budgetCost = baseCost != null ? baseCost + variationsCost : (variations.length > 0 ? variationsCost : null)
+  const revisedContract = row.forecastRevenue
+  const quotedGpPct = budgetCost != null && revisedContract > 0
+    ? ((revisedContract - budgetCost) / revisedContract) * 100
+    : (baseline ? baseline.gpPercent : row.quotedMarginPct)
   const fadeColor = row.fadePpts >= 0 ? 'text-green-600' : 'text-red-500'
 
   const Stat = ({ label, value, color }: { label: string; value: string; color?: string }) => (
@@ -114,7 +135,7 @@ export default function ProjectReportPage() {
           <Stat label="Forecast GP" value={costMapped ? `${formatCurrency(row.forecastGpDollars)}` : '—'} />
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mt-5">
-          <Stat label="Quoted GP %" value={baseline ? `${(baseline.gpPercent).toFixed(1)}%` : `${row.quotedMarginPct.toFixed(1)}%`} />
+          <Stat label="Quoted GP %" value={`${quotedGpPct.toFixed(1)}%`} />
           <Stat label="Forecast GP %" value={costMapped ? `${row.forecastGpPct.toFixed(1)}%` : '—'} color={costMapped ? (row.forecastGpPct >= row.targetMarginPct - 2 ? 'text-green-600' : row.forecastGpPct >= row.targetMarginPct - 10 ? 'text-amber-500' : 'text-red-500') : undefined} />
           <Stat label="Fade vs quote" value={costMapped ? `${row.fadePpts >= 0 ? '+' : ''}${row.fadePpts.toFixed(1)} pts` : '—'} color={costMapped ? fadeColor : undefined} />
           <Stat label="Status" value={costMapped ? (row.status === 'on_target' ? 'On target' : row.status === 'watch' ? 'Watch' : 'Below target') : 'No cost data'} />
@@ -144,6 +165,14 @@ export default function ProjectReportPage() {
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="border-t border-fg-border">
+                <td className="py-1.5 pr-3 text-2xs font-light tracking-architectural uppercase text-fg-muted">Base subtotal</td>
+                <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-heading">{formatCurrency(baseRevenue)}</td>
+                <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-heading">{formatCurrency(baseCostSum)}</td>
+                <td className="py-1.5 pl-2 text-right text-xs tabular-nums text-fg-muted">{baseRevenue > 0 ? (((baseRevenue - baseCostSum) / baseRevenue) * 100).toFixed(1) : '0.0'}%</td>
+              </tr>
+            </tfoot>
           </table>
         </section>
       )}
@@ -173,18 +202,38 @@ export default function ProjectReportPage() {
         </section>
       )}
 
-      {/* Variations */}
-      {variations.length > 0 && (
+      {/* Variations — tracked with revenue / cost / GP like the estimate categories */}
+      {variationRows.length > 0 && (
         <section className="mb-8">
           <p className="text-2xs font-semibold tracking-architectural uppercase text-fg-muted mb-3 border-b border-fg-border pb-1">Variations</p>
-          <ul className="space-y-1.5">
-            {variations.map(v => (
-              <li key={v.id} className="flex items-baseline justify-between text-xs font-light">
-                <span className="text-fg-heading">{v.name || `Variation ${v.variationNumber ?? ''}`}</span>
-                <span className="tabular-nums text-fg-heading">{formatCurrency(v.variationAmount || getEstimateTotals(v).totalRevenue)}</span>
-              </li>
-            ))}
-          </ul>
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="text-2xs font-light tracking-architectural uppercase text-fg-muted border-b border-fg-border/50">
+                <th className="py-1.5 pr-3">Variation</th>
+                <th className="py-1.5 px-2 text-right">Revenue</th>
+                <th className="py-1.5 px-2 text-right">Cost</th>
+                <th className="py-1.5 pl-2 text-right">GP %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {variationRows.map(r => (
+                <tr key={r.id} className="border-b border-fg-border/20">
+                  <td className="py-1.5 pr-3 text-xs font-light text-fg-heading">{r.name}</td>
+                  <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-heading">{formatCurrency(r.revenue)}</td>
+                  <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-muted">{formatCurrency(r.cost)}</td>
+                  <td className="py-1.5 pl-2 text-right text-xs tabular-nums text-fg-muted">{r.gpPct.toFixed(1)}%</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-fg-border">
+                <td className="py-1.5 pr-3 text-2xs font-light tracking-architectural uppercase text-fg-muted">Revised total</td>
+                <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-heading">{formatCurrency(revisedContract)}</td>
+                <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-heading">{budgetCost != null ? formatCurrency(budgetCost) : '—'}</td>
+                <td className="py-1.5 pl-2 text-right text-xs tabular-nums text-fg-muted">{quotedGpPct.toFixed(1)}%</td>
+              </tr>
+            </tfoot>
+          </table>
         </section>
       )}
     </div>
