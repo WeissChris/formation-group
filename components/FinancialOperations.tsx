@@ -1243,7 +1243,7 @@ export default function FinancialOperations({
 }) {
   const [subTab, setSubTab] = useState<OpsSubTab>('invoices')
 
-  const variations = estimates.filter(e => !!e.parentEstimateId)
+  const variations = estimates.filter(e => !!e.parentEstimateId && !e.archived)
   const actuals = loadWeeklyActuals(projectId)
 
   const SUB_TABS: { key: OpsSubTab; label: string }[] = [

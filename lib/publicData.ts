@@ -20,7 +20,7 @@ import {
   saveWeeklyActual as saveLocalActual,
 } from './storage'
 import { generateId } from './utils'
-import type { DesignProposal, Project, GanttEntry, WeeklyActual } from '@/types'
+import type { DesignProposal, Project, GanttEntry, WeeklyActual, Estimate } from '@/types'
 
 function client() {
   // Prefer the cookie-bound browser client when Supabase Auth is in play, fall back to
@@ -68,6 +68,35 @@ export async function acceptProposalByToken(token: string, acceptorName: string)
   }
   saveLocalProposal(updated)
   return updated
+}
+
+// ── Variation approval ───────────────────────────────────────────────────────
+
+export async function getVariationByToken(token: string): Promise<Estimate | null> {
+  const c = client()
+  if (c && isSupabaseConfigured()) {
+    const { data, error } = await c.rpc('get_variation_by_token', { p_token: token })
+    if (!error && Array.isArray(data) && data.length > 0) return mapVariationRow(data[0])
+  }
+  return null
+}
+
+export async function approveVariationByToken(token: string, name: string): Promise<Estimate | null> {
+  const c = client()
+  if (c && isSupabaseConfigured()) {
+    const { data, error } = await c.rpc('approve_variation_by_token', { p_token: token, p_approved_by_name: name })
+    if (!error && Array.isArray(data) && data.length > 0) return mapVariationRow(data[0])
+  }
+  return null
+}
+
+export async function rejectVariationByToken(token: string, name: string): Promise<Estimate | null> {
+  const c = client()
+  if (c && isSupabaseConfigured()) {
+    const { data, error } = await c.rpc('reject_variation_by_token', { p_token: token, p_rejected_by_name: name })
+    if (!error && Array.isArray(data) && data.length > 0) return mapVariationRow(data[0])
+  }
+  return null
 }
 
 // ── Foreman timesheet ────────────────────────────────────────────────────────
@@ -186,6 +215,32 @@ function mapProposalRow(row: Record<string, unknown>): DesignProposal {
     contentBlocks: (row.content_blocks as DesignProposal['contentBlocks']) || [],
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string | undefined,
+  }
+}
+
+function mapVariationRow(row: Record<string, unknown>): Estimate {
+  return {
+    id: row.id as string,
+    projectId: row.project_id as string,
+    projectName: (row.project_name as string) || '',
+    name: (row.name as string | null) || undefined,
+    version: (row.version as number) || 1,
+    status: row.status as Estimate['status'],
+    defaultMarkupFormation: (row.default_markup_formation as number) || 0,
+    defaultMarkupSubcontractor: (row.default_markup_subcontractor as number) || 0,
+    lineItems: (row.line_items as Estimate['lineItems']) || [],
+    projectMarkups: (row.project_markups as Estimate['projectMarkups']) || undefined,
+    roundingMode: (row.rounding_mode as Estimate['roundingMode']) || undefined,
+    parentEstimateId: (row.parent_estimate_id as string | null) || undefined,
+    variationNumber: row.variation_number != null ? Number(row.variation_number) : undefined,
+    variationReason: (row.variation_reason as string | null) || undefined,
+    variationAmount: row.variation_amount != null ? Number(row.variation_amount) : undefined,
+    sendMessage: (row.send_message as string | null) || undefined,
+    acceptanceToken: (row.acceptance_token as string | null) || undefined,
+    acceptedByName: (row.accepted_by_name as string | null) || undefined,
+    acceptedAt: (row.accepted_at as string | null) || undefined,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
   }
 }
 

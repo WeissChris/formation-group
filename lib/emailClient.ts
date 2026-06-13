@@ -44,6 +44,31 @@ export async function notifyProposalAccepted(acceptanceToken: string): Promise<v
   }
 }
 
+/** Ask the server to email this variation to the client for digital approval. */
+export async function requestSendVariation(body: {
+  clientName: string
+  clientEmail: string
+  acceptanceToken: string
+  variationLabel?: string
+  projectAddress?: string
+  amountLabel?: string
+  message?: string
+  ccEmails?: string
+}): Promise<SendProposalResult> {
+  try {
+    const resp = await fetch('/api/variations/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await resp.json().catch(() => ({}))
+    if (!resp.ok) return { ok: false, error: data?.error || `http_${resp.status}` }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'network' }
+  }
+}
+
 /** Friendly message for a send-error code. */
 export function sendErrorMessage(error?: string): string {
   switch (error) {

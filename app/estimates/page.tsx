@@ -72,6 +72,7 @@ export default function EstimatesPage() {
   }
 
   const filtered = estimates.filter(e => {
+    if (e.archived && filter !== 'declined') return false   // rejected variations are archived (hidden)
     if (filter !== 'all' && e.status !== filter) return false
     if (search) {
       const q = search.toLowerCase()

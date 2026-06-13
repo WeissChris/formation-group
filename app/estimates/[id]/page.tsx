@@ -1013,7 +1013,7 @@ export default function EstimateBuilderPage() {
             <Save className="w-3 h-3" /> {hasUnsavedChanges ? 'Saving…' : 'Saved'}
           </button>
           <Link
-            href={`/estimates/${estimate.id}/quote`}
+            href={estimate.parentEstimateId ? `/estimates/${estimate.id}/send` : `/estimates/${estimate.id}/quote`}
             className="flex items-center gap-2 px-3 py-1.5 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading transition-colors"
           >
             <ExternalLink className="w-3 h-3" /> {estimate.parentEstimateId ? 'Send' : 'Quote'}

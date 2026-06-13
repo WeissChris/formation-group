@@ -235,6 +235,85 @@ export async function sendProposalEmail(input: ProposalEmailInput): Promise<Send
   })
 }
 
+// ── Variation approval email ─────────────────────────────────────────────────
+
+export interface VariationEmailInput {
+  to: string
+  clientName: string
+  clientName2?: string
+  variationUrl: string
+  variationLabel?: string   // e.g. "Variation VMO-1"
+  projectAddress?: string
+  amountLabel?: string      // e.g. "+$2,400 + GST"
+  message?: string
+  cc?: string
+}
+
+function variationParagraphs(message?: string): string[] {
+  const source = (message || '').trim() || 'A variation to your project is ready for your review. Please take a look and approve it online.'
+  return source.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)
+}
+
+export function buildVariationEmailHtml(input: VariationEmailInput): string {
+  const GREEN = '#3D5A3A', INK = '#1a1a1a', BODY = '#2d2d2d', MUTED = '#8A8580'
+  const font = `-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif`
+  const name = escapeHtml(clientGreetingNames(input.clientName, input.clientName2))
+  const url = escapeHtml(input.variationUrl)
+  const label = escapeHtml(input.variationLabel || 'Variation')
+  const address = input.projectAddress ? escapeHtml(input.projectAddress.trim()) : ''
+  const amount = input.amountLabel ? escapeHtml(input.amountLabel) : ''
+  const bodyHtml = variationParagraphs(input.message).map((p, i, arr) => `<p style="margin:0 0 ${i === arr.length - 1 ? 24 : 16}px 0;font-size:14px;line-height:1.7;color:${BODY};">${escapeHtml(p)}</p>`).join('')
+  return `<!doctype html><html><body style="margin:0;padding:0;background:#eceae7;font-family:${font};color:${BODY};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eceae7;"><tr><td align="center" style="padding:28px 12px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#fff;border:1px solid #e7e4df;">
+        <tr><td style="padding:34px 44px 0 44px;">
+          <p style="margin:0 0 8px 0;font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:${GREEN};font-weight:600;">Formation Landscapes</p>
+          <h1 style="margin:0;font-size:24px;font-weight:300;line-height:1.25;color:${INK};">${label} for your approval</h1>
+          ${address ? `<p style="margin:8px 0 0 0;font-size:13px;font-weight:300;color:${MUTED};">${address}</p>` : ''}
+          ${amount ? `<p style="margin:6px 0 0 0;font-size:14px;color:${INK};">${amount}</p>` : ''}
+        </td></tr>
+        <tr><td style="padding:24px 44px 0 44px;">
+          <p style="margin:0 0 16px 0;font-size:15px;color:${INK};">Hi ${name},</p>
+          ${bodyHtml}
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 22px 0;"><tr><td style="background:${GREEN};border-radius:2px;">
+            <a href="${url}" style="display:inline-block;padding:14px 32px;font-size:14px;color:#fff;text-decoration:none;letter-spacing:0.04em;">Review &amp; approve &rarr;</a>
+          </td></tr></table>
+          <p style="margin:0 0 4px 0;font-size:12px;color:${MUTED};">Or paste this link into your browser:</p>
+          <p style="margin:0 0 30px 0;font-size:12px;line-height:1.5;"><a href="${url}" style="color:${GREEN};word-break:break-all;">${url}</a></p>
+        </td></tr>
+        <tr><td style="padding:24px 44px 34px 44px;border-top:1px solid #eeeae5;">
+          <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:${BODY};">Any questions? Just reply to this email.</p>
+          <p style="margin:0;font-size:14px;line-height:1.6;color:${BODY};">Kind regards,<br><strong style="font-weight:600;">Chris Weiss</strong><br><span style="color:${MUTED};">Formation Landscapes</span></p>
+        </td></tr>
+      </table>
+    </td></tr></table></body></html>`
+}
+
+export function buildVariationEmailText(input: VariationEmailInput): string {
+  return [
+    `Hi ${clientGreetingNames(input.clientName, input.clientName2)},`, '',
+    variationParagraphs(input.message).join('\n\n'), '',
+    `Review & approve: ${input.variationUrl}`, '',
+    'Any questions, just reply to this email.', '',
+    'Kind regards,', 'Chris Weiss', 'Formation Landscapes',
+  ].join('\n')
+}
+
+export async function sendVariationEmail(input: VariationEmailInput): Promise<SendResult> {
+  if (!isValidEmail(input.to)) return { ok: false, error: 'invalid_email' }
+  const bcc = (process.env.PROPOSAL_BCC || DEFAULT_BCC).trim()
+  const toLower = input.to.trim().toLowerCase()
+  const cc = parseEmailList(input.cc).filter(e => e.toLowerCase() !== toLower)
+  return sendViaResend({
+    to: input.to.trim(),
+    cc: cc.length ? cc : undefined,
+    bcc: bcc ? [bcc] : undefined,
+    subject: `${input.variationLabel || 'Variation'} for approval — Formation Landscapes`,
+    html: buildVariationEmailHtml(input),
+    text: buildVariationEmailText(input),
+  })
+}
+
 // ── Acceptance emails ────────────────────────────────────────────────────────
 
 export interface AcceptanceInput {
