@@ -159,9 +159,30 @@ export default function LoginGate({ children }: { children: ReactNode }) {
                 const r = await sa.getProjects()
                 if (r.length) { r.forEach(x => st.saveProject(x)); console.log(`[hydrate] restored ${r.length} project(s)`) }
               }
-              if (st.loadEstimates().length === 0) {
-                const r = await sa.getEstimates()
-                if (r.length) { r.forEach(x => st.saveEstimate(x)); console.log(`[hydrate] restored ${r.length} estimate(s)`) }
+              const remoteEst = await sa.getEstimates()
+              const localEst = st.loadEstimates()
+              if (localEst.length === 0 && remoteEst.length) {
+                remoteEst.forEach(x => st.saveEstimate(x))
+                console.log(`[hydrate] restored ${remoteEst.length} estimate(s)`)
+              } else {
+                // Reconcile variation approvals: the client approves/rejects on the public /variation
+                // page (straight to Supabase), so lift a local 'sent' variation to the state the client
+                // set — otherwise the office + project never see the approval.
+                const byId = new Map(remoteEst.map(e => [e.id, e]))
+                let reconciled = 0
+                for (const local of localEst) {
+                  if (!local.parentEstimateId) continue
+                  const r = byId.get(local.id)
+                  if (!r) continue
+                  if (r.status === 'accepted' && local.status !== 'accepted') {
+                    st.saveEstimate({ ...local, status: 'accepted', acceptedAt: r.acceptedAt ?? local.acceptedAt, acceptedByName: r.acceptedByName ?? local.acceptedByName, archived: false })
+                    reconciled++
+                  } else if (r.archived && !local.archived) {
+                    st.saveEstimate({ ...local, status: r.status, archived: true, declinedAt: r.declinedAt, declinedByName: r.declinedByName })
+                    reconciled++
+                  }
+                }
+                if (reconciled) console.log(`[hydrate] reconciled ${reconciled} variation(s)`)
               }
               if (st.loadWeeklyRevenue().length === 0) {
                 const r = await sa.getRevenue()
