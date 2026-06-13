@@ -5,9 +5,10 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { loadProjects, loadEstimatesByProject, loadProgressClaims, saveProject } from '@/lib/storage'
 import { getProjects } from '@/lib/storageAsync'
-import { getProjectCosts, type ProjectCostRow } from '@/lib/xero'
+import { getProjectCosts, getProjectCostPeriods, type ProjectCostRow } from '@/lib/xero'
 import { computeLiveJobRow, type LiveJobRow } from '@/lib/liveJobs'
-import { getMarginSummary, getEstimateTotals } from '@/lib/estimateCalculations'
+import { getMarginSummary, getEstimateTotals, activeLineItems, costBreakdown } from '@/lib/estimateCalculations'
+import { CostCurve } from '@/components/CostCurve'
 import { formatCurrency } from '@/lib/utils'
 import type { Project, Estimate, CategoryMargin } from '@/types'
 
@@ -23,6 +24,8 @@ export default function ProjectReportPage() {
   const [costMapped, setCostMapped] = useState(false)
   const [generatedAt, setGeneratedAt] = useState('')
   const [loaded, setLoaded] = useState(false)
+  const [baseEstimate, setBaseEstimate] = useState<Estimate | null>(null)
+  const [labourActual, setLabourActual] = useState(0)
 
   useEffect(() => {
     ;(async () => {
@@ -36,11 +39,16 @@ export default function ProjectReportPage() {
       const accepted = loadEstimatesByProject(id).filter(e => e.status === 'accepted')
       const base = accepted.find(e => !e.parentEstimateId)
       setMargins(base ? getMarginSummary(base) : [])
+      setBaseEstimate(base ?? null)
       setVariations(accepted.filter(e => e.parentEstimateId))
       const claims = loadProgressClaims(id)
       const cr = await getProjectCosts(id)
       setCosts(cr.costs)
       setCostMapped(cr.mapped)
+      try {
+        const cp = await getProjectCostPeriods(id)
+        setLabourActual(cp.periods.filter(p => p.source === 'labour').reduce((s, p) => s + p.amount_ex_gst, 0))
+      } catch { /* no time-phased cost periods yet */ }
       const forecastFinalCost = cr.costs.reduce((s, c) => s + (c.forecast_final ?? c.amount_ex_gst), 0)
       if (p) {
         setRow(computeLiveJobRow({
@@ -89,6 +97,53 @@ export default function ProjectReportPage() {
     ? ((revisedContract - budgetCost) / revisedContract) * 100
     : (baseline ? baseline.gpPercent : row.quotedMarginPct)
   const fadeColor = row.fadePpts >= 0 ? 'text-green-600' : 'text-red-500'
+
+  // ── Insights: cost composition + labour, from the base estimate + accepted variations ──
+  const allItems = baseEstimate ? [...activeLineItems(baseEstimate), ...variations.flatMap(v => activeLineItems(v))] : []
+  const breakdown = costBreakdown(allItems)
+  const labourHours = allItems.filter(i => i.type === 'Labour').reduce((s, i) => s + (i.units || 0), 0)
+  const labourRate = labourHours > 0 ? breakdown.labour / labourHours : 0
+  const hoursUsedEst = labourRate > 0 ? labourActual / labourRate : 0
+  const COST_TYPES = [
+    { key: 'labour' as const, label: 'Labour', colour: '#7C9A92' },
+    { key: 'material' as const, label: 'Materials', colour: '#B08D57' },
+    { key: 'subcontractor' as const, label: 'Subcontractors', colour: '#9A7C9A' },
+    { key: 'equipment' as const, label: 'Equipment', colour: '#9E9890' },
+  ]
+  const pctOf = (n: number, d: number) => (d > 0 ? (n / d) * 100 : 0)
+  const target = row.targetMarginPct
+  const belowCats = margins.filter(m => !m.meetsTarget).map(m => m.category)
+
+  // Plain-English commentary for the foreman — adapts to whether actual cost has started flowing.
+  const commentary: { tone: 'good' | 'warn' | 'neutral'; text: string }[] = []
+  if (budgetCost != null) {
+    commentary.push({
+      tone: quotedGpPct >= target ? 'good' : 'warn',
+      text: `Quoted gross profit is ${formatCurrency(revisedContract - budgetCost)} (${quotedGpPct.toFixed(1)}%), ${quotedGpPct >= target ? 'above' : 'below'} the ${target.toFixed(0)}% target.`,
+    })
+  }
+  if (breakdown.total > 0) {
+    const biggest = [...COST_TYPES].filter(t => breakdown[t.key] > 0).sort((a, b) => breakdown[b.key] - breakdown[a.key])[0]
+    if (biggest) {
+      commentary.push({
+        tone: 'neutral',
+        text: `${biggest.label} is the biggest cost at ${formatCurrency(breakdown[biggest.key])} (${pctOf(breakdown[biggest.key], breakdown.total).toFixed(0)}% of cost)${biggest.key === 'labour' && labourHours > 0 ? `, about ${Math.round(labourHours).toLocaleString()} hours at ${formatCurrency(labourRate)}/hr` : ''}.`,
+      })
+    }
+  }
+  commentary.push({ tone: 'neutral', text: `Invoiced ${formatCurrency(row.invoicedToDate)} of ${formatCurrency(revisedContract)} so far (${row.pctBilled.toFixed(0)}%).` })
+  if (costMapped) {
+    const over = row.forecastFinalCost > (budgetCost ?? 0)
+    commentary.push({
+      tone: over ? 'warn' : 'good',
+      text: `Actual cost to date ${formatCurrency(row.costToDate)}; forecast final ${formatCurrency(row.forecastFinalCost)} vs a ${formatCurrency(budgetCost ?? 0)} budget (${over ? 'over' : 'under'} by ${formatCurrency(Math.abs(row.forecastFinalCost - (budgetCost ?? 0)))}).`,
+    })
+  } else {
+    commentary.push({ tone: 'neutral', text: `No actual cost booked yet — the figures below are the plan. They start tracking against actuals once Xero is synced or the foreman logs costs on site.` })
+  }
+  if (belowCats.length > 0) {
+    commentary.push({ tone: 'warn', text: `Watch margin on ${belowCats.join(', ')} — below the category target.` })
+  }
 
   const Stat = ({ label, value, color }: { label: string; value: string; color?: string }) => (
     <div>
@@ -140,6 +195,72 @@ export default function ProjectReportPage() {
           <Stat label="Fade vs quote" value={costMapped ? `${row.fadePpts >= 0 ? '+' : ''}${row.fadePpts.toFixed(1)} pts` : '—'} color={costMapped ? fadeColor : undefined} />
           <Stat label="Status" value={costMapped ? (row.status === 'on_target' ? 'On target' : row.status === 'watch' ? 'Watch' : 'Below target') : 'No cost data'} />
         </div>
+      </section>
+
+      {/* Insights & commentary — foreman-facing */}
+      <section className="mb-8">
+        <p className="text-2xs font-semibold tracking-architectural uppercase text-fg-muted mb-3 border-b border-fg-border pb-1">Insights</p>
+
+        {commentary.length > 0 && (
+          <ul className="space-y-1.5 mb-6">
+            {commentary.map((c, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs font-light text-fg-heading">
+                <span className="mt-1.5 inline-block w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: c.tone === 'good' ? '#3D5A3A' : c.tone === 'warn' ? '#C0563B' : '#9E9890' }} />
+                <span>{c.text}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {breakdown.total > 0 && (
+          <div className="grid md:grid-cols-2 gap-6 mb-6">
+            {/* Cost composition */}
+            <div>
+              <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-2">Where the money goes</p>
+              <div className="flex h-3 w-full overflow-hidden rounded-sm mb-3">
+                {COST_TYPES.filter(t => breakdown[t.key] > 0).map(t => (
+                  <div key={t.key} style={{ width: `${pctOf(breakdown[t.key], breakdown.total)}%`, background: t.colour }} title={`${t.label} ${formatCurrency(breakdown[t.key])}`} />
+                ))}
+              </div>
+              <div className="space-y-1">
+                {COST_TYPES.filter(t => breakdown[t.key] > 0).map(t => (
+                  <div key={t.key} className="flex items-center justify-between text-xs font-light">
+                    <span className="flex items-center gap-2 text-fg-heading">
+                      <span className="inline-block w-2 h-2 rounded-full" style={{ background: t.colour }} />
+                      {t.label}
+                    </span>
+                    <span className="tabular-nums text-fg-muted">{formatCurrency(breakdown[t.key])} · {pctOf(breakdown[t.key], breakdown.total).toFixed(0)}%</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between text-xs border-t border-fg-border/40 pt-1 mt-1">
+                  <span className="text-fg-heading">Total cost</span>
+                  <span className="tabular-nums text-fg-heading">{formatCurrency(breakdown.total)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Labour */}
+            <div>
+              <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-2">Labour</p>
+              <div className="grid grid-cols-2 gap-y-3 gap-x-4">
+                <div><p className="text-2xs text-fg-muted mb-0.5">Budgeted hours</p><p className="text-sm font-light tabular-nums text-fg-heading">{labourHours > 0 ? Math.round(labourHours).toLocaleString() : '—'}</p></div>
+                <div><p className="text-2xs text-fg-muted mb-0.5">Rate</p><p className="text-sm font-light tabular-nums text-fg-heading">{labourRate > 0 ? `${formatCurrency(labourRate)}/hr` : '—'}</p></div>
+                <div><p className="text-2xs text-fg-muted mb-0.5">Budgeted labour cost</p><p className="text-sm font-light tabular-nums text-fg-heading">{formatCurrency(breakdown.labour)}</p></div>
+                <div><p className="text-2xs text-fg-muted mb-0.5">Share of cost</p><p className="text-sm font-light tabular-nums text-fg-heading">{pctOf(breakdown.labour, breakdown.total).toFixed(0)}%</p></div>
+                <div><p className="text-2xs text-fg-muted mb-0.5">Labour spent to date</p><p className="text-sm font-light tabular-nums text-fg-heading">{labourActual > 0 ? formatCurrency(labourActual) : '—'}</p></div>
+                <div><p className="text-2xs text-fg-muted mb-0.5">Hours used{labourActual > 0 ? ' (est.)' : ''}</p><p className="text-sm font-light tabular-nums text-fg-heading">{hoursUsedEst > 0 ? Math.round(hoursUsedEst).toLocaleString() : '—'}</p></div>
+              </div>
+              {labourActual > 0 ? (
+                <p className="text-2xs font-light text-fg-muted mt-3">{pctOf(labourActual, breakdown.labour).toFixed(0)}% of the labour budget spent. Hours used are estimated from cost ÷ rate.</p>
+              ) : (
+                <p className="text-2xs font-light text-fg-muted/70 mt-3">No labour booked yet. Actual hours need a foreman timesheet — ask me to wire it up.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Cost — budget vs actual S-curve (lights up once Xero is synced) */}
+        <CostCurve projectId={id} />
       </section>
 
       {/* Quoted plan by category */}
