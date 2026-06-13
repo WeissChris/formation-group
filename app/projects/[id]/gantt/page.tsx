@@ -759,19 +759,22 @@ export default function GanttPage() {
   // ── Schedule a task by start date + duration (foreman-friendly — no drawing) ──
   // Edits the task's primary (first) segment, creating one with the full budget if there are none.
   // Duration is in weeks; additional split work-periods are left untouched.
-  const setTaskSchedule = (category: string, startIso: string, weeks: number) => {
+  const setTaskSchedule = (category: string, startIso: string, weeks: number, subtaskId?: string) => {
     const entry = getEntry(category)
-    const segs = entry.segments
-    if (!startIso) {
-      updateEntry({ ...entry, segments: segs.slice(1) })   // cleared start → drop the primary bar
-      return
-    }
     const w = Math.max(1, Math.floor(weeks) || 1)
-    const endIso = addDays(startIso, (w - 1) * 7)
-    if (segs.length === 0) {
-      updateEntry({ ...entry, segments: [{ id: generateId(), startDate: startIso, endDate: endIso, weekCount: w, revenueAllocation: entry.budgetedRevenue, costAllocation: entry.budgetedCost }] })
+    const endIso = startIso ? addDays(startIso, (w - 1) * 7) : ''
+    // Set/clear the primary (first) segment; keep any extra split periods. Sub-task segments carry no
+    // budget allocation (they sub-schedule a category), category segments carry the category budget.
+    const applySeg = (segs: GanttSegment[], rev: number, cost: number): GanttSegment[] => {
+      if (!startIso) return segs.slice(1)
+      if (segs.length === 0) return [{ id: generateId(), startDate: startIso, endDate: endIso, weekCount: w, revenueAllocation: rev, costAllocation: cost }]
+      return segs.map((s, i) => i === 0 ? { ...s, startDate: startIso, endDate: endIso, weekCount: w } : s)
+    }
+    if (subtaskId) {
+      const subtasks = (entry.subtasks ?? []).map(st => st.id === subtaskId ? { ...st, segments: applySeg(st.segments, 0, 0) } : st)
+      updateEntry({ ...entry, subtasks })
     } else {
-      updateEntry({ ...entry, segments: segs.map((s, i) => i === 0 ? { ...s, startDate: startIso, endDate: endIso, weekCount: w } : s) })
+      updateEntry({ ...entry, segments: applySeg(entry.segments, entry.budgetedRevenue, entry.budgetedCost) })
     }
   }
 
@@ -1292,7 +1295,28 @@ export default function GanttPage() {
                         </td>
                         <td className="border-r border-fg-border" style={{ width: COL_CREW }} />
                         <td className="border-r border-fg-border" style={{ width: COL_BUDGET }} />
-                        <td className="border-r border-fg-border" style={{ width: COL_SCHED }} />
+                        {/* Sub-task schedule: start date + duration, same as the category rows */}
+                        <td className="border-r border-fg-border px-1.5 py-1 align-middle" style={{ width: COL_SCHED }}>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="date"
+                              value={subtask.segments[0]?.startDate ?? ''}
+                              onChange={e => setTaskSchedule(cat.category, e.target.value, subtask.segments[0]?.weekCount || 1, subtask.id)}
+                              title="Start date"
+                              className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading outline-none focus:border-fg-heading w-[104px]"
+                            />
+                            <input
+                              type="number"
+                              min={1}
+                              value={subtask.segments[0]?.weekCount || ''}
+                              onChange={e => { if (subtask.segments[0]?.startDate) { const w = parseInt(e.target.value); setTaskSchedule(cat.category, subtask.segments[0].startDate, Number.isFinite(w) ? w : 1, subtask.id) } }}
+                              placeholder="–"
+                              title="Duration in weeks"
+                              className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading text-right tabular-nums outline-none focus:border-fg-heading w-8"
+                            />
+                            <span className="text-[9px] text-fg-muted/60">wk</span>
+                          </div>
+                        </td>
                         {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true)}
                       </tr>
                     ))}
