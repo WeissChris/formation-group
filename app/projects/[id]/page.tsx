@@ -11,7 +11,7 @@ import {
   loadProgressPaymentStages, saveProject, deleteProject,
   loadSubcontractors, saveSubcontractor, deleteSubcontractor,
 } from '@/lib/storage'
-import { getProjects } from '@/lib/storageAsync'
+import { getProjects, reconcileVariations } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import type { Project, Estimate, WeeklyRevenue, GanttEntry, WeeklyActual, ProgressClaim, ProgressPaymentStage, SubcontractorPackage, SubcontractorClaim } from '@/types'
 import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, PROGRESSION_WARNINGS, buildChecklist, defaultStageForStatus } from '@/lib/stageConfig'
@@ -848,6 +848,9 @@ export default function ProjectDetailPage() {
       setActuals(loadWeeklyActuals(id))
       setProgressClaims(loadProgressClaims(id))
       setStages(loadProgressPaymentStages(id))
+      // Pull any client variation approvals/rejections down from Supabase, then refresh the estimates.
+      const changed = await reconcileVariations()
+      if (changed > 0 && !cancelled) setEstimates(loadEstimates().filter(e => e.projectId === id))
     })()
     return () => { cancelled = true }
   }, [id, router])

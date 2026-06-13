@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { loadEstimates, deleteEstimate, saveEstimate } from '@/lib/storage'
-import { getEstimates } from '@/lib/storageAsync'
+import { getEstimates, reconcileVariations } from '@/lib/storageAsync'
 import { formatCurrency } from '@/lib/utils'
 import { getEstimateTotals, readLineItemRevenue, getEstimateContract } from '@/lib/estimateCalculations'
 import type { Estimate } from '@/types'
@@ -37,6 +37,9 @@ export default function EstimatesPage() {
         if (remote.length) { remote.forEach(saveEstimate); local = loadEstimates() }
       }
       if (!cancelled) setEstimates(local)
+      // Pull any client variation approvals/rejections down from Supabase, then refresh.
+      const changed = await reconcileVariations()
+      if (changed > 0 && !cancelled) setEstimates(loadEstimates())
     })()
     return () => { cancelled = true }
   }, [])

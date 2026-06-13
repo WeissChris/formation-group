@@ -257,6 +257,32 @@ export async function upsertEstimate(estimate: Estimate): Promise<void> {
   }
 }
 
+/**
+ * Pull client variation responses down from Supabase into localStorage. The client approves/rejects on
+ * the public /variation page (straight to Supabase); the office reads localStorage, so without this a
+ * 'sent' variation never flips to accepted/archived until the next login. Call it when showing a
+ * project or the estimates list. Returns how many local variations changed.
+ */
+export async function reconcileVariations(): Promise<number> {
+  if (!isSupabaseConfigured() || !supabase) return 0
+  const remote = await getEstimates()
+  const byId = new Map(remote.map(e => [e.id, e]))
+  let changed = 0
+  for (const local of loadEstimates()) {
+    if (!local.parentEstimateId) continue
+    const r = byId.get(local.id)
+    if (!r) continue
+    if (r.status === 'accepted' && local.status !== 'accepted') {
+      saveEstimate({ ...local, status: 'accepted', acceptedAt: r.acceptedAt ?? local.acceptedAt, acceptedByName: r.acceptedByName ?? local.acceptedByName, archived: false })
+      changed++
+    } else if (r.archived && !local.archived) {
+      saveEstimate({ ...local, status: r.status, archived: true, declinedAt: r.declinedAt, declinedByName: r.declinedByName })
+      changed++
+    }
+  }
+  return changed
+}
+
 // ── REVENUE ──────────────────────────────────────────────────────────────────
 
 export async function getRevenue(): Promise<WeeklyRevenue[]> {
