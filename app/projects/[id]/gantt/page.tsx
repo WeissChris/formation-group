@@ -442,46 +442,32 @@ export default function GanttPage() {
     const entry = getEntry(category)
     const iso = dateForColIdx(colIdx)
 
-    // Check for existing segment hit
+    const segsNow = subtaskId
+      ? (entry.subtasks?.find(s => s.id === subtaskId)?.segments ?? [])
+      : entry.segments
+
+    // Clicking inside an existing (dated) bar starts a move, not a new draw — handled by the bar itself.
+    if (segsNow.some(s => s.startDate && iso >= s.startDate && iso <= s.endDate)) return
+
+    // Drawing on blank space sets this task's single bar (collapsing any stray bars) so the
+    // Start/Duration fields always mirror what's on the grid. If a Split has added an empty
+    // work-period slot, fill that instead (keeping the other periods) — that's how you draw a
+    // genuine multi-period task: draw, click Split, draw again. Adjust existing bars by dragging them.
+    const pendingIdx = segsNow.findIndex(s => !s.startDate)
+    const drawId = pendingIdx >= 0 ? segsNow[pendingIdx].id : generateId()
+    const nextSegs = (rev: number, cost: number): GanttSegment[] =>
+      pendingIdx >= 0
+        ? segsNow.map((s, i) => i === pendingIdx ? { ...s, startDate: iso, endDate: iso, weekCount: 1 } : s)
+        : [{ id: drawId, startDate: iso, endDate: iso, weekCount: 1, revenueAllocation: rev, costAllocation: cost }]
+
     if (subtaskId) {
-      const subtask = entry.subtasks?.find(s => s.id === subtaskId)
-      const hit = subtask?.segments.find(s => iso >= s.startDate && iso <= s.endDate)
-      if (hit) return
+      const subtasks = (entry.subtasks ?? []).map(st => st.id === subtaskId ? { ...st, segments: nextSegs(0, 0) } : st)
+      updateEntry({ ...entry, subtasks })
     } else {
-      const hit = entry.segments.find(s => iso >= s.startDate && iso <= s.endDate)
-      if (hit) return
+      updateEntry({ ...entry, segments: nextSegs(entry.budgetedRevenue, entry.budgetedCost) })
     }
 
-    const newSegId = generateId()
-
-    if (subtaskId) {
-      const subtasks = entry.subtasks ?? []
-      const updatedSubtasks = subtasks.map(st => {
-        if (st.id !== subtaskId) return st
-        const n = st.segments.length + 1
-        const newSeg: GanttSegment = {
-          id: newSegId, startDate: iso, endDate: iso, weekCount: 1,
-          revenueAllocation: 0, costAllocation: 0,
-        }
-        return { ...st, segments: [...st.segments, newSeg] }
-      })
-      updateEntry({ ...entry, subtasks: updatedSubtasks })
-    } else {
-      const n = entry.segments.length + 1
-      const newSeg: GanttSegment = {
-        id: newSegId, startDate: iso, endDate: iso, weekCount: 1,
-        revenueAllocation: evenSplit(entry.budgetedRevenue, n),
-        costAllocation: evenSplit(entry.budgetedCost, n),
-      }
-      const updatedSegs = entry.segments.map(s => ({
-        ...s,
-        revenueAllocation: evenSplit(entry.budgetedRevenue, n),
-        costAllocation: evenSplit(entry.budgetedCost, n),
-      }))
-      updateEntry({ ...entry, segments: [...updatedSegs, newSeg] })
-    }
-
-    setDrawing({ category, subtaskId, segId: newSegId, anchorIdx: colIdx })
+    setDrawing({ category, subtaskId, segId: drawId, anchorIdx: colIdx })
   }
 
   const handleCellMouseEnter = (category: string, colIdx: number, subtaskId?: string) => {
@@ -496,7 +482,7 @@ export default function GanttPage() {
       const endIso = anchorIso <= currentIso ? currentIso : anchorIso
       const wc = timeView === 'weeks'
         ? weeksBetween(startIso, endIso)
-        : Math.max(1, colIdx - drawing.anchorIdx + 1) // approximation for days
+        : Math.max(1, Math.ceil((daysBetweenIso(startIso, endIso) + 1) / 7)) // forecast still spreads weekly in days view
 
       if (subtaskId) {
         const updatedSubtasks = (entry.subtasks ?? []).map(st => {
@@ -531,7 +517,7 @@ export default function GanttPage() {
       const newEndIdx = Math.max(0, Math.min(colCount - 1, origEndIdx + offset))
       const newStart = dateForColIdx(newStartIdx)
       const newEnd = dateForColIdx(newEndIdx)
-      const wc = weeksBetween(newStart, newEnd)
+      // A move preserves the bar's length, so keep its weekCount (forecast spread) unchanged.
 
       if (moving.subtaskId) {
         const updatedSubtasks = (entry.subtasks ?? []).map(st => {
@@ -539,14 +525,14 @@ export default function GanttPage() {
           return {
             ...st,
             segments: st.segments.map(s =>
-              s.id === moving.segId ? { ...s, startDate: newStart, endDate: newEnd, weekCount: wc } : s
+              s.id === moving.segId ? { ...s, startDate: newStart, endDate: newEnd } : s
             ),
           }
         })
         updateEntry({ ...entry, subtasks: updatedSubtasks })
       } else {
         const updatedSegs = entry.segments.map(s =>
-          s.id === moving.segId ? { ...s, startDate: newStart, endDate: newEnd, weekCount: wc } : s
+          s.id === moving.segId ? { ...s, startDate: newStart, endDate: newEnd } : s
         )
         updateEntry({ ...entry, segments: updatedSegs })
       }
