@@ -6,6 +6,7 @@ import { loadProjects, loadWeeklyRevenue, loadDesignProjects, loadProgressPaymen
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { seedDemoData } from '@/lib/seed'
 import { formatCurrency, getFinancialYear, MONTH_NAMES } from '@/lib/utils'
+import { getEstimateTotals } from '@/lib/estimateCalculations'
 import type { Project, WeeklyRevenue, GanttEntry, WeeklyActual } from '@/types'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { calcProjectHealth, scheduleStatus } from '@/lib/projectHealth'
@@ -226,7 +227,11 @@ export default function DashboardPage() {
     return diff >= 0 && diff <= 90
   }).reduce((s, r) => s + r.plannedRevenue, 0)
 
-  const securedRevenue = activeProjects.reduce((s, p) => s + (p.contractValue || 0), 0)
+  // Approved variations across active projects, and the revised contract total (base + variations).
+  const variationsTotal = allEstimates
+    .filter(e => !!e.parentEstimateId && e.status === 'accepted' && !e.archived && activeProjects.some(p => p.id === e.projectId))
+    .reduce((s, v) => s + (v.variationAmount || getEstimateTotals(v).totalRevenue), 0)
+  const securedRevenue = activeProjects.reduce((s, p) => s + (p.contractValue || 0), 0) + variationsTotal
 
   // Per-project GP% for formation projects
   const projectGP = formationProjects.map(p => {
@@ -561,7 +566,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-px bg-fg-border">
           {[
             { label: 'Active Jobs',            subtitle: 'Currently on site or in progress', value: String(activeProjects.length),    href: '/projects' },
-            { label: 'Contract Value (Active)', subtitle: 'Total active project contracts',   value: formatCurrency(securedRevenue),   href: '/projects' },
+            { label: 'Contract Value (Active)', subtitle: variationsTotal > 0 ? `Incl. ${formatCurrency(variationsTotal)} approved variations` : 'Total active project contracts', value: formatCurrency(securedRevenue), href: '/projects' },
             { label: 'Future Revenue',          subtitle: 'Scheduled but not yet invoiced',   value: formatCurrency(pipeline),         href: '/revenue' },
             { label: 'Next 30 Days',            subtitle: 'Scheduled invoicing',               value: formatCurrency(next30Days),       href: '/revenue' },
             { label: 'Next 90 Days',            subtitle: '3-month outlook',                   value: formatCurrency(next90Days),       href: '/revenue' },

@@ -17,7 +17,7 @@ import { isSupabaseConfigured } from '@/lib/supabase'
 import { upsertProject, upsertProposal, upsertEstimate, upsertRevenue, upsertDesignProject, upsertPaymentStage, upsertActual } from '@/lib/storageAsync'
 
 // Routes that are publicly accessible without auth
-const PUBLIC_PATHS = ['/proposal/', '/foreman/']
+const PUBLIC_PATHS = ['/proposal/', '/foreman/', '/variation/']
 
 export default function LoginGate({ children }: { children: ReactNode }) {
   const pathname = usePathname()

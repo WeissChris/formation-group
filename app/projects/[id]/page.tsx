@@ -13,6 +13,7 @@ import {
 } from '@/lib/storage'
 import { getProjects, reconcileVariations } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
+import { getEstimateTotals } from '@/lib/estimateCalculations'
 import type { Project, Estimate, WeeklyRevenue, GanttEntry, WeeklyActual, ProgressClaim, ProgressPaymentStage, SubcontractorPackage, SubcontractorClaim } from '@/types'
 import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, PROGRESSION_WARNINGS, buildChecklist, defaultStageForStatus } from '@/lib/stageConfig'
 import type { ProjectScope } from '@/types'
@@ -957,6 +958,12 @@ export default function ProjectDetailPage() {
     )
   }
 
+  // Revised contract = original contract + accepted (non-archived) variations — matches
+  // computeLiveJobRow so the Overview agrees with the Position tab + dashboard.
+  const acceptedVariations = estimates.filter(e => !!e.parentEstimateId && e.status === 'accepted' && !e.archived)
+  const variationsTotal = acceptedVariations.reduce((s, v) => s + (v.variationAmount || getEstimateTotals(v).totalRevenue), 0)
+  const revisedContract = (project.contractValue || 0) + variationsTotal
+
   // Build estimate tree (parent → variations)
   const parentEstimates = estimates.filter(e => !e.parentEstimateId)
   const variationsByParent: Record<string, Estimate[]> = {}
@@ -991,7 +998,7 @@ export default function ProjectDetailPage() {
                 }`}>
                   {STAGE_LABELS[(project.stage as ProjectStage) || 'estimating']}
                 </span>
-                <span className="text-sm font-light text-fg-muted">{formatCurrency(project.contractValue)}</span>
+                <span className="text-sm font-light text-fg-muted" title={variationsTotal !== 0 ? `${formatCurrency(project.contractValue)} + ${formatCurrency(variationsTotal)} variations` : undefined}>{formatCurrency(revisedContract)}</span>
                 {(() => {
                   const { status, daysSlippage } = scheduleStatus(project)
                   if (!project.baseline?.plannedCompletion) return null
@@ -1104,7 +1111,10 @@ export default function ProjectDetailPage() {
               </div>
               <div>
                 <p className="text-2xs text-fg-muted tracking-wide uppercase mb-1">Contract Value</p>
-                <p className="text-sm font-light text-fg-heading">{formatCurrency(project.contractValue)}</p>
+                <p className="text-sm font-light text-fg-heading">{formatCurrency(revisedContract)}</p>
+                {variationsTotal !== 0 && (
+                  <p className="text-2xs font-light text-fg-muted/70 mt-0.5">{formatCurrency(project.contractValue)} + {formatCurrency(variationsTotal)} variations</p>
+                )}
               </div>
               <div>
                 <p className="text-2xs text-fg-muted tracking-wide uppercase mb-1">Invoice Method</p>
@@ -1152,12 +1162,13 @@ export default function ProjectDetailPage() {
               const invoicedToDate = progressClaims
                 .filter(c => c.status === 'sent' || c.status === 'paid')
                 .reduce((s, c) => s + c.subtotalEx, 0)
-              const remaining = Math.max(0, project.contractValue - invoicedToDate)
+              const remaining = Math.max(0, revisedContract - invoicedToDate)
               return (
                 <div className="grid grid-cols-3 gap-3 mt-4">
                   <div className="bg-fg-bg border border-fg-border rounded-sm p-4">
                     <p className="text-2xs text-fg-muted tracking-wide uppercase mb-1">Contract Value</p>
-                    <p className="text-lg font-light text-fg-heading">{formatCurrency(project.contractValue)}</p>
+                    <p className="text-lg font-light text-fg-heading">{formatCurrency(revisedContract)}</p>
+                    {variationsTotal !== 0 && <p className="text-2xs text-fg-muted/70 mt-0.5">incl. {formatCurrency(variationsTotal)} variations</p>}
                   </div>
                   <div className="bg-fg-bg border border-fg-border rounded-sm p-4">
                     <p className="text-2xs text-fg-muted tracking-wide uppercase mb-1">Invoiced to Date</p>
