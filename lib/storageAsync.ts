@@ -205,7 +205,24 @@ export async function getEstimates(): Promise<Estimate[]> {
 export async function upsertEstimate(estimate: Estimate): Promise<void> {
   saveEstimate(estimate)
   if (isSupabaseConfigured() && supabase) {
-    const fresh = loadEstimates().find(e => e.id === estimate.id) ?? estimate
+    let fresh = loadEstimates().find(e => e.id === estimate.id) ?? estimate
+    // Don't downgrade a variation the client already responded to. Approval/rejection is written
+    // straight to Supabase from the public page; if our local copy is still 'sent', pull the client's
+    // response down first so this push can't clobber it. (Only 'sent' variations can be responded to.)
+    if (fresh.parentEstimateId && fresh.status === 'sent') {
+      const { data: remote } = await supabase
+        .from('fg_estimates')
+        .select('status, accepted_at, accepted_by_name, archived, declined_at, declined_by_name')
+        .eq('id', fresh.id)
+        .maybeSingle()
+      if (remote && remote.status === 'accepted') {
+        fresh = { ...fresh, status: 'accepted', acceptedAt: (remote.accepted_at as string) ?? fresh.acceptedAt, acceptedByName: (remote.accepted_by_name as string) ?? fresh.acceptedByName, archived: false }
+        saveEstimate(fresh)
+      } else if (remote && remote.archived) {
+        fresh = { ...fresh, status: (remote.status as Estimate['status']) || 'declined', archived: true, declinedAt: (remote.declined_at as string) ?? fresh.declinedAt, declinedByName: (remote.declined_by_name as string) ?? fresh.declinedByName }
+        saveEstimate(fresh)
+      }
+    }
     await safeUpsert('fg_estimates', {
       id: fresh.id,
       project_id: fresh.projectId || null,   // '' would violate the FK to fg_projects

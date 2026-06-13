@@ -53,6 +53,7 @@ export default function VariationSendPage() {
     ? `${window.location.origin}/variation/${estimate.acceptanceToken}` : ''
 
   const handleSend = async () => {
+    if (estimate.status === 'accepted') { alert('This variation has already been approved by the client.'); return }
     if (!clientEmail.trim()) { alert('Add the client email address first.'); return }
     if (!confirm(`Send ${label} to ${clientEmail} for approval?`)) return
     setSending(true)
@@ -119,9 +120,9 @@ export default function VariationSendPage() {
       </div>
 
       <div className="mt-6 flex items-center gap-3">
-        <button onClick={handleSend} disabled={sending}
+        <button onClick={handleSend} disabled={sending || estimate.status === 'accepted'}
           className="px-6 py-2.5 bg-fg-dark text-white/90 text-xs font-light tracking-architectural uppercase hover:bg-fg-darker transition-colors disabled:opacity-50">
-          {sending ? 'Sending…' : estimate.status === 'sent' || sentOk ? 'Resend for approval' : 'Send for approval'}
+          {sending ? 'Sending…' : estimate.status === 'accepted' ? 'Approved' : estimate.status === 'sent' || sentOk ? 'Resend for approval' : 'Send for approval'}
         </button>
         {(estimate.status === 'sent' || sentOk) && estimate.status !== 'accepted' && (
           <span className="text-2xs text-blue-400/80 uppercase tracking-wide">Sent</span>

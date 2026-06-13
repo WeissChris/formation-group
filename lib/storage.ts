@@ -130,7 +130,17 @@ export function saveEstimate(estimate: Estimate): void {
   const idx = all.findIndex(e => e.id === stamped.id)
   if (idx >= 0) all[idx] = stamped
   else all.push(stamped)
-  localStorage.setItem('fg_estimates', JSON.stringify(all))
+  try {
+    localStorage.setItem('fg_estimates', JSON.stringify(all))
+  } catch {
+    // QuotaExceededError — most likely an attached subbie-quote PDF pushed the estimates store over the
+    // localStorage limit. Warn once so the user knows this save didn't stick (rather than losing it silently).
+    if (typeof window !== 'undefined' && !sessionStorage.getItem('fg_estimates_quota_warned')) {
+      try { sessionStorage.setItem('fg_estimates_quota_warned', '1') } catch { /* ignore */ }
+      try { window.alert('This estimate is too large to save in the browser — most likely from attached quote files. Remove a large attachment and try again.') } catch { /* ignore */ }
+    }
+    return
+  }
   backupToIndexedDB('fg_estimates', loadEstimates())
   notify({ key: 'estimates' })
 }
