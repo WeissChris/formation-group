@@ -33,6 +33,36 @@ export function activeLineItems(estimate: Estimate): EstimateLineItem[] {
   return estimate.lineItems.filter(i => i.enabled !== false)
 }
 
+/** A cost split by line-item type. Costs are item.total (units × unitCost, ex-markup). */
+export interface CostBreakdown {
+  labour: number
+  material: number
+  subcontractor: number
+  equipment: number
+  total: number
+}
+
+export function emptyCostBreakdown(): CostBreakdown {
+  return { labour: 0, material: 0, subcontractor: 0, equipment: 0, total: 0 }
+}
+
+/** Add one line item's cost into a breakdown, bucketed by its type ('Material' is the default bucket). */
+export function addLineCost(b: CostBreakdown, item: EstimateLineItem): void {
+  const c = item.total || 0
+  b.total += c
+  if (item.type === 'Labour') b.labour += c
+  else if (item.type === 'Subcontractor') b.subcontractor += c
+  else if (item.type === 'Equipment') b.equipment += c
+  else b.material += c
+}
+
+/** Cost split (labour / material / subcontractor / equipment) for a set of line items. */
+export function costBreakdown(items: EstimateLineItem[]): CostBreakdown {
+  const b = emptyCostBreakdown()
+  for (const i of items) addLineCost(b, i)
+  return b
+}
+
 export function getMarginSummary(estimate: Estimate): CategoryMargin[] {
   const active = activeLineItems(estimate)
   const categories = Array.from(new Set(active.map(i => i.category)))

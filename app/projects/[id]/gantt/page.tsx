@@ -21,7 +21,7 @@ import {
   toISODate,
   SHORT_MONTH_NAMES,
 } from '@/lib/utils'
-import { readLineItemRevenue, getEstimateContract } from '@/lib/estimateCalculations'
+import { readLineItemRevenue, getEstimateContract, addLineCost, emptyCostBreakdown, type CostBreakdown } from '@/lib/estimateCalculations'
 import type { Project, Estimate, GanttEntry, GanttSegment, GanttSubtask, WeeklyRevenue } from '@/types'
 import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react'
 
@@ -31,8 +31,17 @@ const CELL_W_DAYS = 24
 const WEEK_COUNT = 52
 const COL_CATEGORY = 200
 const COL_CREW = 64
-const COL_BUDGET = 76
+const COL_BUDGET = 124
 const COL_SCHED = 196   // Start date + duration (weeks) — foreman scheduling without drawing
+
+// Cost-type palette for the per-task cost split + project totals strip.
+const COST_TYPE_META = {
+  labour: { label: 'Labour', colour: '#7C9A92' },
+  material: { label: 'Material', colour: '#B08D57' },
+  subcontractor: { label: 'Sub', colour: '#9A7C9A' },
+  equipment: { label: 'Equip', colour: '#9E9890' },
+} as const
+const COST_TYPE_KEYS = ['labour', 'material', 'subcontractor', 'equipment'] as const
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F']
 const MILESTONE_PRESETS = ['Practical Completion', 'Pool Dig', 'Steel Complete', 'Handover', 'Concrete Pour']
@@ -55,6 +64,7 @@ interface CategorySummary {
   crewType: 'Formation' | 'Subcontractor'
   budgetedRevenue: number
   budgetedCost: number
+  cost: CostBreakdown   // cost split by type (labour / material / subcontractor / equipment)
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -137,10 +147,11 @@ function extractCategories(estimate: Estimate): CategorySummary[] {
     const key = `${item.category}||${sub}`
     const label = sub ? `${item.category} — ${sub}` : item.category
     if (!map[key]) {
-      map[key] = { category: label, crewType: item.crewType, budgetedRevenue: 0, budgetedCost: 0 }
+      map[key] = { category: label, crewType: item.crewType, budgetedRevenue: 0, budgetedCost: 0, cost: emptyCostBreakdown() }
     }
     map[key].budgetedRevenue += readLineItemRevenue(item) * factor
     map[key].budgetedCost += item.total
+    addLineCost(map[key].cost, item)
   }
   return Object.values(map)
 }
@@ -911,6 +922,19 @@ export default function GanttPage() {
     </div>
   )
 
+  // Project totals (revenue + cost split by type) for the summary strip above the grid.
+  const projTotals = categories.reduce((a, c) => {
+    a.revenue += c.budgetedRevenue
+    a.cost += c.cost.total
+    a.labour += c.cost.labour
+    a.material += c.cost.material
+    a.subcontractor += c.cost.subcontractor
+    a.equipment += c.cost.equipment
+    return a
+  }, { revenue: 0, cost: 0, labour: 0, material: 0, subcontractor: 0, equipment: 0 })
+  const projGP = projTotals.revenue - projTotals.cost
+  const projGPpct = projTotals.revenue > 0 ? projGP / projTotals.revenue : 0
+
   const fixedColsWidth = COL_CATEGORY + COL_CREW + COL_BUDGET + COL_SCHED
   const tableWidth = fixedColsWidth + columns.length * CELL_W
 
@@ -1125,6 +1149,32 @@ export default function GanttPage() {
       )}
 
       {estimate && categories.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mb-3 px-3 py-2.5 border border-fg-border bg-fg-bg/40 text-xs font-light">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[10px] uppercase tracking-wide text-fg-muted">Revenue</span>
+            <span className="text-fg-heading tabular-nums">{formatCurrency(projTotals.revenue)}</span>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[10px] uppercase tracking-wide text-fg-muted">Cost</span>
+            <span className="text-fg-heading tabular-nums">{formatCurrency(projTotals.cost)}</span>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[10px] uppercase tracking-wide text-fg-muted">GP</span>
+            <span className="text-fg-heading tabular-nums">{formatCurrency(projGP)}</span>
+            <span className="text-fg-muted/70">({(projGPpct * 100).toFixed(0)}%)</span>
+          </div>
+          <div className="h-4 w-px bg-fg-border" />
+          {COST_TYPE_KEYS.map(k => projTotals[k] > 0 ? (
+            <div key={k} className="flex items-baseline gap-1.5">
+              <span className="inline-block w-2 h-2 rounded-full self-center" style={{ background: COST_TYPE_META[k].colour }} />
+              <span className="text-[10px] uppercase tracking-wide text-fg-muted">{COST_TYPE_META[k].label}</span>
+              <span className="text-fg-heading tabular-nums">{formatCurrency(projTotals[k])}</span>
+            </div>
+          ) : null)}
+        </div>
+      )}
+
+      {estimate && categories.length > 0 && (
         <div className="overflow-x-auto border border-fg-border" style={{ userSelect: 'none' }}>
           <table className="border-collapse" style={{ minWidth: tableWidth, width: tableWidth }}>
             {/* ── Headers ── */}
@@ -1164,7 +1214,7 @@ export default function GanttPage() {
               <tr>
                 <th className="bg-fg-bg border-b border-r border-fg-border px-3 py-2 text-left text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_CATEGORY }}>Category</th>
                 <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-center text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_CREW }}>Crew</th>
-                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-right text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_BUDGET }}>Budget Rev</th>
+                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-right text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_BUDGET }}>Budget / Cost</th>
                 <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-center text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_SCHED }}>Start / Duration</th>
                 {columns.map((col, i) => {
                   const iso = toISODate(col)
@@ -1239,8 +1289,15 @@ export default function GanttPage() {
                       </td>
                       {/* Budget */}
                       <td className="border-r border-fg-border px-2 py-2 text-right text-[11px] font-light text-fg-muted tabular-nums align-middle" style={{ width: COL_BUDGET }}>
-                        <div>{formatCurrency(cat.budgetedRevenue)}</div>
-                        <div className="text-[10px] text-fg-muted/50">{formatCurrency(cat.budgetedCost)} cost</div>
+                        <div className="text-fg-heading">{formatCurrency(cat.budgetedRevenue)}</div>
+                        <div className="mt-0.5 space-y-px">
+                          {COST_TYPE_KEYS.map(k => cat.cost[k] > 0 ? (
+                            <div key={k} className="flex items-center justify-end gap-1 text-[9px] leading-tight">
+                              <span style={{ color: COST_TYPE_META[k].colour }}>{COST_TYPE_META[k].label}</span>
+                              <span className="text-fg-muted/60 tabular-nums">{formatCurrency(cat.cost[k])}</span>
+                            </div>
+                          ) : null)}
+                        </div>
                       </td>
                       {/* Schedule: start date + duration — the bar places itself, no drawing */}
                       <td className="border-r border-fg-border px-1.5 py-1 align-middle" style={{ width: COL_SCHED }}>

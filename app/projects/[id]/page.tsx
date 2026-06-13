@@ -1464,7 +1464,7 @@ export default function ProjectDetailPage() {
         {activeTab === 'revenue' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xs font-light tracking-widest uppercase text-fg-muted">Weekly Revenue Schedule</h2>
+              <h2 className="text-xs font-light tracking-widest uppercase text-fg-muted">Revenue Schedule</h2>
               <Link
                 href={`/revenue?projectId=${id}`}
                 className="text-xs font-light text-fg-muted hover:text-fg-heading transition-colors flex items-center gap-1"
@@ -1475,46 +1475,81 @@ export default function ProjectDetailPage() {
             </div>
             {revenueEntries.length === 0 ? (
               <p className="text-fg-muted font-light text-sm py-8 text-center">No revenue entries yet. Set up the Gantt to generate a schedule.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm font-light">
-                  <thead>
-                    <tr className="border-b border-fg-border">
-                      <th className="text-left pb-2 text-2xs text-fg-muted tracking-wide uppercase">Week Ending</th>
-                      <th className="text-left pb-2 text-2xs text-fg-muted tracking-wide uppercase">Project</th>
-                      <th className="text-right pb-2 text-2xs text-fg-muted tracking-wide uppercase">Planned Revenue</th>
-                      <th className="text-right pb-2 text-2xs text-fg-muted tracking-wide uppercase">Actual Invoiced</th>
-                      <th className="text-center pb-2 text-2xs text-fg-muted tracking-wide uppercase">Deposit</th>
-                      <th className="text-left pb-2 text-2xs text-fg-muted tracking-wide uppercase">Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-fg-border/50">
-                    {revenueEntries
-                      .sort((a, b) => a.weekEnding.localeCompare(b.weekEnding))
-                      .map(entry => (
-                        <tr key={entry.id}>
-                          <td className="py-2 text-fg-heading">{formatProjectDate(entry.weekEnding)}</td>
-                          <td className="py-2 text-fg-muted">{entry.projectName}</td>
-                          <td className="py-2 text-right text-fg-heading">{formatCurrency(entry.plannedRevenue ?? 0)}</td>
-                          <td className="py-2 text-right text-fg-heading">{formatCurrency(entry.actualInvoiced ?? 0)}</td>
-                          <td className="py-2 text-center">
-                            {entry.isDeposit ? <span className="text-2xs text-fg-muted border border-fg-border rounded-sm px-1.5 py-0.5 uppercase tracking-wide">Deposit</span> : '—'}
-                          </td>
-                          <td className="py-2 text-fg-muted">{entry.notes || '—'}</td>
+            ) : (() => {
+              // Reshape the per-week Gantt forecast into a Task × Month matrix: one row per task,
+              // a column per calendar month, each cell the planned revenue falling in that month.
+              const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+              const stripGantt = (s: string) => (s || '').replace(/\s*\(Gantt\)\s*$/i, '').trim() || 'Unallocated'
+              const monthKey = (iso: string) => iso.slice(0, 7)
+              const monthLabel = (key: string) => { const [y, m] = key.split('-'); return `${MONTHS[Number(m) - 1]} ${y}` }
+
+              const months = Array.from(new Set(revenueEntries.map(e => monthKey(e.weekEnding)))).sort()
+              const order: string[] = []
+              const byTask = new Map<string, { months: Record<string, number>; total: number; deposit: boolean; first: string }>()
+              for (const e of revenueEntries) {
+                const task = stripGantt(e.notes || '')
+                const mk = monthKey(e.weekEnding)
+                if (!byTask.has(task)) { byTask.set(task, { months: {}, total: 0, deposit: false, first: e.weekEnding }); order.push(task) }
+                const row = byTask.get(task)!
+                row.months[mk] = (row.months[mk] || 0) + (e.plannedRevenue || 0)
+                row.total += e.plannedRevenue || 0
+                if (e.isDeposit) row.deposit = true
+                if (e.weekEnding < row.first) row.first = e.weekEnding
+              }
+              order.sort((a, b) => byTask.get(a)!.first.localeCompare(byTask.get(b)!.first))
+              const monthTotal = (mk: string) => order.reduce((s, t) => s + (byTask.get(t)!.months[mk] || 0), 0)
+
+              return (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm font-light border-collapse">
+                    <thead>
+                      <tr className="border-b border-fg-border">
+                        <th className="text-left pb-2 pr-4 text-2xs text-fg-muted tracking-wide uppercase">Task</th>
+                        {months.map(mk => (
+                          <th key={mk} className="text-right pb-2 px-3 text-2xs text-fg-muted tracking-wide uppercase whitespace-nowrap">{monthLabel(mk)}</th>
+                        ))}
+                        <th className="text-right pb-2 pl-4 text-2xs text-fg-muted tracking-wide uppercase">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-fg-border/40">
+                      {order.map(task => {
+                        const row = byTask.get(task)!
+                        return (
+                          <tr key={task}>
+                            <td className="py-2 pr-4 text-fg-heading whitespace-nowrap">
+                              {task}
+                              {row.deposit && <span className="ml-2 text-2xs text-fg-muted border border-fg-border rounded-sm px-1 py-0.5 uppercase tracking-wide">Deposit</span>}
+                            </td>
+                            {months.map(mk => (
+                              <td key={mk} className="py-2 px-3 text-right tabular-nums">
+                                {row.months[mk] ? <span className="text-fg-heading">{formatCurrency(row.months[mk])}</span> : <span className="text-fg-muted/30">—</span>}
+                              </td>
+                            ))}
+                            <td className="py-2 pl-4 text-right text-fg-heading tabular-nums font-normal">{formatCurrency(row.total)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-fg-border">
+                        <td className="py-2 pr-4 text-2xs text-fg-muted uppercase tracking-wide">Monthly total</td>
+                        {months.map(mk => (
+                          <td key={mk} className="py-2 px-3 text-right text-fg-heading tabular-nums">{formatCurrency(monthTotal(mk))}</td>
+                        ))}
+                        <td className="py-2 pl-4 text-right text-fg-heading tabular-nums font-normal">{formatCurrency(totalRevenuePlanned)}</td>
+                      </tr>
+                      {totalInvoiced > 0 && (
+                        <tr>
+                          <td className="py-1 pr-4 text-2xs text-fg-muted uppercase tracking-wide">Invoiced to date</td>
+                          {months.length > 0 && <td colSpan={months.length} />}
+                          <td className="py-1 pl-4 text-right text-fg-muted tabular-nums">{formatCurrency(totalInvoiced)}</td>
                         </tr>
-                      ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-fg-border">
-                      <td colSpan={2} className="py-2 text-2xs text-fg-muted uppercase tracking-wide">Total</td>
-                      <td className="py-2 text-right text-fg-heading font-normal">{formatCurrency(totalRevenuePlanned)}</td>
-                      <td className="py-2 text-right text-fg-heading font-normal">{formatCurrency(totalInvoiced)}</td>
-                      <td colSpan={2} />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
+                      )}
+                    </tfoot>
+                  </table>
+                </div>
+              )
+            })()}
           </div>
         )}
 
