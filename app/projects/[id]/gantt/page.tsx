@@ -32,6 +32,7 @@ const WEEK_COUNT = 52
 const COL_CATEGORY = 200
 const COL_CREW = 64
 const COL_BUDGET = 76
+const COL_SCHED = 196   // Start date + duration (weeks) — foreman scheduling without drawing
 
 const DAY_LABELS = ['M', 'T', 'W', 'T', 'F']
 const MILESTONE_PRESETS = ['Practical Completion', 'Pool Dig', 'Steel Complete', 'Handover', 'Concrete Pour']
@@ -751,8 +752,27 @@ export default function GanttPage() {
     const next = [...seeded, ...entries.filter(e => !covered.has(e.category))]
     setEntries(next)
     void upsertGanttEntries(id, next.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0)))
-    setSuccessMsg(`Seeded ${seededCount} ${seededCount === 1 ? 'category' : 'categories'} from the estimate — drag the bars to set your programme, then Generate Revenue Forecast`)
+    setSuccessMsg(`Seeded ${seededCount} ${seededCount === 1 ? 'category' : 'categories'} from the estimate — set each task's start date + duration, then Generate Revenue Forecast`)
     setTimeout(() => setSuccessMsg(''), 6000)
+  }
+
+  // ── Schedule a task by start date + duration (foreman-friendly — no drawing) ──
+  // Edits the task's primary (first) segment, creating one with the full budget if there are none.
+  // Duration is in weeks; additional split work-periods are left untouched.
+  const setTaskSchedule = (category: string, startIso: string, weeks: number) => {
+    const entry = getEntry(category)
+    const segs = entry.segments
+    if (!startIso) {
+      updateEntry({ ...entry, segments: segs.slice(1) })   // cleared start → drop the primary bar
+      return
+    }
+    const w = Math.max(1, Math.floor(weeks) || 1)
+    const endIso = addDays(startIso, (w - 1) * 7)
+    if (segs.length === 0) {
+      updateEntry({ ...entry, segments: [{ id: generateId(), startDate: startIso, endDate: endIso, weekCount: w, revenueAllocation: entry.budgetedRevenue, costAllocation: entry.budgetedCost }] })
+    } else {
+      updateEntry({ ...entry, segments: segs.map((s, i) => i === 0 ? { ...s, startDate: startIso, endDate: endIso, weekCount: w } : s) })
+    }
   }
 
   // ── Generate Revenue Forecast ─────────────────────────────────────────────
@@ -761,7 +781,7 @@ export default function GanttPage() {
     if (!project) return
     const validEntries = entries.filter(e => e.segments.some(s => s.startDate && s.endDate && s.weekCount > 0))
     if (validEntries.length === 0) {
-      setSuccessMsg('No Gantt segments with dates — draw some first')
+      setSuccessMsg('No Gantt segments with dates — set a start date + duration first')
       setTimeout(() => setSuccessMsg(''), 3000)
       return
     }
@@ -887,7 +907,7 @@ export default function GanttPage() {
     </div>
   )
 
-  const fixedColsWidth = COL_CATEGORY + COL_CREW + COL_BUDGET + 80
+  const fixedColsWidth = COL_CATEGORY + COL_CREW + COL_BUDGET + COL_SCHED
   const tableWidth = fixedColsWidth + columns.length * CELL_W
 
   // ── Render segment bar cells ──────────────────────────────────────────────
@@ -1141,7 +1161,7 @@ export default function GanttPage() {
                 <th className="bg-fg-bg border-b border-r border-fg-border px-3 py-2 text-left text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_CATEGORY }}>Category</th>
                 <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-center text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_CREW }}>Crew</th>
                 <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-right text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_BUDGET }}>Budget Rev</th>
-                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-center text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: 80 }}>Segs</th>
+                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-center text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_SCHED }}>Start / Duration</th>
                 {columns.map((col, i) => {
                   const iso = toISODate(col)
                   const isCurrentWeek = timeView === 'weeks' ? iso === currentWeekIso : iso === today
@@ -1218,15 +1238,34 @@ export default function GanttPage() {
                         <div>{formatCurrency(cat.budgetedRevenue)}</div>
                         <div className="text-[10px] text-fg-muted/50">{formatCurrency(cat.budgetedCost)} cost</div>
                       </td>
-                      {/* + Split */}
-                      <td className="border-r border-fg-border px-1 py-2 text-center align-middle" style={{ width: 80 }}>
-                        <button
-                          onClick={() => handleAddSplit(cat.category)}
-                          title="Add another work period for this category"
-                          className="flex items-center gap-0.5 text-[10px] font-light text-fg-muted hover:text-fg-heading transition-colors px-1.5 py-1 border border-fg-border/50 hover:border-fg-border"
-                        >
-                          <Plus className="w-2.5 h-2.5" /> Split
-                        </button>
+                      {/* Schedule: start date + duration — the bar places itself, no drawing */}
+                      <td className="border-r border-fg-border px-1.5 py-1 align-middle" style={{ width: COL_SCHED }}>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="date"
+                            value={segs[0]?.startDate ?? ''}
+                            onChange={e => setTaskSchedule(cat.category, e.target.value, segs[0]?.weekCount || 1)}
+                            title="Start date — the bar places itself"
+                            className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading outline-none focus:border-fg-heading w-[104px]"
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            value={segs[0]?.weekCount || ''}
+                            onChange={e => { if (segs[0]?.startDate) { const w = parseInt(e.target.value); setTaskSchedule(cat.category, segs[0].startDate, Number.isFinite(w) ? w : 1) } }}
+                            placeholder="–"
+                            title="Duration in weeks"
+                            className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading text-right tabular-nums outline-none focus:border-fg-heading w-8"
+                          />
+                          <span className="text-[9px] text-fg-muted/60">wk</span>
+                          <button
+                            onClick={() => handleAddSplit(cat.category)}
+                            title="Add another work period (split)"
+                            className="opacity-0 group-hover:opacity-100 ml-auto flex-shrink-0 text-fg-muted/50 hover:text-fg-heading transition-all"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
                       </td>
                       {/* Segment cells */}
                       {renderSegmentCells(entry, segs, cat.category, cat.crewType)}
@@ -1253,7 +1292,7 @@ export default function GanttPage() {
                         </td>
                         <td className="border-r border-fg-border" style={{ width: COL_CREW }} />
                         <td className="border-r border-fg-border" style={{ width: COL_BUDGET }} />
-                        <td className="border-r border-fg-border" style={{ width: 80 }} />
+                        <td className="border-r border-fg-border" style={{ width: COL_SCHED }} />
                         {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true)}
                       </tr>
                     ))}
