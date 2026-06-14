@@ -1379,6 +1379,19 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
 
   // ── SVG rendering ─────────────────────────────────────────────────────
 
+  // Each measured ITEM gets a distinct colour so areas are clearly colour-coded on the plan. The
+  // layer colour wins when a custom layer is set; otherwise we cycle the palette by item order.
+  const itemColorIdx = (() => {
+    const map = new Map<string, number>()
+    let i = 0
+    for (const g of takeoff.groups) for (const it of g.items) { map.set(it.id, i % LAYER_COLORS.length); i++ }
+    return map
+  })()
+  const colorForItem = (item: TakeoffItem): string => {
+    const layer = getItemLayer(takeoff, item)
+    return layer.id === 'default' ? LAYER_COLORS[itemColorIdx.get(item.id) ?? 0] : layer.color
+  }
+
   const renderMeasurement = (
     m: TakeoffMeasurement,
     item: TakeoffItem,
@@ -1386,10 +1399,11 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     opts?: { selected?: boolean; hovered?: boolean }
   ) => {
     const layer = getItemLayer(takeoff, item)
-    const color = layer.color
+    const color = colorForItem(item)
+    const hatchId = layer.id === 'default' ? `fgHatch-${itemColorIdx.get(item.id) ?? 0}` : null
     const pts = m.points.map(p => `${p.x * 100}% ${p.y * 100}%`).join(' ')
-    const emphasis = opts?.selected ? 2.5 : opts?.hovered ? 2 : 1.5
-    const fillAlpha = opts?.selected ? 0.28 : 0.15
+    const emphasis = opts?.selected ? 2.75 : opts?.hovered ? 2.25 : 2
+    const fillAlpha = opts?.selected ? 0.42 : 0.26
     const isDeduct = !!m.isDeduction
 
     if (m.type === 'area') {
@@ -1406,8 +1420,8 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
             strokeDasharray={isDeduct ? '6 4' : undefined}
             vectorEffect="non-scaling-stroke"
           />
-          {!isDeduct && (
-            <polygon points={pts} fill="url(#fgTakeoffHatch)" stroke="none" style={{ pointerEvents: 'none' }} />
+          {!isDeduct && hatchId && (
+            <polygon points={pts} fill={`url(#${hatchId})`} stroke="none" style={{ pointerEvents: 'none' }} />
           )}
           <text x={`${cx}%`} y={`${cy}%`} fill={color} fontSize="10" textAnchor="middle" fontWeight="600" dominantBaseline="middle" style={{ pointerEvents: 'none' }}>
             {isDeduct ? '−' : ''}{m.value.toFixed(2)} m²
@@ -1573,11 +1587,11 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                       onClick={() => { setSelectedGroupId(group.id); setSelectedItemId(item.id) }}
                       className={`flex items-center gap-1.5 px-4 py-2 border-b border-fg-border/20 cursor-pointer hover:bg-fg-card/20 transition-colors ${isSelected ? 'bg-fg-card/40 border-l-2 border-l-blue-500' : 'pl-6'}`}
                     >
-                      {/* Layer swatch */}
+                      {/* Colour swatch — matches the area's shade on the plan */}
                       <span
                         className="w-2 h-2 rounded-full shrink-0 border border-black/20"
-                        style={{ background: getItemLayer(takeoff, item).color }}
-                        title={`Layer: ${getItemLayer(takeoff, item).name}`}
+                        style={{ background: colorForItem(item) }}
+                        title="Colour on plan"
                       />
                       {/* Measurement dot */}
                       {item.measurements.length > 0 && (
@@ -1964,10 +1978,12 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                   onMouseLeave={handleCanvasMouseLeave}
                 >
                   <defs>
-                    {/* Light hatch fill so a measured area is clearly visible on the plan */}
-                    <pattern id="fgTakeoffHatch" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)">
-                      <line x1="0" y1="0" x2="0" y2="7" stroke="#475569" strokeWidth="1" opacity="0.4" />
-                    </pattern>
+                    {/* Colour-coded diagonal hatch per palette colour — overlaid on each measured area */}
+                    {LAYER_COLORS.map((c, i) => (
+                      <pattern key={i} id={`fgHatch-${i}`} patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+                        <line x1="0" y1="0" x2="0" y2="8" stroke={c} strokeWidth="1.4" opacity="0.55" />
+                      </pattern>
+                    ))}
                   </defs>
                   {/* Existing measurements */}
                   {getActivePlanMeasurements().map(({ measurement, item, group }) => {
