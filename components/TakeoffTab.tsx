@@ -1232,7 +1232,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     if (!activePlan || !calib.p1 || !calib.p2) return
     const realDist = parseFloat(calib.distanceInput)
     if (!Number.isFinite(realDist) || realDist <= 0) {
-      window.alert('Enter a positive real-world distance (in metres) for the line you drew.')
+      window.alert('Enter a positive real-world distance (in millimetres) for the line you drew.')
       return
     }
     const pxDist = pixelDist(calib.p1, calib.p2, activePlan.imageWidth, activePlan.imageHeight)
@@ -1241,7 +1241,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
       window.alert('The two calibration points are too close together — draw a longer known distance.')
       return
     }
-    const scale = pxDist / realDist  // pixels per metre
+    const scale = pxDist / (realDist / 1000)  // realDist entered in mm → store px per metre (measurements stay m²/lm)
     updateTakeoff(t => ({
       ...t,
       plans: t.plans.map(p => p.id === activePlan.id ? { ...p, scale, scaleSet: true } : p),
@@ -1799,7 +1799,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
               )}
               {calib.step === 'entering-distance' && (
                 <>
-                  <span className="text-xs text-fg-muted shrink-0">Real distance (m):</span>
+                  <span className="text-xs text-fg-muted shrink-0">Real distance (mm):</span>
                   <input
                     ref={distInputRef}
                     type="number"
@@ -1807,8 +1807,8 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                     onChange={e => setCalib(c => ({ ...c, distanceInput: e.target.value }))}
                     onKeyDown={e => { if (e.key === 'Enter') confirmCalibration() }}
                     className="w-20 text-xs bg-fg-card/30 px-2 py-1 rounded outline-none border border-amber-500/60 tabular-nums"
-                    placeholder="e.g. 5"
-                    step="0.1"
+                    placeholder="e.g. 8000"
+                    step="1"
                   />
                   <button onClick={confirmCalibration} className="text-xs px-3 py-1 bg-amber-500 text-white hover:bg-amber-600 transition-colors">
                     Confirm
@@ -2190,7 +2190,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                   Upload Plan
                   <input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={handlePlanUpload} />
                 </label>
-                <p className="text-xs text-fg-muted mt-3">Supports JPG, PNG</p>
+                <p className="text-xs text-fg-muted mt-3">Supports JPG, PNG, PDF</p>
               </div>
             </div>
           )}
