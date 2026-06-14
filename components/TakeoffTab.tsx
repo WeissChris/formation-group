@@ -1271,6 +1271,23 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     setIsDrawing(false)
   }
 
+  const deletePlan = (planId: string) => {
+    const plan = takeoff.plans.find(p => p.id === planId)
+    if (!plan) return
+    if (!window.confirm(`Remove “${plan.name}”? Any measurements drawn on this plan will be deleted too.`)) return
+    updateTakeoff(t => {
+      const plans = t.plans.filter(p => p.id !== planId)
+      // Strip measurements drawn on this plan so they stop counting toward quantities (they'd
+      // otherwise stay in the items, invisible but still summed).
+      const groups = t.groups.map(g => ({
+        ...g,
+        items: g.items.map(i => ({ ...i, measurements: i.measurements.filter(m => m.planId !== planId) })),
+      }))
+      const activePlanId = t.activePlanId === planId ? plans[0]?.id : t.activePlanId
+      return { ...t, plans, groups, activePlanId }
+    })
+  }
+
   // ── Calibration ────────────────────────────────────────────────────────
 
   const startCalibration = () => {
@@ -1721,6 +1738,16 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
               className="text-xs text-fg-muted hover:text-fg-heading transition-colors shrink-0"
             >
               ✨ Auto-detect areas
+            </button>
+          )}
+
+          {activePlan && calib.step === 'idle' && (
+            <button
+              onClick={() => deletePlan(activePlan.id)}
+              title="Remove this plan (and the measurements drawn on it)"
+              className="text-xs text-fg-muted hover:text-red-500 transition-colors shrink-0"
+            >
+              ✕ Remove plan
             </button>
           )}
 

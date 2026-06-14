@@ -111,8 +111,8 @@ export async function extractPlanRegions(page: any, occ: any, OPS: any): Promise
   const labels: { code: string; x: number; y: number }[] = []
   for (const it of tc.items) {
     const s = String(it.str || '').trim()
-    const m = s.match(/\b(PAV|DEC|CON|PT|STN|TIM|GRV)\s*-?\s*0?(\d)\b/i)
-    if (m && it.transform) labels.push({ code: `${m[1].toUpperCase()}-0${m[2]}`, x: it.transform[4], y: it.transform[5] })
+    const m = s.match(/\b(PAV|DEC|CON|PT|STN|TIM|GRV)\s*-?\s*(\d{1,2})\b/i)
+    if (m && it.transform) labels.push({ code: `${m[1].toUpperCase()}-${m[2].padStart(2, '0')}`, x: it.transform[4], y: it.transform[5] })
   }
   // Drop the material-palette legend (a row of codes low on the sheet) when there are plan labels too.
   const planLabels = labels.filter(l => (l.y - y0) / pageH > 0.25)
