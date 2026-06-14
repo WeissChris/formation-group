@@ -1157,11 +1157,8 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     }))
   }
 
-  const handlePlanUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    e.target.value = ''
-
+  // Load one plan file (PDF → a plan per page, image → one plan). Awaitable so multiple files load in order.
+  const loadPlanFile = async (file: File): Promise<void> => {
     if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
       // Load PDF.js from CDN at runtime (bypasses webpack bundling issues entirely)
       const PDFJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155'
@@ -1214,15 +1211,26 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
       }
     } else {
       // Image file
-      const reader = new FileReader()
-      reader.onload = (ev) => {
-        const dataUrl = ev.target?.result as string
-        const img = new window.Image()
-        img.onload = () => addPlan(file.name, dataUrl, img.naturalWidth, img.naturalHeight)
-        img.src = dataUrl
-      }
-      reader.readAsDataURL(file)
+      await new Promise<void>((resolve) => {
+        const reader = new FileReader()
+        reader.onload = (ev) => {
+          const dataUrl = ev.target?.result as string
+          const img = new window.Image()
+          img.onload = () => { addPlan(file.name, dataUrl, img.naturalWidth, img.naturalHeight); resolve() }
+          img.onerror = () => resolve()
+          img.src = dataUrl
+        }
+        reader.onerror = () => resolve()
+        reader.readAsDataURL(file)
+      })
     }
+  }
+
+  const handlePlanUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length) return
+    e.target.value = ''
+    for (const file of files) await loadPlanFile(file)   // sequential → plans keep upload order
   }
 
   // Auto-detect material areas from a vector PDF plan → one item per material code, areas hatched.
@@ -1703,7 +1711,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
           {/* Upload */}
           <label className="text-xs text-fg-muted hover:text-fg-heading cursor-pointer transition-colors shrink-0">
             📄 Upload Plan
-            <input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={handlePlanUpload} />
+            <input type="file" accept="image/*,.pdf,application/pdf" multiple className="hidden" onChange={handlePlanUpload} />
           </label>
 
           {activePlan && calib.step === 'idle' && (
@@ -1716,16 +1724,26 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
             </button>
           )}
 
-          {/* Plan selector */}
-          {takeoff.plans.length > 1 && (
-            <select
-              value={takeoff.activePlanId ?? ''}
-              onChange={e => setActivePlan(e.target.value)}
-              className="text-xs text-fg-muted bg-transparent outline-none border border-fg-border px-2 py-1"
-            >
-              {takeoff.plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          )}
+          {/* Plan navigation — scroll between uploaded plans */}
+          {takeoff.plans.length > 1 && (() => {
+            const idx = takeoff.plans.findIndex(p => p.id === takeoff.activePlanId)
+            const cur = idx < 0 ? 0 : idx
+            const go = (d: number) => setActivePlan(takeoff.plans[(cur + d + takeoff.plans.length) % takeoff.plans.length].id)
+            return (
+              <div className="flex items-center gap-1 shrink-0">
+                <button onClick={() => go(-1)} title="Previous plan" className="text-fg-muted hover:text-fg-heading px-1 text-sm leading-none">‹</button>
+                <select
+                  value={takeoff.activePlanId ?? ''}
+                  onChange={e => setActivePlan(e.target.value)}
+                  className="text-xs text-fg-muted bg-transparent outline-none border border-fg-border px-2 py-1 max-w-[220px]"
+                >
+                  {takeoff.plans.map((p, i) => <option key={p.id} value={p.id}>{i + 1}. {p.name}</option>)}
+                </select>
+                <button onClick={() => go(1)} title="Next plan" className="text-fg-muted hover:text-fg-heading px-1 text-sm leading-none">›</button>
+                <span className="text-2xs text-fg-muted tabular-nums">{cur + 1}/{takeoff.plans.length}</span>
+              </div>
+            )
+          })()}
 
           {activePlan && calib.step === 'idle' && (
             <>
@@ -2253,7 +2271,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                 <p className="text-fg-muted text-sm font-light mb-4">No plan uploaded</p>
                 <label className="px-4 py-2 border border-fg-border text-fg-muted text-xs uppercase tracking-wide hover:text-fg-heading cursor-pointer transition-colors">
                   Upload Plan
-                  <input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={handlePlanUpload} />
+                  <input type="file" accept="image/*,.pdf,application/pdf" multiple className="hidden" onChange={handlePlanUpload} />
                 </label>
                 <p className="text-xs text-fg-muted mt-3">Supports JPG, PNG, PDF</p>
               </div>
