@@ -363,6 +363,23 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     })
   }, [])
 
+  // Pan + zoom the canvas to centre a clicked item's measurements, so you can see where it is.
+  const panToItem = useCallback((item: TakeoffItem) => {
+    if (!activePlan || !containerRef.current) return
+    const ms = item.measurements.filter(m => m.planId === activePlan.id && m.points.length > 0)
+    if (ms.length === 0) return
+    let x0 = 1, y0 = 1, x1 = 0, y1 = 0
+    for (const m of ms) for (const p of m.points) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y) }
+    const rect = containerRef.current.getBoundingClientRect()
+    const pad = 80
+    const bw = Math.max((x1 - x0) * activePlan.imageWidth, 1)
+    const bh = Math.max((y1 - y0) * activePlan.imageHeight, 1)
+    const zoom = clamp(Math.min((rect.width - pad * 2) / bw, (rect.height - pad * 2) / bh, 6), MIN_ZOOM, MAX_ZOOM)
+    const bcx = ((x0 + x1) / 2) * activePlan.imageWidth
+    const bcy = ((y0 + y1) / 2) * activePlan.imageHeight
+    setViewport({ x: rect.width / 2 - bcx * zoom, y: rect.height / 2 - bcy * zoom, zoom })
+  }, [activePlan])
+
   // Native non-passive wheel listener — required to call preventDefault().
   // (React's onWheel is passive, so e.preventDefault() is a no-op there.)
   useEffect(() => {
@@ -877,14 +894,18 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
 
   const addItem = (groupId: string) => {
     const id = generateId()
-    const newItem: TakeoffItem = {
-      id, name: 'New item', quantity: 0, unit: 'm2',
-      measurements: [], wastagePercent: 0,
-    }
-    updateTakeoff(t => ({
-      ...t,
-      groups: t.groups.map(g => g.id === groupId ? { ...g, items: [...g.items, newItem] } : g),
-    }))
+    updateTakeoff(t => {
+      // Auto-create a dedicated layer per item, so each category is colour-coded + show/hide-able
+      // on the plan without the user managing layers by hand.
+      const layers = ensureLayers(t)
+      const layer: TakeoffLayer = { id: generateId(), name: 'New item', color: LAYER_COLORS[layers.length % LAYER_COLORS.length], visible: true }
+      const newItem: TakeoffItem = { id, name: 'New item', quantity: 0, unit: 'm2', measurements: [], wastagePercent: 0, layerId: layer.id }
+      return {
+        ...t,
+        layers: [...layers, layer],
+        groups: t.groups.map(g => g.id === groupId ? { ...g, items: [...g.items, newItem] } : g),
+      }
+    })
     setSelectedGroupId(groupId)
     setSelectedItemId(id)
   }
@@ -908,6 +929,20 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
           : g
       ),
     }))
+  }
+
+  // Rename an item, keeping its dedicated auto-layer's name in sync (when the layer is 1:1 with it).
+  const renameItem = (groupId: string, itemId: string, name: string) => {
+    updateTakeoff(t => {
+      const allItems = t.groups.flatMap(g => g.items)
+      const layerId = allItems.find(i => i.id === itemId)?.layerId
+      const dedicated = !!layerId && layerId !== 'default' && allItems.filter(i => i.layerId === layerId).length === 1
+      return {
+        ...t,
+        layers: dedicated ? (t.layers ?? []).map(l => l.id === layerId ? { ...l, name } : l) : t.layers,
+        groups: t.groups.map(g => g.id === groupId ? { ...g, items: g.items.map(i => i.id === itemId ? { ...i, name } : i) } : g),
+      }
+    })
   }
 
   const clearManualOverride = (groupId: string, itemId: string) => {
@@ -1584,7 +1619,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                   <div key={item.id}>
                     {/* Item row */}
                     <div
-                      onClick={() => { setSelectedGroupId(group.id); setSelectedItemId(item.id) }}
+                      onClick={() => { setSelectedGroupId(group.id); setSelectedItemId(item.id); panToItem(item) }}
                       className={`flex items-center gap-1.5 px-4 py-2 border-b border-fg-border/20 cursor-pointer hover:bg-fg-card/20 transition-colors ${isSelected ? 'bg-fg-card/40 border-l-2 border-l-blue-500' : 'pl-6'}`}
                     >
                       {/* Colour swatch — matches the area's shade on the plan */}
@@ -1600,7 +1635,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                       {/* Name */}
                       <input
                         value={item.name}
-                        onChange={e => patchItem(group.id, item.id, { name: e.target.value })}
+                        onChange={e => renameItem(group.id, item.id, e.target.value)}
                         onClick={e => e.stopPropagation()}
                         className="flex-1 text-xs text-fg-heading bg-transparent outline-none min-w-0"
                         placeholder="Item name..."
@@ -2004,7 +2039,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                         onMouseEnter={() => setHoveredMeasurementId(measurement.id)}
                         onMouseLeave={() => setHoveredMeasurementId(prev => prev === measurement.id ? null : prev)}
                       >
-                        {renderMeasurement(measurement, item, group, { selected: isSel, hovered: isHov })}
+                        {renderMeasurement(measurement, item, group, { selected: isSel || selectedItemId === item.id, hovered: isHov })}
                       </g>
                     )
                   })}
