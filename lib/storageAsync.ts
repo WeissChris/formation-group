@@ -28,6 +28,7 @@ import type {
   DesignProject,
   ProgressPaymentStage,
   WeeklyActual,
+  TakeoffData,
 } from '@/types'
 
 /**
@@ -683,6 +684,94 @@ export async function getAllGanttEntries(): Promise<GanttEntry[]> {
     if (data) return data.map(mapGanttEntry)
   }
   return []
+}
+
+// ── TAKEOFF (cross-device: JSON in fg_takeoffs, plan images in the takeoff-plans bucket) ─────────
+//
+// Plan images are base64 data URIs far too large for a jsonb row (and the localStorage cache), so
+// they go to Supabase Storage and the row stores each plan's public URL in place of the base64.
+// On load we hydrate the URLs back to base64 so the canvas/render pipeline is unchanged.
+
+const TAKEOFF_BUCKET = 'takeoff-plans'
+const uploadedPlanPaths = new Set<string>() // plan images are immutable — upload once per session
+
+function dataUrlToBlob(dataUrl: string): { blob: Blob; contentType: string } {
+  const comma = dataUrl.indexOf(',')
+  const contentType = /data:(.*?);base64/.exec(dataUrl.slice(0, comma))?.[1] || 'image/png'
+  const bin = atob(dataUrl.slice(comma + 1))
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return { blob: new Blob([bytes], { type: contentType }), contentType }
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(r.result as string)
+    r.onerror = () => reject(r.error)
+    r.readAsDataURL(blob)
+  })
+}
+
+export async function upsertTakeoff(takeoff: TakeoffData): Promise<void> {
+  if (!isSupabaseConfigured() || !supabase) return
+  // Don't clobber a newer remote copy written by another device (optimistic concurrency).
+  const { data: existing } = await supabase.from('fg_takeoffs').select('updated_at').eq('estimate_id', takeoff.estimateId).maybeSingle()
+  if (existing?.updated_at && takeoff.updatedAt && Date.parse(existing.updated_at as string) > Date.parse(takeoff.updatedAt)) {
+    return
+  }
+  const plansForRemote: TakeoffData['plans'] = []
+  for (const plan of takeoff.plans) {
+    if (typeof plan.dataUrl === 'string' && plan.dataUrl.startsWith('data:')) {
+      const path = `${takeoff.estimateId}/${plan.id}`
+      if (!uploadedPlanPaths.has(path)) {
+        try {
+          const { blob, contentType } = dataUrlToBlob(plan.dataUrl)
+          const { error } = await supabase.storage.from(TAKEOFF_BUCKET).upload(path, blob, { upsert: true, contentType })
+          if (error && !/exists/i.test(error.message)) {
+            console.warn('[takeoff] plan image upload failed; skipping remote sync', error.message)
+            return // don't write a row that points at a missing image
+          }
+          uploadedPlanPaths.add(path)
+        } catch (e) {
+          console.warn('[takeoff] plan image upload threw; skipping remote sync', e)
+          return
+        }
+      }
+      const { data: pub } = supabase.storage.from(TAKEOFF_BUCKET).getPublicUrl(path)
+      plansForRemote.push({ ...plan, dataUrl: pub.publicUrl })
+    } else {
+      plansForRemote.push(plan) // already a URL, or no image
+    }
+  }
+  const remoteData: TakeoffData = { ...takeoff, plans: plansForRemote }
+  const { error } = await supabase.from('fg_takeoffs').upsert({
+    estimate_id: takeoff.estimateId,
+    data: remoteData,
+    updated_at: takeoff.updatedAt ?? new Date().toISOString(),
+  })
+  if (error) console.warn('[takeoff] remote save failed (kept locally):', error.message)
+}
+
+export async function getTakeoff(estimateId: string, opts?: { hydrateImages?: boolean }): Promise<TakeoffData | null> {
+  if (!isSupabaseConfigured() || !supabase) return null
+  const { data: row, error } = await supabase.from('fg_takeoffs').select('data, updated_at').eq('estimate_id', estimateId).maybeSingle()
+  if (error || !row?.data) return null
+  const t = row.data as TakeoffData
+  // The editor needs base64 images for the canvas; the line-items summary only needs measurements,
+  // so it can skip the (potentially heavy) image download.
+  const plans = opts?.hydrateImages === false
+    ? (t.plans || [])
+    : await Promise.all((t.plans || []).map(async plan => {
+        if (typeof plan.dataUrl === 'string' && /^https?:\/\//.test(plan.dataUrl)) {
+          try {
+            const res = await fetch(plan.dataUrl)
+            if (res.ok) return { ...plan, dataUrl: await blobToDataUrl(await res.blob()) }
+          } catch { /* leave the URL — an <img> can still load it while online */ }
+        }
+        return plan
+      }))
+  return { ...t, plans, updatedAt: (row.updated_at as string) ?? t.updatedAt }
 }
 
 // ── MAPPERS (new) ─────────────────────────────────────────────────────────────

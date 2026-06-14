@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { loadEstimates, loadProposals, saveEstimate, saveSubcontractor, loadTakeoffAsync } from '@/lib/storage'
-import { upsertEstimate, upsertProject, getEstimates } from '@/lib/storageAsync'
+import { upsertEstimate, upsertProject, getEstimates, getTakeoff } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract } from '@/lib/estimateCalculations'
 import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
@@ -489,8 +489,18 @@ export default function EstimateBuilderPage() {
     if (activeTab !== 'estimate') return
     let cancelled = false
     ;(async () => {
-      const t = await loadTakeoffAsync(id)
-      if (!cancelled) setTakeoffData(t)
+      const local = await loadTakeoffAsync(id)
+      if (!cancelled) setTakeoffData(local)
+      // Cross-device: pick up a takeoff done on another computer (no image download — summary only
+      // needs the measurements).
+      try {
+        const remote = await getTakeoff(id, { hydrateImages: false })
+        if (!cancelled && remote) {
+          const lt = Date.parse(local?.updatedAt || '') || 0
+          const rt = Date.parse(remote.updatedAt || '') || 0
+          if (rt > lt) setTakeoffData(remote)
+        }
+      } catch { /* offline — local stands */ }
     })()
     return () => { cancelled = true }
   }, [activeTab, id])

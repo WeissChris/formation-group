@@ -8,6 +8,7 @@ import {
   saveTakeoffTemplate,
   deleteTakeoffTemplate,
 } from '@/lib/storage'
+import { upsertTakeoff, getTakeoff } from '@/lib/storageAsync'
 import { generateId } from '@/lib/utils'
 import { extractPlanRegions } from '@/lib/planAutoMeasure'
 import type {
@@ -265,17 +266,50 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     future: historyRef.current.future.length,
   })
 
-  // Load saved takeoff on mount. Reads the IndexedDB durable store as well as localStorage, since a
-  // takeoff with plan images exceeds the ~5MB localStorage quota and only survives in IndexedDB —
-  // this is what makes a saved takeoff reappear after navigating away and back.
+  // Load saved takeoff on mount. Reads the IndexedDB durable store as well as localStorage (a takeoff
+  // with plan images exceeds the ~5MB localStorage quota and survives only in IndexedDB), then pulls
+  // the cross-device copy from Supabase and adopts it if it's newer — so a takeoff done on another
+  // computer shows up here.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const saved = await loadTakeoffAsync(estimateId)
-      if (!cancelled && saved) setTakeoff(saved)
+      const local = await loadTakeoffAsync(estimateId)
+      if (!cancelled && local) setTakeoff(local)
+      try {
+        const remote = await getTakeoff(estimateId)
+        if (!cancelled && remote) {
+          const lt = Date.parse(local?.updatedAt || '') || 0
+          const rt = Date.parse(remote.updatedAt || '') || 0
+          if (rt > lt) { setTakeoff(remote); saveTakeoff(remote) } // adopt + cache locally
+        }
+      } catch { /* offline — local copy stands */ }
     })()
     return () => { cancelled = true }
   }, [estimateId])
+
+  // Cross-device sync to Supabase, debounced (plan images upload to Storage; see upsertTakeoff).
+  const remoteSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingSyncRef = useRef<TakeoffData | null>(null)
+  const flushRemoteSync = useCallback(() => {
+    if (remoteSyncTimerRef.current) { clearTimeout(remoteSyncTimerRef.current); remoteSyncTimerRef.current = null }
+    const t = pendingSyncRef.current
+    if (t) { pendingSyncRef.current = null; void upsertTakeoff(t) }
+  }, [])
+  const scheduleRemoteSync = useCallback((t: TakeoffData) => {
+    pendingSyncRef.current = t
+    if (remoteSyncTimerRef.current) clearTimeout(remoteSyncTimerRef.current)
+    remoteSyncTimerRef.current = setTimeout(flushRemoteSync, 3000)
+  }, [flushRemoteSync])
+  // Flush a pending sync on navigate-away / tab close / unmount so the last edits reach Supabase.
+  useEffect(() => {
+    window.addEventListener('beforeunload', flushRemoteSync)
+    window.addEventListener('pagehide', flushRemoteSync)
+    return () => {
+      window.removeEventListener('beforeunload', flushRemoteSync)
+      window.removeEventListener('pagehide', flushRemoteSync)
+      flushRemoteSync()
+    }
+  }, [flushRemoteSync])
 
   const activePlan = takeoff.plans.find(p => p.id === takeoff.activePlanId) ?? null
   const layers = getLayers(takeoff)
@@ -283,7 +317,8 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
   // ── Core updater ───────────────────────────────────────────────────────
 
   const commitTakeoff = useCallback((next: TakeoffData) => {
-    saveTakeoff(next)
+    const saved = saveTakeoff(next) // returns the timestamp-stamped copy
+    scheduleRemoteSync(saved)       // push to Supabase for cross-device durability (debounced)
     next.groups.forEach(group => {
       group.items.forEach(item => {
         if (item.linkedLineItemId) {
@@ -291,7 +326,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
         }
       })
     })
-  }, [onUpdateLineItemQty])
+  }, [onUpdateLineItemQty, scheduleRemoteSync])
 
   const updateTakeoff = useCallback((updater: (t: TakeoffData) => TakeoffData, opts?: { skipHistory?: boolean; skipCommit?: boolean }) => {
     setTakeoff(prev => {

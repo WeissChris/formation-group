@@ -369,7 +369,7 @@ export function deleteProgressClaim(id: string): void {
 // quota. localStorage is therefore a best-effort fast cache; IndexedDB (much larger quota) is the
 // durable store. Every save stamps `updatedAt` so the loader can pick the freshest of the two.
 let takeoffQuotaWarned = false
-export function saveTakeoff(data: TakeoffData): void {
+export function saveTakeoff(data: TakeoffData): TakeoffData {
   const stamped: TakeoffData = { ...data, updatedAt: new Date().toISOString() }
   const all = loadAllTakeoffs()
   const idx = all.findIndex(t => t.estimateId === stamped.estimateId)
@@ -392,6 +392,7 @@ export function saveTakeoff(data: TakeoffData): void {
       window.alert('This takeoff is too large to save in this browser, even the backup store. Recent changes are only in memory and may be lost on reload — try a smaller or lower-resolution plan image.')
     }
   })
+  return stamped
 }
 
 export function loadTakeoff(estimateId: string): TakeoffData | null {
