@@ -548,6 +548,10 @@ export default function EstimateBuilderPage() {
   // Apply a takeoff quantity to the line item whose Units field was last focused.
   const applyQtyToLineItem = (qty: number) => {
     if (!lastUnitsLineId) { window.alert("Click into a line item's Units field first, then press Use."); return }
+    if (!estimate?.lineItems.some(i => i.id === lastUnitsLineId)) {
+      window.alert("That line item is no longer there — click into a Units field again, then press Use.")
+      return
+    }
     setEstimate(prev => {
       if (!prev) return prev
       return {

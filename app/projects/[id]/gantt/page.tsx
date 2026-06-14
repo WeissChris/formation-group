@@ -766,6 +766,19 @@ export default function GanttPage() {
   const setTaskSchedule = (category: string, startIso: string, duration: number, subtaskId?: string) => {
     const entry = getEntry(category)
     const n = Math.max(1, Math.floor(duration) || 1)
+    // Snap the entered start onto the grid so the bar lands on real columns: weeks view → week-ending
+    // Friday; days view → a working day (skip weekends). Off-grid starts otherwise render empty/short.
+    if (startIso) {
+      if (timeView === 'days') {
+        const d = new Date(`${startIso}T00:00:00`)
+        const dow = d.getDay()
+        if (dow === 6) d.setDate(d.getDate() + 2)        // Sat → Mon
+        else if (dow === 0) d.setDate(d.getDate() + 1)   // Sun → Mon
+        startIso = toISODate(d)
+      } else {
+        startIso = toISODate(snapToFriday(new Date(`${startIso}T00:00:00`)))
+      }
+    }
     const endIso = startIso ? addDays(startIso, timeView === 'days' ? n - 1 : (n - 1) * 7) : ''
     const weekCount = timeView === 'days' ? Math.max(1, Math.ceil(n / 7)) : n
     // Set/clear the primary (first) segment; keep any extra split periods. Sub-task segments carry no

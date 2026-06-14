@@ -1483,10 +1483,11 @@ export default function ProjectDetailPage() {
               const monthKey = (iso: string) => iso.slice(0, 7)
               const monthLabel = (key: string) => { const [y, m] = key.split('-'); return `${MONTHS[Number(m) - 1]} ${y}` }
 
-              const months = Array.from(new Set(revenueEntries.map(e => monthKey(e.weekEnding)))).sort()
+              const validEntries = revenueEntries.filter(e => typeof e.weekEnding === 'string' && e.weekEnding.length >= 7)
+              const months = Array.from(new Set(validEntries.map(e => monthKey(e.weekEnding)))).sort()
               const order: string[] = []
               const byTask = new Map<string, { months: Record<string, number>; total: number; deposit: boolean; first: string }>()
-              for (const e of revenueEntries) {
+              for (const e of validEntries) {
                 const task = stripGantt(e.notes || '')
                 const mk = monthKey(e.weekEnding)
                 if (!byTask.has(task)) { byTask.set(task, { months: {}, total: 0, deposit: false, first: e.weekEnding }); order.push(task) }

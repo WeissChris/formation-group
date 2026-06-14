@@ -101,7 +101,7 @@ export default function ProjectReportPage() {
   // ── Insights: cost composition + labour, from the base estimate + accepted variations ──
   const allItems = baseEstimate ? [...activeLineItems(baseEstimate), ...variations.flatMap(v => activeLineItems(v))] : []
   const breakdown = costBreakdown(allItems)
-  const labourHours = allItems.filter(i => i.type === 'Labour').reduce((s, i) => s + (i.units || 0), 0)
+  const labourHours = allItems.filter(i => i.type === 'Labour' && /hour|hr/i.test(i.uom || '')).reduce((s, i) => s + (i.units || 0), 0)
   const labourRate = labourHours > 0 ? breakdown.labour / labourHours : 0
   const hoursUsedEst = labourRate > 0 ? labourActual / labourRate : 0
   const COST_TYPES = [

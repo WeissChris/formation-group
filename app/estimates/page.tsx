@@ -95,8 +95,12 @@ export default function EstimatesPage() {
   const filtered = estimates.filter(e => {
     if (e.archived && filter !== 'declined') return false   // rejected variations are archived (hidden)
     if (filter === 'variation') {
-      // Show variations + the base estimates that have them, so each variation nests under its parent.
-      if (e.parentEstimateId) return matchesSearch(e)
+      // Show base estimates that have variations + their variations, gated together on the PARENT's
+      // search match, so a variation never appears without its parent row to nest under.
+      if (e.parentEstimateId) {
+        const parent = estimates.find(p => p.id === e.parentEstimateId)
+        return !!parent && matchesSearch(parent)
+      }
       return variationParentIds.has(e.id) && matchesSearch(e)
     }
     if (filter !== 'all' && e.status !== filter) return false

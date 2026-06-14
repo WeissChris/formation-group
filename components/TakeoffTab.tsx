@@ -287,7 +287,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     })
   }, [onUpdateLineItemQty])
 
-  const updateTakeoff = useCallback((updater: (t: TakeoffData) => TakeoffData, opts?: { skipHistory?: boolean }) => {
+  const updateTakeoff = useCallback((updater: (t: TakeoffData) => TakeoffData, opts?: { skipHistory?: boolean; skipCommit?: boolean }) => {
     setTakeoff(prev => {
       const next = updater(prev)
       if (next === prev) return prev
@@ -298,7 +298,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
         historyRef.current.future = []
         syncHistorySizes()
       }
-      commitTakeoff(next)
+      if (!opts?.skipCommit) commitTakeoff(next)
       return next
     })
   }, [commitTakeoff])
@@ -1037,7 +1037,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
           }),
         }),
       }),
-    }), { skipHistory: d.recorded })   // first move records the pre-drag shape, rest don't spam history
+    }), { skipHistory: d.recorded, skipCommit: true })   // live geometry only; save once on mouse-up
     d.moved = true
     d.recorded = true
   }
@@ -1096,8 +1096,9 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
   const handleCanvasMouseUp = (e: React.MouseEvent<SVGSVGElement>) => {
     if (vertexDragRef.current) {
       e.stopPropagation()
-      if (vertexDragRef.current.moved) suppressClickRef.current = true
+      const moved = vertexDragRef.current.moved
       vertexDragRef.current = null
+      if (moved) { suppressClickRef.current = true; setTakeoff(prev => { commitTakeoff(prev); return prev }) }  // persist once
       return
     }
     if (activeTool === 'stamp' && stampState.phase === 'picking' && stampState.rect) {
@@ -1381,6 +1382,10 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
       const activePlanId = t.activePlanId === planId ? plans[0]?.id : t.activePlanId
       return { ...t, plans, groups, activePlanId }
     })
+    // Don't carry a half-finished calibration/drawing onto the newly-active plan.
+    setCalib({ step: 'idle', distanceInput: '' })
+    setDrawingPoints([])
+    setIsDrawing(false)
   }
 
   // ── Calibration ────────────────────────────────────────────────────────
@@ -1408,9 +1413,22 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
       return
     }
     const scale = pxDist / (realDist / 1000)  // realDist entered in mm → store px per metre (measurements stay m²/lm)
+    const { imageWidth, imageHeight } = activePlan
     updateTakeoff(t => ({
       ...t,
       plans: t.plans.map(p => p.id === activePlan.id ? { ...p, scale, scaleSet: true } : p),
+      // Re-value measurements already drawn on this plan against the new scale (handles recalibration).
+      groups: t.groups.map(g => ({
+        ...g,
+        items: g.items.map(i => ({
+          ...i,
+          measurements: i.measurements.map(m => m.planId !== activePlan.id ? m : {
+            ...m,
+            value: m.type === 'area' ? calcArea(m.points, imageWidth, imageHeight, scale)
+              : m.type === 'length' ? calcLength(m.points, imageWidth, imageHeight, scale) : m.value,
+          }),
+        })),
+      })),
     }))
     setCalib({ step: 'idle', distanceInput: '' })
   }
@@ -1493,9 +1511,9 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     _group: TakeoffGroup,
     opts?: { selected?: boolean; hovered?: boolean }
   ) => {
-    const layer = getItemLayer(takeoff, item)
     const color = colorForItem(item)
-    const hatchId = layer.id === 'default' ? `fgHatch-${itemColorIdx.get(item.id) ?? 0}` : null
+    const palIdx = LAYER_COLORS.indexOf(color)   // colour-coded hatch works for any palette colour (layer or auto)
+    const hatchId = palIdx >= 0 ? `fgHatch-${palIdx}` : null
     // SVG <polygon>/<polyline> "points" do NOT accept % — only user coords. The SVG has no viewBox,
     // so its user space equals the plan image's pixel size; map normalised points into that.
     const iw = activePlan?.imageWidth ?? 1
