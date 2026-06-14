@@ -917,6 +917,17 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     setSelectedItemId(id)
   }
 
+  // Arm the matching draw tool for an item so you can add ANOTHER measurement to it — each shape
+  // you draw is appended to the item and its quantities sum (e.g. several garden-bed areas → one total).
+  const drawIntoItem = (groupId: string, itemId: string, unit: string) => {
+    if (!activePlan?.scaleSet) { window.alert('Set the scale first (Set Scale → draw a known distance in mm), then draw.'); return }
+    setSelectedGroupId(groupId)
+    setSelectedItemId(itemId)
+    setActiveTool(unit === 'lm' ? 'length' : unit === 'ea' ? 'count' : 'area')
+    setDrawingPoints([])
+    setIsDrawing(false)
+  }
+
   const deleteItem = (groupId: string, itemId: string) => {
     updateTakeoff(t => ({
       ...t,
@@ -1780,6 +1791,14 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                     {/* Wastage + layer row — only shown when item is selected */}
                     {isSelected && (
                       <div className="flex items-center gap-2 px-6 py-1.5 bg-fg-card/20 border-b border-fg-border/20 flex-wrap" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={() => drawIntoItem(group.id, item.id, item.unit)}
+                          title="Draw another measurement on the plan — it adds to this item's total"
+                          className="text-2xs px-2 py-0.5 border border-blue-400/50 text-blue-500 rounded-sm hover:bg-blue-400/10 transition-colors shrink-0"
+                        >
+                          + Draw {item.unit === 'lm' ? 'length' : item.unit === 'ea' ? 'count' : 'area'}
+                        </button>
+                        <div className="w-px h-4 bg-fg-border shrink-0" />
                         <span className="text-2xs text-fg-muted shrink-0">Layer:</span>
                         <select
                           value={item.layerId ?? layers[0].id}
