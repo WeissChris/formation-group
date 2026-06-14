@@ -3,12 +3,13 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { loadEstimates, loadProposals, saveEstimate, saveSubcontractor } from '@/lib/storage'
+import { loadEstimates, loadProposals, saveEstimate, saveSubcontractor, loadTakeoff } from '@/lib/storage'
 import { upsertEstimate, upsertProject, getEstimates } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract } from '@/lib/estimateCalculations'
+import { getFinalQty } from '@/lib/takeoffGeometry'
 import { getAllLibraryItems, getCategories, defaultMarkupForType } from '@/lib/itemLibrary'
-import type { Estimate, EstimateLineItem, LibraryItem } from '@/types'
+import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData } from '@/types'
 import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch, Copy, Eye, EyeOff } from 'lucide-react'
 import TakeoffTab from '@/components/TakeoffTab'
 
@@ -463,6 +464,8 @@ export default function EstimateBuilderPage() {
   const [addingCategory, setAddingCategory] = useState(false)
   const [parentEstimate, setParentEstimate] = useState<Estimate | null>(null)
   const [activeTab, setActiveTab] = useState<'estimate' | 'takeoff'>('estimate')
+  const [takeoffData, setTakeoffData] = useState<TakeoffData | null>(null)
+  const [takeoffSummaryOpen, setTakeoffSummaryOpen] = useState(true)
 
   // Warn user about unsaved changes before leaving
   useEffect(() => {
@@ -475,6 +478,11 @@ export default function EstimateBuilderPage() {
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [hasUnsavedChanges])
+
+  // Load the takeoff summary whenever the Line Items tab is shown (picks up edits made on Takeoff).
+  useEffect(() => {
+    if (activeTab === 'estimate') setTakeoffData(loadTakeoff(id))
+  }, [activeTab, id])
 
   useEffect(() => {
     let cancelled = false
@@ -1100,6 +1108,55 @@ export default function EstimateBuilderPage() {
           onUpdateLineItemQty={handleUpdateLineItemQty}
         />
       )}
+
+      {/* Takeoff quantities summary — price against measured quantities without leaving Line Items */}
+      {activeTab === 'estimate' && (() => {
+        const takeoffItems = (takeoffData?.groups ?? []).flatMap(g =>
+          g.items
+            .map(i => ({ group: g.name, name: i.name, qty: getFinalQty(i), unit: i.unit, has: i.measurements.length > 0 || i.manualOverride !== undefined }))
+            .filter(it => it.has && it.qty > 0)
+        )
+        if (takeoffItems.length === 0) return null
+        return (
+          <div className="mb-6 border border-fg-border rounded-sm bg-fg-bg">
+            <div className="flex items-center justify-between px-4 py-2.5">
+              <button
+                onClick={() => setTakeoffSummaryOpen(o => !o)}
+                className="flex items-center gap-2 text-xs font-light tracking-architectural uppercase text-fg-muted hover:text-fg-heading transition-colors"
+              >
+                <span className="text-[9px]">{takeoffSummaryOpen ? '▼' : '▶'}</span>
+                Takeoff quantities
+                <span className="text-2xs text-fg-muted/60 normal-case tracking-normal">· {takeoffItems.length} items</span>
+              </button>
+              <button onClick={() => setActiveTab('takeoff')} className="text-2xs font-light tracking-wide uppercase text-fg-muted hover:text-fg-heading transition-colors">Open takeoff →</button>
+            </div>
+            {takeoffSummaryOpen && (
+              <div className="px-4 pb-3 overflow-x-auto border-t border-fg-border/40">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="text-2xs font-light tracking-architectural uppercase text-fg-muted border-b border-fg-border/40">
+                      <th className="py-1.5 pr-3">Item</th>
+                      <th className="py-1.5 px-3 text-left">Group</th>
+                      <th className="py-1.5 px-2 text-right">Qty</th>
+                      <th className="py-1.5 pl-2 text-left">Unit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {takeoffItems.map((it, idx) => (
+                      <tr key={idx} className="border-b border-fg-border/15">
+                        <td className="py-1.5 pr-3 text-xs font-light text-fg-heading">{it.name}</td>
+                        <td className="py-1.5 px-3 text-xs font-light text-fg-muted">{it.group}</td>
+                        <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-heading">{it.qty.toFixed(2)}</td>
+                        <td className="py-1.5 pl-2 text-xs text-fg-muted">{it.unit}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Two-panel layout */}
       <div className={`flex gap-6 items-start ${activeTab !== 'estimate' ? 'hidden' : ''}`}>
