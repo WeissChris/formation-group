@@ -69,23 +69,38 @@ export default function EstimatesPage() {
     { label: 'Variations', value: 'variation' },
   ]
 
+  // Variations are estimates with a parentEstimateId — they nest under their parent and have their
+  // own Variations tab, so they must NOT inflate the estimate counts/stats (one estimate + one
+  // variation is still ONE estimate).
+  const baseEstimates = estimates.filter(e => !e.parentEstimateId)
+  const liveVariations = estimates.filter(e => !!e.parentEstimateId && !e.archived)
+  const variationParentIds = new Set(liveVariations.map(v => v.parentEstimateId))
+
   const statusCount = (status: FilterStatus) => {
-    if (status === 'all') return estimates.length
-    return estimates.filter(e => e.status === status).length
+    if (status === 'variation') return liveVariations.length
+    if (status === 'all') return baseEstimates.length
+    return baseEstimates.filter(e => e.status === status).length
+  }
+
+  const matchesSearch = (e: Estimate) => {
+    if (!search) return true
+    const q = search.toLowerCase()
+    return (
+      e.projectName.toLowerCase().includes(q) ||
+      (e.name ?? '').toLowerCase().includes(q) ||
+      !!e.notes?.toLowerCase().includes(q)
+    )
   }
 
   const filtered = estimates.filter(e => {
     if (e.archived && filter !== 'declined') return false   // rejected variations are archived (hidden)
-    if (filter !== 'all' && e.status !== filter) return false
-    if (search) {
-      const q = search.toLowerCase()
-      return (
-        e.projectName.toLowerCase().includes(q) ||
-        (e.name ?? '').toLowerCase().includes(q) ||
-        e.notes?.toLowerCase().includes(q)
-      )
+    if (filter === 'variation') {
+      // Show variations + the base estimates that have them, so each variation nests under its parent.
+      if (e.parentEstimateId) return matchesSearch(e)
+      return variationParentIds.has(e.id) && matchesSearch(e)
     }
-    return true
+    if (filter !== 'all' && e.status !== filter) return false
+    return matchesSearch(e)
   })
 
   // Group by project
@@ -159,16 +174,17 @@ export default function EstimatesPage() {
 
       {/* Metrics bar */}
       {estimates.length > 0 && (() => {
-        const totalEstimateValue = estimates.reduce((s, e) => s + getEstimateContract(e).exGst, 0)
-        const acceptedCount = estimates.filter(e => e.status === 'accepted').length
+        // Stats count base estimates only — variations are modifiers shown in the list, not estimates.
+        const totalEstimateValue = baseEstimates.reduce((s, e) => s + getEstimateContract(e).exGst, 0)
+        const acceptedCount = baseEstimates.filter(e => e.status === 'accepted').length
         // Revenue-weighted portfolio margin: Σ(revenue − cost) / Σrevenue, so a $200k estimate
         // counts proportionally more than a $2k one (an unweighted mean misrepresented the mix).
-        const totalEstimateCost = estimates.reduce((s, e) => s + e.lineItems.reduce((ls, li) => ls + li.total, 0), 0)
+        const totalEstimateCost = baseEstimates.reduce((s, e) => s + e.lineItems.reduce((ls, li) => ls + li.total, 0), 0)
         const avgMargin = totalEstimateValue > 0 ? (totalEstimateValue - totalEstimateCost) / totalEstimateValue * 100 : 0
         return (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-fg-border mb-8">
             {[
-              { label: 'Total Estimates', value: String(estimates.length) },
+              { label: 'Total Estimates', value: String(baseEstimates.length) },
               { label: 'Total Value',     value: formatCurrency(totalEstimateValue) },
               { label: 'Accepted',        value: String(acceptedCount) },
               { label: 'Avg Margin',      value: `${avgMargin.toFixed(1)}%` },
