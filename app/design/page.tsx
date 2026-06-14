@@ -50,6 +50,18 @@ export default function DesignPage() {
 
   useEffect(() => {
     setProposals(loadProposals())
+    // Pull client acceptances down from Supabase so a proposal accepted on the public page (or on
+    // another device) doesn't keep showing "Sent" here. The login hydrate does this only at login;
+    // a persisted session never re-runs it, which is how a stale "Sent" survives on a second computer.
+    ;(async () => {
+      try {
+        const { reconcileProposals } = await import('@/lib/storageAsync')
+        const changed = await reconcileProposals()
+        if (changed > 0) setProposals(loadProposals())
+      } catch (e) {
+        console.warn('[design] proposal reconcile failed', e)
+      }
+    })()
   }, [])
 
   const activeProposals = proposals.filter(p =>

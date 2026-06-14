@@ -192,6 +192,36 @@ export async function upsertProposal(proposal: DesignProposal): Promise<void> {
   }
 }
 
+/**
+ * Pull client proposal acceptances down from Supabase into localStorage. The client accepts on the
+ * public proposal page (straight to Supabase via accept_proposal_by_token); the office reads
+ * localStorage, so without this a 'sent' proposal never flips to 'accepted' until the next login.
+ * The login hydrate already does this, but only at login — a device with a persisted session never
+ * re-runs it, so the office list keeps showing "Sent". Call it when showing the design list/detail.
+ * Mirrors reconcileVariations: restore-if-empty, otherwise lift a local 'sent' to the recorded
+ * acceptance. Returns how many local proposals changed.
+ */
+export async function reconcileProposals(): Promise<number> {
+  if (!isSupabaseConfigured() || !supabase) return 0
+  const remote = await getProposals()
+  const local = loadProposals()
+  // Fresh / cleared device: restore all remote proposals locally.
+  if (local.length === 0 && remote.length > 0) {
+    remote.forEach(p => saveProposal(p))
+    return remote.length
+  }
+  const byId = new Map(remote.map(p => [p.id, p]))
+  let changed = 0
+  for (const lp of local) {
+    const r = byId.get(lp.id)
+    if (r && r.status === 'accepted' && lp.status !== 'accepted') {
+      saveProposal({ ...lp, status: 'accepted', acceptedAt: r.acceptedAt ?? lp.acceptedAt, acceptedByName: r.acceptedByName ?? lp.acceptedByName })
+      changed++
+    }
+  }
+  return changed
+}
+
 // ── ESTIMATES ────────────────────────────────────────────────────────────────
 
 export async function getEstimates(): Promise<Estimate[]> {

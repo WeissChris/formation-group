@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { loadProposals, saveProposal, deleteProposal, generateRevenueFromProposal, generateInvoiceStages, saveDesignProject, loadDesignProjectByProposalId } from '@/lib/storage'
-import { upsertProposal, getProposals } from '@/lib/storageAsync'
+import { upsertProposal, getProposals, reconcileProposals } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { getProposalPhases, syncLegacyPhaseFields, phasesTotal, makeBlankPhase, defaultPhaseDescription, defaultPhaseOutcome, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 import { requestSendProposal, sendErrorMessage } from '@/lib/emailClient'
@@ -31,6 +31,10 @@ export default function ProposalDetailPage() {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
+      // Reconcile client acceptances from Supabase first, so a proposal accepted on the public page
+      // (or another device) shows as accepted here instead of a stale local "sent".
+      try { await reconcileProposals() } catch { /* offline — fall back to local copy */ }
+      if (cancelled) return
       let p = loadProposals().find(pr => pr.id === id)
       if (!p) {
         // Local copy may have been cleared — fall back to Supabase and restore it locally
