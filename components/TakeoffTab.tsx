@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   saveTakeoff,
-  loadTakeoff,
+  loadTakeoffAsync,
   loadTakeoffTemplates,
   saveTakeoffTemplate,
   deleteTakeoffTemplate,
@@ -265,10 +265,16 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     future: historyRef.current.future.length,
   })
 
-  // Load saved takeoff on mount
+  // Load saved takeoff on mount. Reads the IndexedDB durable store as well as localStorage, since a
+  // takeoff with plan images exceeds the ~5MB localStorage quota and only survives in IndexedDB —
+  // this is what makes a saved takeoff reappear after navigating away and back.
   useEffect(() => {
-    const saved = loadTakeoff(estimateId)
-    if (saved) setTakeoff(saved)
+    let cancelled = false
+    ;(async () => {
+      const saved = await loadTakeoffAsync(estimateId)
+      if (!cancelled && saved) setTakeoff(saved)
+    })()
+    return () => { cancelled = true }
   }, [estimateId])
 
   const activePlan = takeoff.plans.find(p => p.id === takeoff.activePlanId) ?? null

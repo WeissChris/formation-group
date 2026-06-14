@@ -3,24 +3,57 @@ import { notify } from './broadcast'
 import { getProposalPhases, phasesTotal } from './proposalPhases'
 import { generateId } from './utils'
 
-// IndexedDB backup - runs silently after every localStorage write
-async function backupToIndexedDB(key: string, data: unknown[]): Promise<void> {
-  if (typeof window === 'undefined') return
-  try {
-    const dbRequest = indexedDB.open('FormationGroupBackup', 1)
-    dbRequest.onupgradeneeded = () => {
-      const db = dbRequest.result
-      if (!db.objectStoreNames.contains('backup')) {
-        db.createObjectStore('backup')
+// IndexedDB backup - runs after every localStorage write. Resolves true once the write is durably
+// committed (tx.oncomplete), false on any failure — so callers handling data too large for
+// localStorage (e.g. takeoffs with plan images) can tell whether the durable copy actually landed.
+function backupToIndexedDB(key: string, data: unknown[]): Promise<boolean> {
+  if (typeof window === 'undefined') return Promise.resolve(false)
+  return new Promise<boolean>((resolve) => {
+    try {
+      const dbRequest = indexedDB.open('FormationGroupBackup', 1)
+      dbRequest.onupgradeneeded = () => {
+        const db = dbRequest.result
+        if (!db.objectStoreNames.contains('backup')) {
+          db.createObjectStore('backup')
+        }
       }
-    }
-    dbRequest.onsuccess = () => {
-      const db = dbRequest.result
-      const tx = db.transaction('backup', 'readwrite')
-      const store = tx.objectStore('backup')
-      store.put({ data, timestamp: new Date().toISOString() }, key)
-    }
-  } catch (e) { console.warn('[Formation] IndexedDB backup failed:', e) }
+      dbRequest.onsuccess = () => {
+        try {
+          const db = dbRequest.result
+          const tx = db.transaction('backup', 'readwrite')
+          tx.objectStore('backup').put({ data, timestamp: new Date().toISOString() }, key)
+          tx.oncomplete = () => resolve(true)
+          tx.onerror = () => resolve(false)
+          tx.onabort = () => resolve(false)
+        } catch (e) { console.warn('[Formation] IndexedDB backup failed:', e); resolve(false) }
+      }
+      dbRequest.onerror = () => resolve(false)
+    } catch (e) { console.warn('[Formation] IndexedDB backup failed:', e); resolve(false) }
+  })
+}
+
+// Read one backup key straight from IndexedDB. Used for datasets that can exceed the ~5MB
+// localStorage quota (takeoffs with plan images), where IndexedDB is the real durable store.
+function loadKeyFromIndexedDB(key: string): Promise<unknown[] | null> {
+  if (typeof window === 'undefined') return Promise.resolve(null)
+  return new Promise((resolve) => {
+    try {
+      const dbRequest = indexedDB.open('FormationGroupBackup', 1)
+      dbRequest.onupgradeneeded = () => {
+        const db = dbRequest.result
+        if (!db.objectStoreNames.contains('backup')) db.createObjectStore('backup')
+      }
+      dbRequest.onsuccess = () => {
+        const db = dbRequest.result
+        if (!db.objectStoreNames.contains('backup')) { resolve(null); return }
+        const tx = db.transaction('backup', 'readonly')
+        const req = tx.objectStore('backup').get(key)
+        req.onsuccess = () => resolve((req.result?.data as unknown[]) ?? null)
+        req.onerror = () => resolve(null)
+      }
+      dbRequest.onerror = () => resolve(null)
+    } catch { resolve(null) }
+  })
 }
 
 // Recovery from IndexedDB when localStorage is empty
@@ -331,29 +364,58 @@ export function deleteProgressClaim(id: string): void {
 }
 
 // Takeoff data
+//
+// Takeoffs embed plan images as base64 data URIs, which routinely exceed the ~5MB localStorage
+// quota. localStorage is therefore a best-effort fast cache; IndexedDB (much larger quota) is the
+// durable store. Every save stamps `updatedAt` so the loader can pick the freshest of the two.
 let takeoffQuotaWarned = false
 export function saveTakeoff(data: TakeoffData): void {
+  const stamped: TakeoffData = { ...data, updatedAt: new Date().toISOString() }
   const all = loadAllTakeoffs()
-  const idx = all.findIndex(t => t.estimateId === data.estimateId)
-  if (idx >= 0) all[idx] = data
-  else all.push(data)
+  const idx = all.findIndex(t => t.estimateId === stamped.estimateId)
+  if (idx >= 0) all[idx] = stamped
+  else all.push(stamped)
+  let localOk = true
   try {
     localStorage.setItem('fg_takeoffs', JSON.stringify(all))
   } catch (e) {
-    // Plan images are base64 data URIs and can be large — a big PDF/photo blows the ~5MB quota.
-    // Swallow so the throw doesn't abort the React state update (which would lose the edit the
-    // user just made); the IndexedDB backup below still runs. Warn once per session.
-    console.error('[takeoff] localStorage save failed (likely quota — plan image too large)', e)
-    if (!takeoffQuotaWarned && typeof window !== 'undefined') {
-      takeoffQuotaWarned = true
-      window.alert('This takeoff is too large to save to local storage — most likely the plan image. Recent changes are kept in memory but may not survive a reload. Use a smaller or lower-resolution plan image.')
-    }
+    // A big plan image blew the ~5MB quota. Swallow so the throw doesn't abort the React state
+    // update; IndexedDB below is the durable store and the loader reads it back.
+    localOk = false
+    console.error('[takeoff] localStorage save failed (likely quota — plan image too large); relying on IndexedDB', e)
   }
-  backupToIndexedDB('fg_takeoffs', all)
+  // IndexedDB is the durable store. Only warn the user if BOTH stores fail — then the change really
+  // is memory-only and at risk on reload.
+  void backupToIndexedDB('fg_takeoffs', all).then(idbOk => {
+    if (!localOk && !idbOk && !takeoffQuotaWarned && typeof window !== 'undefined') {
+      takeoffQuotaWarned = true
+      window.alert('This takeoff is too large to save in this browser, even the backup store. Recent changes are only in memory and may be lost on reload — try a smaller or lower-resolution plan image.')
+    }
+  })
 }
 
 export function loadTakeoff(estimateId: string): TakeoffData | null {
   return loadAllTakeoffs().find(t => t.estimateId === estimateId) || null
+}
+
+/**
+ * Load a takeoff preferring whichever store has the freshest copy. Big takeoffs (plan images) don't
+ * fit localStorage, so their only complete copy is in IndexedDB; this is what makes such a takeoff
+ * survive navigating away and back. Falls back gracefully when one store is missing/older.
+ */
+export async function loadTakeoffAsync(estimateId: string): Promise<TakeoffData | null> {
+  const local = loadTakeoff(estimateId)
+  let fromIdb: TakeoffData | null = null
+  try {
+    const all = (await loadKeyFromIndexedDB('fg_takeoffs')) as TakeoffData[] | null
+    fromIdb = all?.find(t => t.estimateId === estimateId) ?? null
+  } catch { /* IndexedDB unavailable — use localStorage */ }
+  if (local && fromIdb) {
+    const lt = Date.parse(local.updatedAt || '') || 0
+    const it = Date.parse(fromIdb.updatedAt || '') || 0
+    return it >= lt ? fromIdb : local
+  }
+  return fromIdb ?? local
 }
 
 function loadAllTakeoffs(): TakeoffData[] {

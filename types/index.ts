@@ -496,6 +496,7 @@ export interface TakeoffData {
   groups: TakeoffGroup[]
   activePlanId?: string
   layers?: TakeoffLayer[]    // optional for backward compat with older saved takeoffs
+  updatedAt?: string         // last-save stamp; lets the loader pick the freshest of localStorage vs IndexedDB
 }
 
 // ── COST ACTUALS ──────────────────────────────────────────────────────────────

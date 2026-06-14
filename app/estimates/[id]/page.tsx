@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { loadEstimates, loadProposals, saveEstimate, saveSubcontractor, loadTakeoff } from '@/lib/storage'
+import { loadEstimates, loadProposals, saveEstimate, saveSubcontractor, loadTakeoffAsync } from '@/lib/storage'
 import { upsertEstimate, upsertProject, getEstimates } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract } from '@/lib/estimateCalculations'
@@ -484,8 +484,15 @@ export default function EstimateBuilderPage() {
   }, [hasUnsavedChanges])
 
   // Load the takeoff summary whenever the Line Items tab is shown (picks up edits made on Takeoff).
+  // Async so it reads the IndexedDB durable store too — big takeoffs (plan images) live only there.
   useEffect(() => {
-    if (activeTab === 'estimate') setTakeoffData(loadTakeoff(id))
+    if (activeTab !== 'estimate') return
+    let cancelled = false
+    ;(async () => {
+      const t = await loadTakeoffAsync(id)
+      if (!cancelled) setTakeoffData(t)
+    })()
+    return () => { cancelled = true }
   }, [activeTab, id])
 
   useEffect(() => {
