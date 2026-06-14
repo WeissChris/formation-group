@@ -443,6 +443,7 @@ export interface TakeoffItem {
   linkedLineItemId?: string
   manualOverride?: number             // overrides rawQty (before wastage)
   layerId?: string                    // references TakeoffLayer; undefined = default layer
+  hidden?: boolean                    // per-item show/hide — hides this item's measurements on the plan
 }
 
 export interface TakeoffLayer {

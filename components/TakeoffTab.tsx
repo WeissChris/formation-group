@@ -203,6 +203,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
   })
   const [activeTool, setActiveTool] = useState<'select' | 'area' | 'rect' | 'length' | 'count' | 'stamp'>('select')
   const [deductMode, setDeductMode] = useState(false)
+  const [layersCollapsed, setLayersCollapsed] = useState(true)
 
   // Live drawing assistance
   const [cursorNorm, setCursorNorm] = useState<{ x: number; y: number } | null>(null)
@@ -1404,7 +1405,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     takeoff.groups.forEach(group => {
       group.items.forEach(item => {
         const layer = getItemLayer(takeoff, item)
-        if (!layer.visible) return
+        if (!layer.visible || item.hidden) return
         item.measurements.filter(m => m.planId === activePlan.id)
           .forEach(measurement => results.push({ measurement, item, group }))
       })
@@ -1542,11 +1543,16 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
         {/* Layers panel */}
         <div className="px-4 py-2 border-b border-fg-border bg-fg-card/10 shrink-0">
           <div className="flex items-center justify-between mb-1.5">
-            <p className="text-2xs font-medium tracking-wide uppercase text-fg-muted">Layers</p>
-            <button onClick={addLayer} className="text-2xs text-fg-muted hover:text-fg-heading transition-colors">
-              + Layer
+            <button onClick={() => setLayersCollapsed(c => !c)} className="flex items-center gap-1 text-2xs font-medium tracking-wide uppercase text-fg-muted hover:text-fg-heading">
+              <span className="text-[8px]">{layersCollapsed ? '▶' : '▼'}</span> Layers
             </button>
+            {!layersCollapsed && (
+              <button onClick={addLayer} className="text-2xs text-fg-muted hover:text-fg-heading transition-colors">
+                + Layer
+              </button>
+            )}
           </div>
+          {!layersCollapsed && (
           <div className="flex flex-col gap-0.5">
             {layers.map(layer => (
               <div key={layer.id} className="flex items-center gap-1.5 py-0.5">
@@ -1581,6 +1587,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
               </div>
             ))}
           </div>
+          )}
         </div>
 
         {/* Groups list */}
@@ -1620,8 +1627,16 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                     {/* Item row */}
                     <div
                       onClick={() => { setSelectedGroupId(group.id); setSelectedItemId(item.id); panToItem(item) }}
-                      className={`flex items-center gap-1.5 px-4 py-2 border-b border-fg-border/20 cursor-pointer hover:bg-fg-card/20 transition-colors ${isSelected ? 'bg-fg-card/40 border-l-2 border-l-blue-500' : 'pl-6'}`}
+                      className={`flex items-center gap-1.5 px-4 py-2 border-b border-fg-border/20 cursor-pointer hover:bg-fg-card/20 transition-colors ${isSelected ? 'bg-fg-card/40 border-l-2 border-l-blue-500' : 'pl-6'} ${item.hidden ? 'opacity-40' : ''}`}
                     >
+                      {/* Show / hide this item's area on the plan */}
+                      <button
+                        onClick={e => { e.stopPropagation(); patchItem(group.id, item.id, { hidden: !item.hidden }) }}
+                        title={item.hidden ? 'Show on plan' : 'Hide on plan'}
+                        className="text-2xs text-fg-muted hover:text-fg-heading w-4 text-center shrink-0"
+                      >
+                        {item.hidden ? '·' : '👁'}
+                      </button>
                       {/* Colour swatch — matches the area's shade on the plan */}
                       <span
                         className="w-2 h-2 rounded-full shrink-0 border border-black/20"
