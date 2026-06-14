@@ -546,10 +546,35 @@ export default function EstimateBuilderPage() {
   }, [])
 
   // Apply a takeoff quantity to the line item whose Units field was last focused.
-  const applyQtyToLineItem = (qty: number) => {
-    if (!lastUnitsLineId) { window.alert("Click into a line item's Units field first, then press Use."); return }
-    if (!estimate?.lineItems.some(i => i.id === lastUnitsLineId)) {
-      window.alert("That line item is no longer there — click into a Units field again, then press Use.")
+  // Fuzzy-match a takeoff item name to a line item (by description / sub-category / category words).
+  const normForMatch = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const matchLineForName = (name: string): EstimateLineItem | null => {
+    if (!estimate) return null
+    const n = normForMatch(name)
+    if (!n) return null
+    const words = n.split(' ').filter(w => w.length > 2)
+    let best: EstimateLineItem | null = null
+    let bestScore = 0
+    for (const li of estimate.lineItems) {
+      if (li.enabled === false) continue
+      const hay = normForMatch(`${li.description} ${li.subcategory ?? ''} ${li.category}`)
+      const desc = normForMatch(li.description)
+      let score = 0
+      if (hay.includes(n)) score += 3
+      if (desc && (n.includes(desc) || desc.includes(n))) score += 3
+      for (const w of words) if (hay.includes(w)) score += 1
+      if (score > bestScore) { bestScore = score; best = li }
+    }
+    return bestScore >= 2 ? best : null
+  }
+
+  // Apply a takeoff qty to a line: the line whose Units field was last focused (explicit override),
+  // else the auto-matched line. Focus is a one-shot override, so the next Use auto-matches again.
+  const applyQtyToLineItem = (qty: number, matchedId?: string) => {
+    const lineId = lastUnitsLineId ?? matchedId
+    if (!lineId) { window.alert('No matching line item — click into the Units field of the line you want, then press Use.'); return }
+    if (!estimate?.lineItems.some(i => i.id === lineId)) {
+      window.alert('That line item is no longer there — click into a Units field again, then press Use.')
       return
     }
     setEstimate(prev => {
@@ -557,7 +582,7 @@ export default function EstimateBuilderPage() {
       return {
         ...prev,
         lineItems: prev.lineItems.map(i => {
-          if (i.id !== lastUnitsLineId) return i
+          if (i.id !== lineId) return i
           const total = qty * i.unitCost
           return { ...i, units: qty, total, revenue: calculateLineItemRevenue({ ...i, units: qty, total }) }
         }),
@@ -565,6 +590,7 @@ export default function EstimateBuilderPage() {
       }
     })
     setHasUnsavedChanges(true)
+    setLastUnitsLineId(null)
   }
 
   const deleteLineItem = useCallback((itemId: string) => {
@@ -1166,31 +1192,48 @@ export default function EstimateBuilderPage() {
                       <th className="py-1.5 px-2 text-right">Measured</th>
                       <th className="py-1.5 px-2 text-right">Final</th>
                       <th className="py-1.5 px-2 text-left">Unit</th>
+                      <th className="py-1.5 px-3 text-left">Suggested line</th>
                       <th className="py-1.5 pl-2 text-right" />
                     </tr>
                   </thead>
                   <tbody>
-                    {takeoffItems.map((it, idx) => (
-                      <tr key={idx} className="border-b border-fg-border/15">
-                        <td className="py-1.5 pr-3 text-xs font-light text-fg-heading">{it.name}</td>
-                        <td className="py-1.5 px-3 text-xs font-light text-fg-muted">{it.group}</td>
-                        <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-muted">{it.raw.toFixed(2)}</td>
-                        <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-heading">{it.qty.toFixed(2)}</td>
-                        <td className="py-1.5 px-2 text-xs text-fg-muted">{it.unit}</td>
-                        <td className="py-1.5 pl-2 text-right">
-                          <button
-                            onClick={() => applyQtyToLineItem(it.qty)}
-                            title="Apply this (final) quantity to the line item whose Units field you last clicked"
-                            className="text-2xs px-2 py-0.5 border border-blue-400/50 text-blue-500 rounded-sm hover:bg-blue-400/10 transition-colors"
-                          >
-                            Use →
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {takeoffItems.map((it, idx) => {
+                      const matched = matchLineForName(it.name)
+                      const target = lastUnitsLineId ? 'the line you clicked' : matched ? `"${matched.description || matched.subcategory || matched.category}"` : 'a line — click its Units field first'
+                      return (
+                        <tr key={idx} className="border-b border-fg-border/15">
+                          <td className="py-1.5 pr-3 text-xs font-light text-fg-heading">{it.name}</td>
+                          <td className="py-1.5 px-3 text-xs font-light text-fg-muted">{it.group}</td>
+                          <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-muted">{it.raw.toFixed(2)}</td>
+                          <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-heading">{it.qty.toFixed(2)}</td>
+                          <td className="py-1.5 px-2 text-xs text-fg-muted">{it.unit}</td>
+                          <td className="py-1.5 px-3 text-xs whitespace-nowrap">
+                            {matched
+                              ? <span className="text-fg-muted/70">→ {matched.description || matched.subcategory || matched.category}</span>
+                              : <span className="text-fg-muted/40">no match</span>}
+                          </td>
+                          <td className="py-1.5 pl-2 text-right whitespace-nowrap">
+                            <button
+                              onClick={() => applyQtyToLineItem(it.qty, matched?.id)}
+                              title={`Set the FINAL qty (${it.qty.toFixed(2)} ${it.unit}) on ${target}`}
+                              className="text-2xs px-2 py-0.5 border border-blue-400/50 text-blue-500 rounded-sm hover:bg-blue-400/10 transition-colors"
+                            >
+                              final
+                            </button>
+                            <button
+                              onClick={() => applyQtyToLineItem(it.raw, matched?.id)}
+                              title={`Set the MEASURED qty (${it.raw.toFixed(2)} ${it.unit}, no wastage) on ${target}`}
+                              className="ml-1 text-2xs px-2 py-0.5 border border-fg-border text-fg-muted rounded-sm hover:text-fg-heading hover:border-fg-heading transition-colors"
+                            >
+                              meas
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
-                <p className="text-2xs font-light text-fg-muted/70 mt-2">Measured = sum of areas; Final adds the item&apos;s wastage %. <span className="text-fg-muted">Use →</span> sets the Final qty on the line whose Units field you last clicked.</p>
+                <p className="text-2xs font-light text-fg-muted/70 mt-2">Measured = sum of areas; Final adds the item&apos;s wastage %. <span className="text-fg-muted">final / meas</span> sets that qty on the suggested (name-matched) line — or, if you click into a line&apos;s Units field first, on that line instead.</p>
               </div>
             )}
           </div>
