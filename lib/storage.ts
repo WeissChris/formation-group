@@ -3,84 +3,91 @@ import { notify } from './broadcast'
 import { getProposalPhases, phasesTotal } from './proposalPhases'
 import { generateId } from './utils'
 
-// IndexedDB backup - runs after every localStorage write. Resolves true once the write is durably
-// committed (tx.oncomplete), false on any failure — so callers handling data too large for
-// localStorage (e.g. takeoffs with plan images) can tell whether the durable copy actually landed.
-function backupToIndexedDB(key: string, data: unknown[]): Promise<boolean> {
-  if (typeof window === 'undefined') return Promise.resolve(false)
-  return new Promise<boolean>((resolve) => {
+// ── IndexedDB backup (large-quota durable store, mirrors every localStorage write) ───────────────
+//
+// IMPORTANT: open the DB through openBackupDB() ONLY. Every open MUST create the 'backup' object
+// store in onupgradeneeded. A previous version of recoverFromIndexedDB opened the DB with NO
+// onupgradeneeded, so when it ran first (on app load, before any save) it created an empty store-
+// less database; thereafter every backup silently failed (the store could never be created at the
+// same version). The version bump to 2 forces an upgrade on those broken DBs so the store is added.
+const BACKUP_DB = 'FormationGroupBackup'
+const BACKUP_DB_VERSION = 2
+const BACKUP_STORE = 'backup'
+
+function openBackupDB(): Promise<IDBDatabase | null> {
+  if (typeof window === 'undefined' || !window.indexedDB) return Promise.resolve(null)
+  return new Promise((resolve) => {
     try {
-      const dbRequest = indexedDB.open('FormationGroupBackup', 1)
-      dbRequest.onupgradeneeded = () => {
-        const db = dbRequest.result
-        if (!db.objectStoreNames.contains('backup')) {
-          db.createObjectStore('backup')
-        }
+      const req = indexedDB.open(BACKUP_DB, BACKUP_DB_VERSION)
+      req.onupgradeneeded = () => {
+        const db = req.result
+        if (!db.objectStoreNames.contains(BACKUP_STORE)) db.createObjectStore(BACKUP_STORE)
       }
-      dbRequest.onsuccess = () => {
-        try {
-          const db = dbRequest.result
-          const tx = db.transaction('backup', 'readwrite')
-          tx.objectStore('backup').put({ data, timestamp: new Date().toISOString() }, key)
-          tx.oncomplete = () => resolve(true)
-          tx.onerror = () => resolve(false)
-          tx.onabort = () => resolve(false)
-        } catch (e) { console.warn('[Formation] IndexedDB backup failed:', e); resolve(false) }
+      req.onsuccess = () => {
+        const db = req.result
+        // Defensive: if the store is somehow still missing, the DB is unusable for backup.
+        if (!db.objectStoreNames.contains(BACKUP_STORE)) { resolve(null); return }
+        resolve(db)
       }
-      dbRequest.onerror = () => resolve(false)
-    } catch (e) { console.warn('[Formation] IndexedDB backup failed:', e); resolve(false) }
+      req.onerror = () => resolve(null)
+      req.onblocked = () => resolve(null)
+    } catch { resolve(null) }
   })
 }
 
-// Read one backup key straight from IndexedDB. Used for datasets that can exceed the ~5MB
-// localStorage quota (takeoffs with plan images), where IndexedDB is the real durable store.
+// Backup runs after every localStorage write. Resolves true once durably committed (tx.oncomplete),
+// false on any failure — so callers handling data too large for localStorage (takeoffs with plan
+// images) can tell whether the durable copy actually landed.
+function backupToIndexedDB(key: string, data: unknown[]): Promise<boolean> {
+  return openBackupDB().then(db => {
+    if (!db) return false
+    return new Promise<boolean>((resolve) => {
+      try {
+        const tx = db.transaction(BACKUP_STORE, 'readwrite')
+        tx.objectStore(BACKUP_STORE).put({ data, timestamp: new Date().toISOString() }, key)
+        tx.oncomplete = () => resolve(true)
+        tx.onerror = () => resolve(false)
+        tx.onabort = () => resolve(false)
+      } catch (e) { console.warn('[Formation] IndexedDB backup failed:', e); resolve(false) }
+    })
+  })
+}
+
+// Read one backup key straight from IndexedDB (datasets too large for localStorage live only here).
 function loadKeyFromIndexedDB(key: string): Promise<unknown[] | null> {
-  if (typeof window === 'undefined') return Promise.resolve(null)
-  return new Promise((resolve) => {
-    try {
-      const dbRequest = indexedDB.open('FormationGroupBackup', 1)
-      dbRequest.onupgradeneeded = () => {
-        const db = dbRequest.result
-        if (!db.objectStoreNames.contains('backup')) db.createObjectStore('backup')
-      }
-      dbRequest.onsuccess = () => {
-        const db = dbRequest.result
-        if (!db.objectStoreNames.contains('backup')) { resolve(null); return }
-        const tx = db.transaction('backup', 'readonly')
-        const req = tx.objectStore('backup').get(key)
+  return openBackupDB().then(db => {
+    if (!db) return null
+    return new Promise<unknown[] | null>((resolve) => {
+      try {
+        const req = db.transaction(BACKUP_STORE, 'readonly').objectStore(BACKUP_STORE).get(key)
         req.onsuccess = () => resolve((req.result?.data as unknown[]) ?? null)
         req.onerror = () => resolve(null)
-      }
-      dbRequest.onerror = () => resolve(null)
-    } catch { resolve(null) }
+      } catch { resolve(null) }
+    })
   })
 }
 
 // Recovery from IndexedDB when localStorage is empty
 export async function recoverFromIndexedDB(): Promise<boolean> {
-  if (typeof window === 'undefined') return false
+  const db = await openBackupDB()
+  if (!db) return false
   return new Promise((resolve) => {
     try {
-      const dbRequest = indexedDB.open('FormationGroupBackup', 1)
-      dbRequest.onsuccess = () => {
-        const db = dbRequest.result
-        if (!db.objectStoreNames.contains('backup')) { resolve(false); return }
-        const tx = db.transaction('backup', 'readonly')
-        const store = tx.objectStore('backup')
-        const keys = ['fg_projects', 'fg_proposals', 'fg_estimates', 'fg_revenue', 'fg_gantt', 'fg_actuals', 'fg_payment_stages', 'fg_design_projects']
-        let recovered = false
-        keys.forEach(k => {
-          const req = store.get(k)
-          req.onsuccess = () => {
-            if (req.result?.data && !localStorage.getItem(k)) {
-              localStorage.setItem(k, JSON.stringify(req.result.data))
-              recovered = true
-            }
+      const tx = db.transaction(BACKUP_STORE, 'readonly')
+      const store = tx.objectStore(BACKUP_STORE)
+      const keys = ['fg_projects', 'fg_proposals', 'fg_estimates', 'fg_revenue', 'fg_gantt', 'fg_actuals', 'fg_payment_stages', 'fg_design_projects']
+      let recovered = false
+      keys.forEach(k => {
+        const req = store.get(k)
+        req.onsuccess = () => {
+          if (req.result?.data && !localStorage.getItem(k)) {
+            localStorage.setItem(k, JSON.stringify(req.result.data))
+            recovered = true
           }
-        })
-        tx.oncomplete = () => resolve(recovered)
-      }
-      dbRequest.onerror = () => resolve(false)
+        }
+      })
+      tx.oncomplete = () => resolve(recovered)
+      tx.onerror = () => resolve(false)
     } catch { resolve(false) }
   })
 }
