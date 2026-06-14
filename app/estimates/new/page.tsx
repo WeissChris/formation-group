@@ -149,10 +149,12 @@ function NewEstimateForm() {
     // Project is optional — estimate can exist without a project
     const project = form.projectId ? projects.find(p => p.id === form.projectId) : null
 
-    // Get next version (for this project if assigned, or globally)
+    // Next version = highest version among THIS project's estimates + 1. A standalone estimate (no
+    // project) has no siblings to version against, so it starts at v1 — previously this fell back to
+    // every estimate globally, so a new standalone estimate inherited an unrelated version number.
     const existingVersions = form.projectId
       ? loadEstimates().filter(e => e.projectId === form.projectId)
-      : loadEstimates()
+      : []
     const nextVersion = existingVersions.length > 0
       ? Math.max(...existingVersions.map(e => e.version)) + 1
       : 1
