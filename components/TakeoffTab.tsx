@@ -1437,7 +1437,11 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     const layer = getItemLayer(takeoff, item)
     const color = colorForItem(item)
     const hatchId = layer.id === 'default' ? `fgHatch-${itemColorIdx.get(item.id) ?? 0}` : null
-    const pts = m.points.map(p => `${p.x * 100}% ${p.y * 100}%`).join(' ')
+    // SVG <polygon>/<polyline> "points" do NOT accept % — only user coords. The SVG has no viewBox,
+    // so its user space equals the plan image's pixel size; map normalised points into that.
+    const iw = activePlan?.imageWidth ?? 1
+    const ih = activePlan?.imageHeight ?? 1
+    const pts = m.points.map(p => `${p.x * iw} ${p.y * ih}`).join(' ')
     const emphasis = opts?.selected ? 2.75 : opts?.hovered ? 2.25 : 2
     const fillAlpha = opts?.selected ? 0.42 : 0.26
     const isDeduct = !!m.isDeduction
@@ -2111,7 +2115,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                         )}
                         {/* Committed polyline */}
                         <polyline
-                          points={drawingPoints.map(p => `${p.x * 100}% ${p.y * 100}%`).join(' ')}
+                          points={drawingPoints.map(p => `${p.x * activePlan.imageWidth} ${p.y * activePlan.imageHeight}`).join(' ')}
                           fill="none"
                           stroke="#3B82F6"
                           strokeWidth={2.2}
@@ -2120,7 +2124,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                         {/* Area fill preview */}
                         {activeTool === 'area' && areaPts.length >= 3 && (
                           <polygon
-                            points={areaPts.map(p => `${p.x * 100}% ${p.y * 100}%`).join(' ')}
+                            points={areaPts.map(p => `${p.x * activePlan.imageWidth} ${p.y * activePlan.imageHeight}`).join(' ')}
                             fill="#3B82F6"
                             fillOpacity={0.1}
                             stroke="none"
