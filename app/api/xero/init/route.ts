@@ -34,6 +34,15 @@ export async function GET(request: NextRequest) {
   // with the entity so the callback can route the tokens. The whole string is still CSRF-checked.
   const state = `${entity}.${randomBytes(32).toString('hex')}`
 
+  // Formation additionally reads AU Payroll timesheets for per-job labour HOURS (the labour-pace
+  // panel on the financial report). Lume doesn't use the labour feed, so it isn't asked for the
+  // payroll scope. NOTE: these payroll scopes must be ENABLED in the Xero developer app config or
+  // the authorize call returns invalid_scope — same gotcha that hit accounting.transactions/contacts.
+  const baseScope = 'accounting.settings.read accounting.invoices accounting.banktransactions.read accounting.reports.profitandloss.read offline_access'
+  const scope = entity === 'formation'
+    ? `${baseScope} payroll.timesheets.read payroll.settings.read`
+    : baseScope
+
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: clientId,
@@ -53,7 +62,7 @@ export async function GET(request: NextRequest) {
     // `accounting.invoices` (read+write), which both reads Bills and creates draft invoices. Xero
     // matches the client to an existing Xero contact by name when the invoice is posted, so no
     // separate contacts scope is needed for clients already in Xero (all of ours).
-    scope: 'accounting.settings.read accounting.invoices accounting.banktransactions.read accounting.reports.profitandloss.read offline_access',
+    scope,
     state,
   })
 
