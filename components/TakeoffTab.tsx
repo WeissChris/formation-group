@@ -204,6 +204,8 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
   const [activeTool, setActiveTool] = useState<'select' | 'area' | 'rect' | 'length' | 'count' | 'stamp'>('select')
   const [deductMode, setDeductMode] = useState(false)
   const [layersCollapsed, setLayersCollapsed] = useState(true)
+  const vertexDragRef = useRef<{ groupId: string; itemId: string; measurementId: string; index: number; moved: boolean; recorded: boolean } | null>(null)
+  const suppressClickRef = useRef(false)
 
   // Live drawing assistance
   const [cursorNorm, setCursorNorm] = useState<{ x: number; y: number } | null>(null)
@@ -426,6 +428,10 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
       setViewport(v => ({ ...v, x: panStateRef.current.origX + dx, y: panStateRef.current.origY + dy }))
     }
     const onUp = () => {
+      if (vertexDragRef.current) {
+        if (vertexDragRef.current.moved) suppressClickRef.current = true
+        vertexDragRef.current = null
+      }
       if (!panStateRef.current.active) return
       panStateRef.current.active = false
       setIsPanning(false)
@@ -994,6 +1000,37 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     }
   }
 
+  // ── Vertex editing — drag a polygon/polyline point to reshape it ──
+  const startVertexDrag = (e: React.MouseEvent, groupId: string, itemId: string, measurementId: string, index: number) => {
+    e.stopPropagation()
+    e.preventDefault()
+    vertexDragRef.current = { groupId, itemId, measurementId, index, moved: false, recorded: false }
+  }
+
+  const moveVertex = (nx: number, ny: number) => {
+    const d = vertexDragRef.current
+    if (!d || !activePlan) return
+    const { imageWidth, imageHeight, scale } = activePlan
+    updateTakeoff(t => ({
+      ...t,
+      groups: t.groups.map(g => g.id !== d.groupId ? g : {
+        ...g,
+        items: g.items.map(i => i.id !== d.itemId ? i : {
+          ...i,
+          measurements: i.measurements.map(m => {
+            if (m.id !== d.measurementId) return m
+            const points = m.points.map((p, idx) => idx === d.index ? { x: nx, y: ny } : p)
+            const value = m.type === 'area' ? calcArea(points, imageWidth, imageHeight, scale)
+              : m.type === 'length' ? calcLength(points, imageWidth, imageHeight, scale) : m.value
+            return { ...m, points, value }
+          }),
+        }),
+      }),
+    }), { skipHistory: d.recorded })   // first move records the pre-drag shape, rest don't spam history
+    d.moved = true
+    d.recorded = true
+  }
+
   const handleCanvasMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
     if (e.button !== 0) return
     if (spaceDownRef.current) return
@@ -1026,6 +1063,9 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     const n = getNormalisedFromEvent(e)
     setCursorNorm(n)
 
+    // Dragging a polygon/polyline vertex to reshape it
+    if (vertexDragRef.current) { moveVertex(n.x, n.y); return }
+
     if (activeTool === 'stamp' && stampState.phase === 'picking' && stampState.dragStart) {
       const s = stampState.dragStart
       const rx = Math.min(s.x, n.x)
@@ -1043,6 +1083,12 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
   }
 
   const handleCanvasMouseUp = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (vertexDragRef.current) {
+      e.stopPropagation()
+      if (vertexDragRef.current.moved) suppressClickRef.current = true
+      vertexDragRef.current = null
+      return
+    }
     if (activeTool === 'stamp' && stampState.phase === 'picking' && stampState.rect) {
       e.stopPropagation()
       const rect = stampState.rect
@@ -1095,6 +1141,8 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
       panStateRef.current.moved = false
       return
     }
+    // Ignore the click that concludes a vertex drag (so it doesn't deselect the shape)
+    if (suppressClickRef.current) { suppressClickRef.current = false; return }
     if (spaceDownRef.current) return  // space-drag mode consumes clicks
     const rect = e.currentTarget.getBoundingClientRect()
     const nx = (e.clientX - rect.left) / rect.width
@@ -1445,6 +1493,19 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
     const emphasis = opts?.selected ? 2.75 : opts?.hovered ? 2.25 : 2
     const fillAlpha = opts?.selected ? 0.42 : 0.26
     const isDeduct = !!m.isDeduction
+    // Draggable vertex handles — shown for the selected measurement under the Select tool.
+    const editing = selectedMeasurementId === m.id && activeTool === 'select'
+    const handles = editing ? m.points.map((p, idx) => (
+      <circle
+        key={`h${idx}`}
+        cx={`${p.x * 100}%`} cy={`${p.y * 100}%`}
+        r={6}
+        fill="#ffffff" stroke={color} strokeWidth={2.5}
+        vectorEffect="non-scaling-stroke"
+        style={{ cursor: 'grab' }}
+        onMouseDown={e => startVertexDrag(e, _group.id, item.id, m.id, idx)}
+      />
+    )) : null
 
     if (m.type === 'area') {
       const cx = m.points.reduce((s, p) => s + p.x, 0) / m.points.length * 100
@@ -1466,6 +1527,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
           <text x={`${cx}%`} y={`${cy}%`} fill={color} fontSize="10" textAnchor="middle" fontWeight="600" dominantBaseline="middle" style={{ pointerEvents: 'none' }}>
             {isDeduct ? '−' : ''}{m.value.toFixed(2)} m²
           </text>
+          {handles}
         </>
       )
     }
@@ -1486,6 +1548,7 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
           <text x={`${m.points[0].x * 100}%`} y={`${m.points[0].y * 100}%`} fill={color} fontSize="10" fontWeight="600" dy="-4" style={{ pointerEvents: 'none' }}>
             {isDeduct ? '−' : ''}{m.value.toFixed(2)} lm
           </text>
+          {handles}
         </>
       )
     }
