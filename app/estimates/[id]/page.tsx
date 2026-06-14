@@ -7,7 +7,7 @@ import { loadEstimates, loadProposals, saveEstimate, saveSubcontractor, loadTake
 import { upsertEstimate, upsertProject, getEstimates } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract } from '@/lib/estimateCalculations'
-import { getFinalQty } from '@/lib/takeoffGeometry'
+import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
 import { getAllLibraryItems, getCategories, defaultMarkupForType } from '@/lib/itemLibrary'
 import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData } from '@/types'
 import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch, Copy, Eye, EyeOff } from 'lucide-react'
@@ -284,6 +284,7 @@ function LineItemRow({
   onToggle,
   onMoveUp,
   onMoveDown,
+  onUnitsFocus,
 }: {
   item: EstimateLineItem
   categories: string[]
@@ -293,6 +294,7 @@ function LineItemRow({
   onToggle: () => void
   onMoveUp: () => void
   onMoveDown: () => void
+  onUnitsFocus?: () => void
 }) {
   const update = (patch: Partial<EstimateLineItem>) => {
     const updated = { ...item, ...patch }
@@ -384,6 +386,7 @@ function LineItemRow({
           type="number"
           value={item.units || ''}
           onChange={e => update({ units: parseFloat(e.target.value) || 0 })}
+          onFocus={onUnitsFocus}
           className={numCls}
           placeholder="0"
         />
@@ -466,6 +469,7 @@ export default function EstimateBuilderPage() {
   const [activeTab, setActiveTab] = useState<'estimate' | 'takeoff'>('estimate')
   const [takeoffData, setTakeoffData] = useState<TakeoffData | null>(null)
   const [takeoffSummaryOpen, setTakeoffSummaryOpen] = useState(true)
+  const [lastUnitsLineId, setLastUnitsLineId] = useState<string | null>(null)
 
   // Warn user about unsaved changes before leaving
   useEffect(() => {
@@ -540,6 +544,24 @@ export default function EstimateBuilderPage() {
     })
     setHasUnsavedChanges(true)
   }, [])
+
+  // Apply a takeoff quantity to the line item whose Units field was last focused.
+  const applyQtyToLineItem = (qty: number) => {
+    if (!lastUnitsLineId) { window.alert("Click into a line item's Units field first, then press Use."); return }
+    setEstimate(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        lineItems: prev.lineItems.map(i => {
+          if (i.id !== lastUnitsLineId) return i
+          const total = qty * i.unitCost
+          return { ...i, units: qty, total, revenue: calculateLineItemRevenue({ ...i, units: qty, total }) }
+        }),
+        updatedAt: new Date().toISOString(),
+      }
+    })
+    setHasUnsavedChanges(true)
+  }
 
   const deleteLineItem = useCallback((itemId: string) => {
     setEstimate(prev => {
@@ -1113,7 +1135,7 @@ export default function EstimateBuilderPage() {
       {activeTab === 'estimate' && (() => {
         const takeoffItems = (takeoffData?.groups ?? []).flatMap(g =>
           g.items
-            .map(i => ({ group: g.name, name: i.name, qty: getFinalQty(i), unit: i.unit, has: i.measurements.length > 0 || i.manualOverride !== undefined }))
+            .map(i => ({ group: g.name, name: i.name, raw: getRawQty(i), qty: getFinalQty(i), unit: i.unit, has: i.measurements.length > 0 || i.manualOverride !== undefined }))
             .filter(it => it.has && it.qty > 0)
         )
         if (takeoffItems.length === 0) return null
@@ -1137,8 +1159,10 @@ export default function EstimateBuilderPage() {
                     <tr className="text-2xs font-light tracking-architectural uppercase text-fg-muted border-b border-fg-border/40">
                       <th className="py-1.5 pr-3">Item</th>
                       <th className="py-1.5 px-3 text-left">Group</th>
-                      <th className="py-1.5 px-2 text-right">Qty</th>
-                      <th className="py-1.5 pl-2 text-left">Unit</th>
+                      <th className="py-1.5 px-2 text-right">Measured</th>
+                      <th className="py-1.5 px-2 text-right">Final</th>
+                      <th className="py-1.5 px-2 text-left">Unit</th>
+                      <th className="py-1.5 pl-2 text-right" />
                     </tr>
                   </thead>
                   <tbody>
@@ -1146,12 +1170,23 @@ export default function EstimateBuilderPage() {
                       <tr key={idx} className="border-b border-fg-border/15">
                         <td className="py-1.5 pr-3 text-xs font-light text-fg-heading">{it.name}</td>
                         <td className="py-1.5 px-3 text-xs font-light text-fg-muted">{it.group}</td>
+                        <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-muted">{it.raw.toFixed(2)}</td>
                         <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-heading">{it.qty.toFixed(2)}</td>
-                        <td className="py-1.5 pl-2 text-xs text-fg-muted">{it.unit}</td>
+                        <td className="py-1.5 px-2 text-xs text-fg-muted">{it.unit}</td>
+                        <td className="py-1.5 pl-2 text-right">
+                          <button
+                            onClick={() => applyQtyToLineItem(it.qty)}
+                            title="Apply this (final) quantity to the line item whose Units field you last clicked"
+                            className="text-2xs px-2 py-0.5 border border-blue-400/50 text-blue-500 rounded-sm hover:bg-blue-400/10 transition-colors"
+                          >
+                            Use →
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                <p className="text-2xs font-light text-fg-muted/70 mt-2">Measured = sum of areas; Final adds the item&apos;s wastage %. <span className="text-fg-muted">Use →</span> sets the Final qty on the line whose Units field you last clicked.</p>
               </div>
             )}
           </div>
@@ -1273,6 +1308,7 @@ export default function EstimateBuilderPage() {
                               onToggle={() => toggleLineItem(item.id)}
                               onMoveUp={() => moveLineItem(item.id, -1)}
                               onMoveDown={() => moveLineItem(item.id, 1)}
+                              onUnitsFocus={() => setLastUnitsLineId(item.id)}
                             />
                           )
                         }
