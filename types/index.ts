@@ -484,6 +484,9 @@ export interface TakeoffPlan {
   scaleSet: boolean
   imageWidth: number   // natural pixel width
   imageHeight: number  // natural pixel height
+  // Vector auto-measure (PDF only): material-area outlines extracted from the plan's vector content.
+  autoRegions?: { code: string; points: { x: number; y: number }[] }[]
+  autoScanned?: boolean   // true once an auto-scan was attempted (distinguishes "image/no scan" from "scanned, found nothing")
 }
 
 export interface TakeoffData {

@@ -9,6 +9,7 @@ import {
   deleteTakeoffTemplate,
 } from '@/lib/storage'
 import { generateId } from '@/lib/utils'
+import { extractPlanRegions } from '@/lib/planAutoMeasure'
 import type {
   TakeoffData,
   TakeoffGroup,
@@ -1139,13 +1140,15 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
 
   // ── Plan upload ────────────────────────────────────────────────────────
 
-  const addPlan = (name: string, dataUrl: string, width: number, height: number) => {
+  const addPlan = (name: string, dataUrl: string, width: number, height: number, autoRegions?: { code: string; points: { x: number; y: number }[] }[], autoScanned?: boolean) => {
     const id = generateId()
     const plan: TakeoffPlan = {
       id, name, dataUrl,
       scale: 0, scaleSet: false,
       imageWidth: width,
       imageHeight: height,
+      autoRegions,
+      autoScanned,
     }
     updateTakeoff(t => ({
       ...t,
@@ -1191,7 +1194,19 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
             ? `${file.name} — Page ${pageNum}`
             : file.name
 
-          addPlan(planName, dataUrl, vp.width, vp.height)
+          // Vector auto-measure: pull material-area outlines off the page (best-effort, never blocks upload).
+          let autoRegions: { code: string; points: { x: number; y: number }[] }[] | undefined
+          let autoScanned = false
+          try {
+            const occ = await pdf.getOptionalContentConfig()
+            const res = await extractPlanRegions(page, occ, pdfjsLib.OPS)
+            autoScanned = true
+            autoRegions = res.hadOutlineLayer ? res.regions : []
+          } catch (scanErr) {
+            console.warn('Plan auto-measure failed:', scanErr)
+          }
+
+          addPlan(planName, dataUrl, vp.width, vp.height, autoRegions, autoScanned)
         }
       } catch (err) {
         console.error('PDF render error:', err)
@@ -1208,6 +1223,37 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
       }
       reader.readAsDataURL(file)
     }
+  }
+
+  // Auto-detect material areas from a vector PDF plan → one item per material code, areas hatched.
+  const handleAutoDetect = () => {
+    if (!activePlan) return
+    if (!activePlan.scaleSet) { window.alert('Set the scale first — click “Set Scale”, draw a known distance, and enter it in mm. Then run Auto-detect.'); return }
+    if (!activePlan.autoScanned) { window.alert('Auto-detect reads the vector geometry from a CAD-exported PDF plan. This plan can’t be auto-scanned (it’s an image, or wasn’t exported with the usual layers) — measure the areas manually.'); return }
+    const regions = activePlan.autoRegions ?? []
+    if (regions.length === 0) { window.alert('Couldn’t auto-scan this plan — no material areas were recognised. Measure them manually.'); return }
+
+    const NAMES: Record<string, string> = { PAV: 'Paving', DEC: 'Decking', CON: 'Concrete', PT: 'Pool tile', STN: 'Stone', TIM: 'Timber', GRV: 'Gravel' }
+    const byCode: Record<string, { code: string; points: { x: number; y: number }[] }[]> = {}
+    for (const r of regions) (byCode[r.code] ||= []).push(r)
+
+    const plan = activePlan
+    let total = 0
+    const items: TakeoffItem[] = Object.entries(byCode).map(([code, regs]) => {
+      const measurements: TakeoffMeasurement[] = regs.map(r => {
+        const value = calcArea(r.points, plan.imageWidth, plan.imageHeight, plan.scale)
+        total += value
+        return { id: generateId(), type: 'area', points: r.points, value, planId: plan.id }
+      })
+      const prefix = code.split('-')[0]
+      return { id: generateId(), name: `${code} — ${NAMES[prefix] ?? 'Area'} (auto)`, quantity: 0, unit: 'm2', measurements, wastagePercent: 0 }
+    })
+
+    const groupId = generateId()
+    updateTakeoff(t => ({ ...t, groups: [...t.groups, { id: groupId, name: 'AUTO-DETECTED', items, collapsed: false }] }))
+    setSelectedGroupId(groupId)
+    setSelectedItemId(items[0]?.id ?? null)
+    window.alert(`Auto-detected ${regions.length} area${regions.length === 1 ? '' : 's'} across ${items.length} material${items.length === 1 ? '' : 's'} (~${total.toFixed(1)} m² total).\n\nThey’re added under “AUTO-DETECTED” and hatched on the plan — review each one and delete or adjust any that look off before using them.`)
   }
 
   const setActivePlan = (planId: string) => {
@@ -1335,6 +1381,9 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
             strokeDasharray={isDeduct ? '6 4' : undefined}
             vectorEffect="non-scaling-stroke"
           />
+          {!isDeduct && (
+            <polygon points={pts} fill="url(#fgTakeoffHatch)" stroke="none" style={{ pointerEvents: 'none' }} />
+          )}
           <text x={`${cx}%`} y={`${cy}%`} fill={color} fontSize="10" textAnchor="middle" fontWeight="600" dominantBaseline="middle" style={{ pointerEvents: 'none' }}>
             {isDeduct ? '−' : ''}{m.value.toFixed(2)} m²
           </text>
@@ -1657,6 +1706,16 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
             <input type="file" accept="image/*,.pdf,application/pdf" className="hidden" onChange={handlePlanUpload} />
           </label>
 
+          {activePlan && calib.step === 'idle' && (
+            <button
+              onClick={handleAutoDetect}
+              title="Auto-measure material areas from a vector PDF plan"
+              className="text-xs text-fg-muted hover:text-fg-heading transition-colors shrink-0"
+            >
+              ✨ Auto-detect areas
+            </button>
+          )}
+
           {/* Plan selector */}
           {takeoff.plans.length > 1 && (
             <select
@@ -1859,6 +1918,12 @@ export default function TakeoffTab({ estimateId, lineItems, onUpdateLineItemQty 
                   onMouseUp={handleCanvasMouseUp}
                   onMouseLeave={handleCanvasMouseLeave}
                 >
+                  <defs>
+                    {/* Light hatch fill so a measured area is clearly visible on the plan */}
+                    <pattern id="fgTakeoffHatch" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)">
+                      <line x1="0" y1="0" x2="0" y2="7" stroke="#475569" strokeWidth="1" opacity="0.4" />
+                    </pattern>
+                  </defs>
                   {/* Existing measurements */}
                   {getActivePlanMeasurements().map(({ measurement, item, group }) => {
                     const isSel = selectedMeasurementId === measurement.id
