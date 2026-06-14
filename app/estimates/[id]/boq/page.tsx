@@ -53,6 +53,30 @@ export default function EstimateBoQPage() {
   const catTotal = (cat: string) => byCat[cat].reduce((s, li) => s + (li.total || 0), 0)
   const grandTotal = items.reduce((s, li) => s + (li.total || 0), 0)
 
+  // Materials / labour / subbie+equipment breakdown for the summary.
+  // Labour hours come from labour lines rated by the hour (uom matches hr/hour);
+  // lump-sum labour carries a dollar allowance but no hours.
+  const sumTotal = (arr: EstimateLineItem[], pred: (li: EstimateLineItem) => boolean) =>
+    arr.filter(pred).reduce((s, li) => s + (li.total || 0), 0)
+  const isMaterial = (li: EstimateLineItem) => li.type === 'Material'
+  const isLabour = (li: EstimateLineItem) => li.type === 'Labour'
+  const isOther = (li: EstimateLineItem) => li.type === 'Subcontractor' || li.type === 'Equipment'
+  const sumLabourHrs = (arr: EstimateLineItem[]) =>
+    arr.filter(li => isLabour(li) && /hour|hr/i.test(li.uom || '')).reduce((s, li) => s + (li.units || 0), 0)
+
+  const catMaterials = (cat: string) => sumTotal(byCat[cat], isMaterial)
+  const catLabour = (cat: string) => sumTotal(byCat[cat], isLabour)
+  const catOther = (cat: string) => sumTotal(byCat[cat], isOther)
+  const catLabourHrs = (cat: string) => sumLabourHrs(byCat[cat])
+
+  const totMaterials = sumTotal(items, isMaterial)
+  const totLabour = sumTotal(items, isLabour)
+  const totOther = sumTotal(items, isOther)
+  const totLabourHrs = sumLabourHrs(items)
+  const hasOther = items.some(isOther)
+
+  const fmtHrs = (n: number) => (n % 1 === 0 ? String(n) : n.toFixed(1))
+
   return (
     <div className="max-w-[900px] mx-auto px-6 lg:px-10 py-8">
       {/* Header */}
@@ -82,27 +106,45 @@ export default function EstimateBoQPage() {
                 <tr className="text-2xs font-light tracking-architectural uppercase text-fg-muted border-b border-fg-border/50">
                   <th className="py-1.5 pr-3">Category</th>
                   <th className="py-1.5 px-2 text-right">Items</th>
+                  <th className="py-1.5 px-2 text-right">Materials</th>
+                  <th className="py-1.5 px-2 text-right">Labour</th>
+                  <th className="py-1.5 px-2 text-right">Labour hrs</th>
+                  {hasOther && <th className="py-1.5 px-2 text-right">Subbie / equip</th>}
                   <th className="py-1.5 pl-2 text-right">Allowance</th>
                 </tr>
               </thead>
               <tbody>
-                {order.map(cat => (
-                  <tr key={cat} className="border-b border-fg-border/20">
-                    <td className="py-1.5 pr-3 text-xs font-light text-fg-heading">{cat}</td>
-                    <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-muted">{byCat[cat].length}</td>
-                    <td className="py-1.5 pl-2 text-right text-xs tabular-nums text-fg-heading">{formatCurrency(catTotal(cat))}</td>
-                  </tr>
-                ))}
+                {order.map(cat => {
+                  const hrs = catLabourHrs(cat)
+                  const mat = catMaterials(cat)
+                  const lab = catLabour(cat)
+                  const oth = catOther(cat)
+                  return (
+                    <tr key={cat} className="border-b border-fg-border/20">
+                      <td className="py-1.5 pr-3 text-xs font-light text-fg-heading">{cat}</td>
+                      <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-muted">{byCat[cat].length}</td>
+                      <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-muted">{mat > 0 ? formatCurrency(mat) : '—'}</td>
+                      <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-muted">{lab > 0 ? formatCurrency(lab) : '—'}</td>
+                      <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-muted">{hrs > 0 ? fmtHrs(hrs) : '—'}</td>
+                      {hasOther && <td className="py-1.5 px-2 text-right text-xs tabular-nums text-fg-muted">{oth > 0 ? formatCurrency(oth) : '—'}</td>}
+                      <td className="py-1.5 pl-2 text-right text-xs tabular-nums text-fg-heading">{formatCurrency(catTotal(cat))}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
               <tfoot>
                 <tr className="border-t border-fg-border">
                   <td className="py-2 pr-3 text-2xs uppercase tracking-architectural text-fg-muted">Total cost allowance</td>
                   <td />
+                  <td className="py-2 px-2 text-right text-xs tabular-nums font-normal text-fg-heading">{formatCurrency(totMaterials)}</td>
+                  <td className="py-2 px-2 text-right text-xs tabular-nums font-normal text-fg-heading">{formatCurrency(totLabour)}</td>
+                  <td className="py-2 px-2 text-right text-xs tabular-nums font-normal text-fg-heading">{totLabourHrs > 0 ? fmtHrs(totLabourHrs) : '—'}</td>
+                  {hasOther && <td className="py-2 px-2 text-right text-xs tabular-nums font-normal text-fg-heading">{formatCurrency(totOther)}</td>}
                   <td className="py-2 pl-2 text-right text-sm tabular-nums font-normal text-fg-heading">{formatCurrency(grandTotal)}</td>
                 </tr>
               </tfoot>
             </table>
-            <p className="text-2xs font-light text-fg-muted/70 mt-2">Cost allowance excludes GST and contract markup — it is the budget allowed for each item, for site reference.</p>
+            <p className="text-2xs font-light text-fg-muted/70 mt-2">Cost allowance excludes GST and contract markup — it is the budget allowed for each item, for site reference. Labour hours show where labour is rated by the hour; lump-sum labour carries a dollar allowance only.</p>
           </section>
 
           {/* Per-category detail */}
