@@ -1,6 +1,7 @@
 ﻿import type { Project, WeeklyRevenue, DesignProposal, Estimate, GanttEntry, WeeklyActual, ProgressPaymentStage, DesignProject, ProgressClaim, TakeoffData, TakeoffTemplate, ProposalInvoiceStage, SubcontractorPackage } from '@/types'
 import { notify } from './broadcast'
-import { getProposalPhases } from './proposalPhases'
+import { getProposalPhases, phasesTotal } from './proposalPhases'
+import { generateId } from './utils'
 
 // IndexedDB backup - runs silently after every localStorage write
 async function backupToIndexedDB(key: string, data: unknown[]): Promise<void> {
@@ -271,6 +272,38 @@ export function loadDesignProjects(): DesignProject[] {
 
 export function loadDesignProjectByProposalId(proposalId: string): DesignProject | null {
   return loadDesignProjects().find(p => p.proposalId === proposalId) || null
+}
+
+/**
+ * Build the design-delivery tracker row for an accepted proposal. Shared by the manual office
+ * "accept" path and the auto-reconcile path so the two can't drift. Does NOT save — caller persists.
+ */
+export function buildDesignProjectFromProposal(proposal: DesignProposal): DesignProject {
+  const p1DueDate = new Date()
+  p1DueDate.setDate(p1DueDate.getDate() + 42)
+  const total = phasesTotal(getProposalPhases(proposal))
+  return {
+    id: generateId(),
+    proposalId: proposal.id,
+    clientName: proposal.clientName,
+    projectAddress: proposal.projectAddress || '',
+    entity: 'design',
+    phase1Fee: proposal.phase1Fee,
+    phase1Status: 'not_started',
+    phase1DueDate: p1DueDate.toISOString().split('T')[0],
+    phase1DepositPaid: false,
+    phase2Fee: proposal.phase2Fee,
+    phase2Status: 'not_started',
+    phase3Fee: proposal.phase3Fee,
+    phase3Status: proposal.phase3Fee ? 'not_started' : undefined,
+    totalFee: total,
+    totalPaid: 0,
+    totalOutstanding: total,
+    notes: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    acceptedAt: proposal.acceptedAt,
+  }
 }
 
 // Progress Claims

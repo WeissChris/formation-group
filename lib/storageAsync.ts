@@ -2,6 +2,9 @@ import { supabase, isSupabaseConfigured } from './supabase'
 import {
   loadProposals,
   saveProposal,
+  generateRevenueFromProposal,
+  loadDesignProjectByProposalId,
+  buildDesignProjectFromProposal,
   loadProjects,
   saveProject,
   loadEstimates,
@@ -205,21 +208,66 @@ export async function reconcileProposals(): Promise<number> {
   if (!isSupabaseConfigured() || !supabase) return 0
   const remote = await getProposals()
   const local = loadProposals()
-  // Fresh / cleared device: restore all remote proposals locally.
-  if (local.length === 0 && remote.length > 0) {
-    remote.forEach(p => saveProposal(p))
-    return remote.length
-  }
-  const byId = new Map(remote.map(p => [p.id, p]))
   let changed = 0
-  for (const lp of local) {
-    const r = byId.get(lp.id)
-    if (r && r.status === 'accepted' && lp.status !== 'accepted') {
-      saveProposal({ ...lp, status: 'accepted', acceptedAt: r.acceptedAt ?? lp.acceptedAt, acceptedByName: r.acceptedByName ?? lp.acceptedByName })
-      changed++
+  if (local.length === 0 && remote.length > 0) {
+    // Fresh / cleared device: restore all remote proposals locally.
+    remote.forEach(p => saveProposal(p))
+    changed = remote.length
+  } else {
+    const byId = new Map(remote.map(p => [p.id, p]))
+    for (const lp of local) {
+      const r = byId.get(lp.id)
+      if (r && r.status === 'accepted' && lp.status !== 'accepted') {
+        saveProposal({ ...lp, status: 'accepted', acceptedAt: r.acceptedAt ?? lp.acceptedAt, acceptedByName: r.acceptedByName ?? lp.acceptedByName })
+        changed++
+      }
+    }
+  }
+  // Ensure each accepted proposal's downstream bookkeeping (revenue forecast + design-delivery
+  // tracker) exists office-side. A client accepts on the public page, which runs this generation in
+  // the CLIENT's browser, so it never reaches the office — generate it here on load instead.
+  const accepted = loadProposals().filter(p => p.status === 'accepted' && p.acceptedAt)
+  if (accepted.length > 0) {
+    // Skip any proposal that already has a design project locally OR in Supabase, so a second device
+    // (which lacks the local copy) can't generate a duplicate with a fresh random id.
+    const remoteDPs = await getDesignProjects()
+    const haveDesignProject = new Set<string>([
+      ...loadDesignProjects().map(d => d.proposalId),
+      ...remoteDPs.map(d => d.proposalId),
+    ])
+    for (const p of accepted) {
+      if (haveDesignProject.has(p.id)) continue
+      try { await processProposalAcceptance(p) } catch (e) { console.warn('[accept] bookkeeping failed', e) }
     }
   }
   return changed
+}
+
+/**
+ * Office-side flow-through for an accepted proposal: generate the revenue forecast + the
+ * design-delivery tracker row, then push both to Supabase. Idempotent — the design project is the
+ * "already processed" marker, so this runs once per acceptance and is a no-op afterwards. This is the
+ * piece the client's browser can't do for the office (their generation lands in their own
+ * localStorage); calling it from the office reconcile/load path completes the chain.
+ * Returns true when it generated the bookkeeping.
+ */
+export async function processProposalAcceptance(proposal: DesignProposal): Promise<boolean> {
+  if (proposal.status !== 'accepted' || !proposal.acceptedAt) return false
+  if (loadDesignProjectByProposalId(proposal.id)) return false // already processed office-side
+  // 1. Revenue forecast (localStorage; idempotent — replaces any prior rows for this proposal)
+  generateRevenueFromProposal(proposal)
+  // 2. Design-delivery tracker row
+  const dp = buildDesignProjectFromProposal(proposal)
+  saveDesignProject(dp)
+  // 3. Push the freshly generated data up to Supabase (durable + visible on other devices)
+  try {
+    await upsertDesignProject(dp)
+    const rows = loadWeeklyRevenue().filter(r => r.projectId === `design-${proposal.id}`)
+    for (const r of rows) await upsertRevenue(r)
+  } catch (e) {
+    console.warn('[accept] supabase push failed (kept locally)', e)
+  }
+  return true
 }
 
 // ── ESTIMATES ────────────────────────────────────────────────────────────────

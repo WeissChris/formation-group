@@ -3,12 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { loadProposals, saveProposal, deleteProposal, generateRevenueFromProposal, generateInvoiceStages, saveDesignProject, loadDesignProjectByProposalId } from '@/lib/storage'
+import { loadProposals, saveProposal, deleteProposal, generateRevenueFromProposal, generateInvoiceStages, saveDesignProject, loadDesignProjectByProposalId, buildDesignProjectFromProposal } from '@/lib/storage'
 import { upsertProposal, getProposals, reconcileProposals } from '@/lib/storageAsync'
-import { formatCurrency, generateId } from '@/lib/utils'
+import { formatCurrency } from '@/lib/utils'
 import { getProposalPhases, syncLegacyPhaseFields, phasesTotal, makeBlankPhase, defaultPhaseDescription, defaultPhaseOutcome, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 import { requestSendProposal, sendErrorMessage } from '@/lib/emailClient'
-import type { DesignProposal, ProposalContentBlock, ProposalPhase, DesignProject } from '@/types'
+import type { DesignProposal, ProposalContentBlock, ProposalPhase } from '@/types'
 import { Trash2, Copy, Check, Pencil, Mail } from 'lucide-react'
 import ProposalPreview from '@/components/ProposalPreview'
 import ContentBlockEditor from '@/components/ContentBlockEditor'
@@ -142,36 +142,12 @@ export default function ProposalDetailPage() {
       ...(status === 'accepted' && !proposal.acceptedAt ? { acceptedAt: new Date().toISOString() } : {}),
     }
     saveProposal(updated)
+    void upsertProposal(updated) // push the status change to Supabase, not just localStorage
     if (status === 'accepted') {
       generateRevenueFromProposal(updated)
-      // Create design project if doesn't exist
-      const existingProject = loadDesignProjectByProposalId(updated.id)
-      if (!existingProject) {
-        const p1DueDate = new Date()
-        p1DueDate.setDate(p1DueDate.getDate() + 42)
-        const designProject: DesignProject = {
-          id: generateId(),
-          proposalId: updated.id,
-          clientName: updated.clientName,
-          projectAddress: updated.projectAddress || '',
-          entity: 'design',
-          phase1Fee: updated.phase1Fee,
-          phase1Status: 'not_started',
-          phase1DueDate: p1DueDate.toISOString().split('T')[0],
-          phase1DepositPaid: false,
-          phase2Fee: updated.phase2Fee,
-          phase2Status: 'not_started',
-          phase3Fee: updated.phase3Fee,
-          phase3Status: updated.phase3Fee ? 'not_started' : undefined,
-          totalFee: phasesTotal(getProposalPhases(updated)),
-          totalPaid: 0,
-          totalOutstanding: phasesTotal(getProposalPhases(updated)),
-          notes: '',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          acceptedAt: updated.acceptedAt,
-        }
-        saveDesignProject(designProject)
+      // Create the design-delivery tracker row if it doesn't exist yet
+      if (!loadDesignProjectByProposalId(updated.id)) {
+        saveDesignProject(buildDesignProjectFromProposal(updated))
       }
     }
     setProposal(updated)
