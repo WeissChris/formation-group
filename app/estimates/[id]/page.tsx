@@ -1019,6 +1019,15 @@ export default function EstimateBuilderPage() {
             <ExternalLink className="w-3 h-3" /> {estimate.parentEstimateId ? 'Send' : 'Quote'}
           </Link>
 
+          {estimate.lineItems.length > 0 && (
+            <Link
+              href={`/estimates/${estimate.id}/boq`}
+              className="flex items-center gap-2 px-3 py-1.5 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading transition-colors"
+            >
+              <ExternalLink className="w-3 h-3" /> Bill of Quantities
+            </Link>
+          )}
+
           {/* Convert to Project — base estimates only. A variation is sent to the client for approval
               and flows into its existing project on acceptance, so it never "converts". */}
           {estimate.lineItems.length > 0 && !estimate.isBaseline && !estimate.parentEstimateId && (
