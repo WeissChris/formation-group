@@ -493,21 +493,38 @@ function LineItemRow({
 }
 
 // ── Labour Checker ──────────────────────────────────────────────────────────
-// Converts the allowed labour hours into weeks (by crew size) and the project's gross profit into
-// a per-crew-week figure, so you can sanity-check the labour budget against the value of the job.
+// Mirrors Chris's quote-analysis sheet: allowed labour hours → crew-weeks → revenue/GP per week,
+// with a Formation-revenue-per-week feasibility target by crew size.
 const HOURS_PER_PERSON_WEEK = 40
+const STD_LABOUR_RATE = 68 // $/hr — used to convert non-hourly labour lines into equivalent hours
+// Formation-revenue-per-week feasibility floors by crew size (from the source sheet's notes).
+const FORMATION_WEEK_TARGET: Record<number, number> = { 2: 15000, 3: 20000, 4: 28000 }
 
 function LabourChecker({ estimate }: { estimate: Estimate }) {
   const [teamSize, setTeamSize] = useState(3)
   const items = activeLineItems(estimate)
-  // Allowed labour hours = labour lines priced by the hour (same rule as the financial report).
+  // Allowed labour hours: hourly labour lines contribute their units; labour priced by a measure
+  // (lm, m², day…) is converted to equivalent hours at the standard rate; lump-sum allowances
+  // (e.g. project management) are excluded — matching the source sheet's labour-hours formula.
   const labourHours = items
-    .filter(i => i.type === 'Labour' && /hour|hr/i.test(i.uom || ''))
-    .reduce((s, i) => s + (i.units || 0), 0)
+    .filter(i => i.type === 'Labour')
+    .reduce((s, i) => {
+      const uom = (i.uom || '').toLowerCase()
+      if (/hour|hr/.test(uom)) return s + (i.units || 0)
+      if (/allow|lump|item/.test(uom)) return s
+      return s + (i.total || 0) / STD_LABOUR_RATE
+    }, 0)
   const totals = getEstimateTotals(estimate)
-  const grossProfit = totals.totalRevenue - totals.totalCost
+  // Line-level (before the project-level waste/contingency markups), matching the sheet's summary.
+  const grossProfit = totals.lineRevenue - totals.totalCost
+  const formationRevenue = items
+    .filter(i => i.crewType === 'Formation')
+    .reduce((s, i) => s + readLineItemRevenue(i), 0)
   const weeks = teamSize > 0 ? labourHours / (teamSize * HOURS_PER_PERSON_WEEK) : 0
   const gpPerWeek = weeks > 0 ? grossProfit / weeks : 0
+  const formationRevPerWeek = weeks > 0 ? formationRevenue / weeks : 0
+  const target = FORMATION_WEEK_TARGET[teamSize] ?? 20000
+  const meetsTarget = formationRevPerWeek >= target
 
   return (
     <div className="bg-fg-card/20 border border-fg-border p-5 space-y-4 mt-4">
@@ -526,26 +543,34 @@ function LabourChecker({ estimate }: { estimate: Estimate }) {
       <div className="space-y-2.5">
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs font-light text-fg-muted">Labour hours allowed</span>
-          <span className="text-sm font-light text-fg-heading tabular-nums">{labourHours.toLocaleString('en-AU', { maximumFractionDigits: 1 })}</span>
+          <span className="text-sm font-light text-fg-heading tabular-nums">{labourHours.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</span>
         </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs font-light text-fg-muted">Labour weeks (team of {teamSize})</span>
           <span className="text-sm font-light text-fg-heading tabular-nums">{weeks.toFixed(2)} wks</span>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <span className="text-xs font-light text-fg-muted">Formation revenue</span>
-          <span className="text-sm font-light text-fg-heading tabular-nums">{fmtCurrency(totals.formationRevenue)}</span>
-        </div>
-        <div className="flex items-center justify-between gap-3">
           <span className="text-xs font-light text-fg-muted">Gross profit</span>
           <span className="text-sm font-light text-fg-heading tabular-nums">{fmtCurrency(grossProfit)}</span>
         </div>
-        <div className="flex items-center justify-between gap-3 pt-2.5 border-t border-fg-border/50">
-          <span className="text-xs font-light text-fg-heading">GP / week allowed</span>
-          <span className="text-sm text-green-600 tabular-nums">{fmtCurrency(gpPerWeek)}</span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-light text-fg-muted">GP / week allowed</span>
+          <span className="text-sm font-light text-fg-heading tabular-nums">{fmtCurrency(gpPerWeek)}</span>
+        </div>
+        <div className="pt-2.5 border-t border-fg-border/50">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs font-light text-fg-heading">Formation rev / week</span>
+            <span className={`text-sm tabular-nums ${meetsTarget ? 'text-green-600' : 'text-amber-600'}`}>{fmtCurrency(formationRevPerWeek)}</span>
+          </div>
+          <p className={`text-2xs font-light text-right mt-0.5 ${meetsTarget ? 'text-green-600/80' : 'text-amber-600/80'}`}>
+            {meetsTarget ? '✓ above' : '⚠ below'} target {fmtCurrency(target)}/wk
+          </p>
         </div>
       </div>
-      <p className="text-2xs font-light text-fg-muted/70">Based on {HOURS_PER_PERSON_WEEK}h/week per person; labour hours come from hourly labour lines.</p>
+      <p className="text-2xs font-light text-fg-muted/70">
+        {HOURS_PER_PERSON_WEEK}h/week per person; figures are line-level (before project markups).
+        Targets: 2 → $15k, 3 → $20k, 4 → $28k / week.
+      </p>
     </div>
   )
 }
