@@ -10,7 +10,7 @@ import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEst
 import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
 import { getAllLibraryItems, getCategories, defaultMarkupForType } from '@/lib/itemLibrary'
 import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData } from '@/types'
-import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch, Copy, Eye, EyeOff } from 'lucide-react'
+import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch, Copy, Eye, EyeOff, Check } from 'lucide-react'
 import TakeoffTab from '@/components/TakeoffTab'
 
 const UOM_OPTIONS = ['m²', 'hour', 'm³', 'lm', 'EA', 'Allowance', 'Day', 'week', 'sheet', 'each']
@@ -26,15 +26,16 @@ function fmtPct(n: number) {
 // ── Item Picker Modal ───────────────────────────────────────────────────────
 
 function ItemPickerModal({
-  onAdd,
+  onAddMany,
   onClose,
   defaultCategory,
 }: {
-  onAdd: (item: LibraryItem) => void
+  onAddMany: (items: LibraryItem[]) => void
   onClose: () => void
   defaultCategory?: string | null
 }) {
   const [search, setSearch] = useState(defaultCategory || '')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const allItems = getAllLibraryItems()
 
   const filtered = allItems.filter(item => {
@@ -48,6 +49,18 @@ function ItemPickerModal({
     acc[item.category].push(item)
     return acc
   }, {})
+
+  const toggle = (id: string) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+
+  const addSelected = () => {
+    if (selected.size === 0) return
+    onAddMany(allItems.filter(i => selected.has(i.id)))
+    onClose()
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -71,6 +84,7 @@ function ItemPickerModal({
               className="w-full pl-8 pr-4 py-2 bg-transparent border border-fg-border text-fg-heading text-xs font-light placeholder-fg-muted/50 rounded-none outline-none focus:border-fg-heading transition-colors"
             />
           </div>
+          <p className="text-2xs font-light text-fg-muted mt-2">Tick items to add several at once.</p>
         </div>
         <div className="overflow-y-auto flex-1">
           {Object.entries(grouped).map(([category, items]) => (
@@ -78,23 +92,30 @@ function ItemPickerModal({
               <div className="px-6 py-2 bg-fg-card/30 border-b border-fg-border">
                 <p className="text-2xs font-medium tracking-wide uppercase text-[#5A5550]">{category}</p>
               </div>
-              {items.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => { onAdd(item); onClose() }}
-                  className="w-full flex items-center justify-between px-6 py-3 border-b border-fg-border/40 hover:bg-fg-card/40 transition-colors text-left"
-                >
-                  <div>
-                    <p className="text-xs font-light text-fg-heading">{item.description}</p>
-                    <p className="text-2xs font-light text-fg-muted mt-0.5">
-                      {item.type} · {item.crewType} · {item.defaultUom}
+              {items.map(item => {
+                const isSel = selected.has(item.id)
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => toggle(item.id)}
+                    className={`w-full flex items-center gap-3 px-6 py-3 border-b border-fg-border/40 transition-colors text-left ${isSel ? 'bg-fg-card/60' : 'hover:bg-fg-card/40'}`}
+                  >
+                    <span className={`flex items-center justify-center w-4 h-4 border shrink-0 ${isSel ? 'bg-fg-heading border-fg-heading text-white' : 'border-fg-border'}`}>
+                      {isSel && <Check className="w-3 h-3" />}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-light text-fg-heading">{item.description}</p>
+                      <p className="text-2xs font-light text-fg-muted mt-0.5">
+                        {item.type} · {item.crewType} · {item.defaultUom}
+                      </p>
+                    </div>
+                    <p className="text-xs font-light text-fg-heading tabular-nums ml-4 shrink-0">
+                      {fmtCurrency(item.defaultUnitCost)}/{item.defaultUom}
                     </p>
-                  </div>
-                  <p className="text-xs font-light text-fg-heading tabular-nums ml-4">
-                    {fmtCurrency(item.defaultUnitCost)}/{item.defaultUom}
-                  </p>
-                </button>
-              ))}
+                  </button>
+                )
+              })}
             </div>
           ))}
           {filtered.length === 0 && (
@@ -102,6 +123,25 @@ function ItemPickerModal({
               <p className="text-sm font-light text-fg-muted">No items found.</p>
             </div>
           )}
+        </div>
+        {/* Footer — add all ticked items at once */}
+        <div className="flex items-center justify-between px-6 py-3 border-t border-fg-border shrink-0">
+          <p className="text-2xs font-light text-fg-muted">{selected.size} selected</p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 text-2xs font-light tracking-wide uppercase border border-fg-border text-fg-muted hover:text-fg-heading hover:border-fg-heading transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={addSelected}
+              disabled={selected.size === 0}
+              className="px-4 py-1.5 text-2xs font-light tracking-architectural uppercase bg-fg-dark text-white/90 hover:bg-fg-darker transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Add{selected.size > 0 ? ` ${selected.size} ` : ' '}{selected.size === 1 ? 'item' : 'items'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -703,34 +743,34 @@ export default function EstimateBuilderPage() {
     setHasUnsavedChanges(true)
   }, [])
 
-  const addFromLibrary = useCallback((libraryItem: LibraryItem) => {
-    if (!estimate) return
-    const category = pickerCategory || libraryItem.category
-    const markup = defaultMarkupForType(libraryItem.type)   // per-type default (Material 45 / Labour 75 / Sub 35 / Equip 40)
-    const total = 0
-    const newItem: EstimateLineItem = {
-      id: generateId(),
-      estimateId: estimate.id,
-      displayOrder: String(estimate.lineItems.length + 1),
-      category,
-      description: libraryItem.description,
-      type: libraryItem.type,
-      units: 0,
-      uom: libraryItem.defaultUom,
-      unitCost: libraryItem.defaultUnitCost,
-      total,
-      markupPercent: markup,
-      revenue: 0,
-      crewType: libraryItem.crewType,
-    }
-    setEstimate(prev => prev ? {
-      ...prev,
-      lineItems: [...prev.lineItems, newItem],
-      updatedAt: new Date().toISOString(),
-    } : prev)
+  const addManyFromLibrary = useCallback((libraryItems: LibraryItem[]) => {
+    if (libraryItems.length === 0) return
+    // Build all the new rows in ONE functional update so display order is correct and we don't
+    // depend on a stale `estimate` closure (which would mis-number a batch).
+    setEstimate(prev => {
+      if (!prev) return prev
+      const base = prev.lineItems.length
+      const newItems: EstimateLineItem[] = libraryItems.map((li, i) => ({
+        id: generateId(),
+        estimateId: prev.id,
+        displayOrder: String(base + i + 1),
+        category: pickerCategory || li.category,
+        description: li.description,
+        type: li.type,
+        units: 0,
+        uom: li.defaultUom,
+        unitCost: li.defaultUnitCost,
+        total: 0,
+        markupPercent: defaultMarkupForType(li.type),   // per-type default (Material 45 / Labour 75 / Sub 35 / Equip 40)
+        revenue: 0,
+        crewType: li.crewType,
+      }))
+      return { ...prev, lineItems: [...prev.lineItems, ...newItems], updatedAt: new Date().toISOString() }
+    })
     setShowPicker(false)
     setPickerCategory(null)
-  }, [estimate, pickerCategory])
+    setHasUnsavedChanges(true)
+  }, [pickerCategory])
 
   const addBlankRow = useCallback((category: string) => {
     if (!estimate) return
@@ -1524,7 +1564,7 @@ export default function EstimateBuilderPage() {
 
       {showPicker && (
         <ItemPickerModal
-          onAdd={addFromLibrary}
+          onAddMany={addManyFromLibrary}
           onClose={() => { setShowPicker(false); setPickerCategory(null) }}
           defaultCategory={pickerCategory}
         />
