@@ -9,6 +9,7 @@ import {
   saveProject,
   loadEstimates,
   saveEstimate,
+  deleteEstimate,
   loadWeeklyRevenue,
   saveWeeklyRevenue,
   saveGanttEntries,
@@ -279,6 +280,19 @@ export async function getEstimates(): Promise<Estimate[]> {
     if (data) return data.map(mapEstimate)
   }
   return loadEstimates()
+}
+
+/**
+ * Delete an estimate from localStorage AND Supabase. The plain localStorage delete leaves the row in
+ * Supabase, which the add-missing sync would then resurrect on the next load — so the delete must
+ * reach the DB too.
+ */
+export async function deleteEstimateAsync(id: string): Promise<void> {
+  deleteEstimate(id) // localStorage + IndexedDB (runs synchronously before any await)
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_estimates').delete().eq('id', id)
+    if (error) console.error('[Formation] estimate delete (Supabase) error:', error.message)
+  }
 }
 
 export async function upsertEstimate(estimate: Estimate): Promise<void> {

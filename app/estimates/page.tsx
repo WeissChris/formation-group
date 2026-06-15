@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { loadEstimates, deleteEstimate, saveEstimate } from '@/lib/storage'
-import { getEstimates, reconcileVariations } from '@/lib/storageAsync'
+import { loadEstimates, saveEstimate } from '@/lib/storage'
+import { getEstimates, reconcileVariations, deleteEstimateAsync } from '@/lib/storageAsync'
 import { formatCurrency } from '@/lib/utils'
 import { getEstimateTotals, readLineItemRevenue, getEstimateContract } from '@/lib/estimateCalculations'
 import type { Estimate } from '@/types'
@@ -60,7 +60,8 @@ export default function EstimatesPage() {
     } else {
       if (!confirm('Delete this estimate?')) return
     }
-    deleteEstimate(id)
+    // Delete from Supabase too — otherwise the add-missing sync resurrects it on the next load.
+    deleteEstimateAsync(id)
     setEstimates(loadEstimates())
   }
 
