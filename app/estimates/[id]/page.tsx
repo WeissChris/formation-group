@@ -326,6 +326,7 @@ function LineItemRow({
   onMoveUp,
   onMoveDown,
   onUnitsFocus,
+  index = 0,
 }: {
   item: EstimateLineItem
   categories: string[]
@@ -336,6 +337,7 @@ function LineItemRow({
   onMoveUp: () => void
   onMoveDown: () => void
   onUnitsFocus?: () => void
+  index?: number
 }) {
   const update = (patch: Partial<EstimateLineItem>) => {
     const updated = { ...item, ...patch }
@@ -348,10 +350,12 @@ function LineItemRow({
   const inputCls = 'w-full px-1.5 py-1 bg-transparent border border-transparent hover:border-fg-border focus:border-fg-heading text-[#292929] text-xs font-light rounded-none outline-none transition-colors'
   const numCls = inputCls + ' tabular-nums text-right'
   const off = item.enabled === false
+  // Zebra striping + a stronger divider so each line's values are easy to track across the wide table.
+  const stripe = index % 2 === 1
 
   return (
     <tr
-      className={`border-b border-fg-border/30 group hover:bg-fg-card/20 ${off ? 'opacity-45' : ''}`}
+      className={`border-b border-fg-border/60 group transition-colors ${stripe ? 'bg-fg-card/15' : ''} hover:bg-fg-card/35 ${off ? 'opacity-45' : ''}`}
       title={off ? 'Turned off — kept for reference, not counted in totals' : undefined}
     >
       <td className="py-1.5 px-1">
@@ -1578,6 +1582,7 @@ export default function EstimateBuilderPage() {
                       }
                       const subKeys = Array.from(bySub.keys()).sort((a, b) => (a === '' ? -1 : b === '' ? 1 : 0))
                       const out: React.ReactNode[] = []
+                      let rowIdx = 0  // running index across the whole category, drives the zebra striping
                       for (const sub of subKeys) {
                         const items = bySub.get(sub)!
                         if (sub) {
@@ -1599,6 +1604,7 @@ export default function EstimateBuilderPage() {
                           out.push(
                             <LineItemRow
                               key={item.id}
+                              index={rowIdx++}
                               item={item}
                               categories={allCategories}
                               onChange={(updated) => updateLineItem(item.id, updated)}
