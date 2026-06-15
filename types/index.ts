@@ -268,6 +268,7 @@ export interface DesignProposal {
   acceptanceToken: string
   acceptedAt?: string
   acceptedByName?: string
+  firstViewedAt?: string       // when the client first opened the proposal page (view tracking)
   introText?: string           // Opening paragraph shown ON the proposal page (the letter)
   emailMessage?: string        // Message in the email that delivers the proposal (separate from introText)
   programText?: string         // "Program" box near the end — how long each phase takes (editable; has a default)

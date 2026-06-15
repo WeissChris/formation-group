@@ -193,6 +193,13 @@ export default function DesignPage() {
 
           {/* Right: date, amount, status */}
           <div className="flex items-center gap-4 shrink-0 flex-wrap justify-end">
+            {/* Viewed badge — the client has opened the proposal */}
+            {(p.status === 'sent' || p.status === 'pending') && p.firstViewedAt && (
+              <span className="text-2xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded-sm font-medium" title={`Opened ${new Date(p.firstViewedAt).toLocaleString('en-AU')}`}>
+                👁 Viewed {timeAgo(p.firstViewedAt)}
+              </span>
+            )}
+
             {/* Follow up badge */}
             {p.status === 'sent' && needsFollowUp(p) && (
               <span className="text-2xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-sm font-medium">

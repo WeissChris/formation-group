@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { generateRevenueFromProposal, saveDesignProject, loadDesignProjectByProposalId } from '@/lib/storage'
 import { getProposalByToken, acceptProposalByToken } from '@/lib/publicData'
-import { notifyProposalAccepted } from '@/lib/emailClient'
+import { notifyProposalAccepted, recordProposalView } from '@/lib/emailClient'
 import { formatCurrency, generateId, clientDisplayName, clientGreetingNames } from '@/lib/utils'
 import { getProposalPhases, phasesTotal, defaultPhaseDescription, defaultPhaseOutcome, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 import type { DesignProposal, ProposalContentBlock, DesignProject } from '@/types'
@@ -235,6 +235,10 @@ export default function ProposalAcceptancePage() {
       } else {
         setProposal(p)
         if (p.status === 'accepted') setAccepted(true)
+        // Record the open + (on first view of a sent proposal) notify Chris. Best-effort,
+        // server-deduped, and skipped server-side for drafts/accepted, so a reload or Chris's
+        // own preview won't spam. Don't bother once already accepted.
+        if (p.status !== 'accepted') void recordProposalView(token)
       }
     })()
     return () => { cancelled = true }

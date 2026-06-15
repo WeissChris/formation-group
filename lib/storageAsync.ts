@@ -266,10 +266,17 @@ export async function reconcileProposals(): Promise<number> {
     const byId = new Map(remote.map(p => [p.id, p]))
     for (const lp of local) {
       const r = byId.get(lp.id)
-      if (r && r.status === 'accepted' && lp.status !== 'accepted') {
-        saveProposal({ ...lp, status: 'accepted', acceptedAt: r.acceptedAt ?? lp.acceptedAt, acceptedByName: r.acceptedByName ?? lp.acceptedByName })
-        changed++
+      if (!r) continue
+      let next = lp
+      // Lift a client acceptance recorded on the public page.
+      if (r.status === 'accepted' && lp.status !== 'accepted') {
+        next = { ...next, status: 'accepted', acceptedAt: r.acceptedAt ?? next.acceptedAt, acceptedByName: r.acceptedByName ?? next.acceptedByName }
       }
+      // Lift the first-viewed timestamp the public page recorded when the client opened it.
+      if (r.firstViewedAt && !next.firstViewedAt) {
+        next = { ...next, firstViewedAt: r.firstViewedAt }
+      }
+      if (next !== lp) { saveProposal(next); changed++ }
     }
     // Add-missing: pull any proposal that exists remotely but not in this browser (e.g. created on
     // another device). Restore-if-empty above only rescues a fully-wiped device; without this a
@@ -720,6 +727,7 @@ function mapProposal(row: Record<string, unknown>): DesignProposal {
     acceptanceToken: row.acceptance_token as string,
     acceptedAt: row.accepted_at as string | undefined,
     acceptedByName: row.accepted_by_name as string | undefined,
+    firstViewedAt: row.first_viewed_at as string | undefined,
     contentBlocks: (row.content_blocks as DesignProposal['contentBlocks']) || [],
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string | undefined,

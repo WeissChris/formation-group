@@ -449,3 +449,53 @@ export async function sendAcceptanceNotifyEmail(input: AcceptanceInput): Promise
     html: buildAcceptanceNotifyHtml(input),
   })
 }
+
+// ── Proposal-viewed notification ──────────────────────────────────────────────
+
+/** Internal notification to Chris that a client opened (viewed) their proposal for the first time. */
+export function buildProposalViewedNotifyHtml(input: AcceptanceInput): string {
+  const GREEN = '#3D5A3A', INK = '#1a1a1a', BODY = '#2d2d2d', MUTED = '#8A8580'
+  const font = `-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif`
+  const client = escapeHtml(input.clientName || 'A client')
+  const url = escapeHtml(input.proposalUrl)
+  const address = input.projectAddress ? escapeHtml(input.projectAddress.trim()) : ''
+  const total = input.totalLabel ? escapeHtml(input.totalLabel) : ''
+  const when = new Date().toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding:4px 16px 4px 0;font-size:13px;color:${MUTED};white-space:nowrap;">${label}</td><td style="padding:4px 0;font-size:13px;color:${INK};">${value}</td></tr>`
+  return `<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#eceae7;font-family:${font};color:${BODY};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eceae7;">
+      <tr><td align="center" style="padding:28px 12px;">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;background:#ffffff;border:1px solid #e7e4df;">
+          <tr><td style="padding:30px 36px 0 36px;">
+            <p style="margin:0 0 6px 0;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;color:${GREEN};font-weight:600;">Proposal opened</p>
+            <h1 style="margin:0 0 18px 0;font-size:21px;font-weight:300;color:${INK};">${client} just opened their proposal</h1>
+            <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 22px 0;">
+              ${row('Client', client)}
+              ${address ? row('Project', address) : ''}
+              ${total ? row('Fee', `${total} + GST`) : ''}
+              ${row('Opened', when)}
+            </table>
+            <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 28px 0;"><tr><td style="background:${GREEN};border-radius:2px;">
+              <a href="${url}" style="display:inline-block;padding:12px 26px;font-size:13px;color:#ffffff;text-decoration:none;letter-spacing:0.03em;">View proposal &rarr;</a>
+            </td></tr></table>
+            <p style="margin:0 0 26px 0;font-size:12px;line-height:1.6;color:${MUTED};">They've viewed it but not yet accepted — a good moment to follow up.</p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`
+}
+
+/** Notify Chris that a client first opened their proposal. */
+export async function sendProposalViewedNotifyEmail(input: AcceptanceInput): Promise<SendResult> {
+  const to = (process.env.PROPOSAL_BCC || DEFAULT_BCC).trim() || DEFAULT_REPLY_TO
+  return sendViaResend({
+    to,
+    subject: `Proposal opened — ${input.clientName || 'client'}`,
+    html: buildProposalViewedNotifyHtml(input),
+  })
+}

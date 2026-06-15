@@ -44,6 +44,23 @@ export async function notifyProposalAccepted(acceptanceToken: string): Promise<v
   }
 }
 
+/**
+ * Tell the server the client just opened their proposal. The server records the first-view time and
+ * (on the first view of a sent proposal) emails Chris. Best-effort and idempotent — safe to call on
+ * every page load.
+ */
+export async function recordProposalView(acceptanceToken: string): Promise<void> {
+  try {
+    await fetch('/api/proposals/viewed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ acceptanceToken }),
+    })
+  } catch {
+    /* ignore — view tracking is a best-effort signal */
+  }
+}
+
 /** Ask the server to email this variation to the client for digital approval. */
 export async function requestSendVariation(body: {
   clientName: string
