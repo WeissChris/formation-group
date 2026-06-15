@@ -152,12 +152,28 @@ export default function LoginGate({ children }: { children: ReactNode }) {
                   }
                 }
                 if (reconciled) console.log(`[hydrate] reconciled ${reconciled} acceptance(s)`)
+                // Add-missing: pull any proposal that exists remotely but not in this browser
+                // (e.g. created on another device). The restore-if-empty branch above only rescues a
+                // fully-wiped device.
+                const localPropIds = new Set(localProps.map(p => p.id))
+                const missingProps = remoteProps.filter(p => !localPropIds.has(p.id))
+                if (missingProps.length) {
+                  missingProps.forEach(x => st.saveProposal(x))
+                  console.log(`[hydrate] added ${missingProps.length} missing proposal(s)`)
+                }
               }
 
-              // Projects / estimates / revenue — restore only when the local copy is empty
-              if (st.loadProjects().length === 0) {
-                const r = await sa.getProjects()
-                if (r.length) { r.forEach(x => st.saveProject(x)); console.log(`[hydrate] restored ${r.length} project(s)`) }
+              // Projects — add-missing: pull any project that exists remotely but not in this
+              // browser (e.g. created on another computer). Previously this only restored when local
+              // was empty, so a device that already had projects never received new ones from elsewhere.
+              {
+                const remoteProj = await sa.getProjects()
+                const localProjIds = new Set(st.loadProjects().map(p => p.id))
+                const missingProj = remoteProj.filter(p => !localProjIds.has(p.id))
+                if (missingProj.length) {
+                  missingProj.forEach(x => st.saveProject(x))
+                  console.log(`[hydrate] added ${missingProj.length} missing project(s)`)
+                }
               }
               const remoteEst = await sa.getEstimates()
               const localEst = st.loadEstimates()
@@ -190,19 +206,40 @@ export default function LoginGate({ children }: { children: ReactNode }) {
                 }
                 if (reconciled) console.log(`[hydrate] reconciled ${reconciled} variation(s)`)
               }
-              if (st.loadWeeklyRevenue().length === 0) {
-                const r = await sa.getRevenue()
-                if (r.length) { r.forEach(x => st.saveWeeklyRevenue(x)); console.log(`[hydrate] restored ${r.length} revenue row(s)`) }
+              // Revenue — add-missing: pull any revenue row that exists remotely but not in this
+              // browser. Design-generated rows carry stable ids (`design-<proposalId>-...`), so
+              // diffing by id never duplicates them.
+              {
+                const remoteRev = await sa.getRevenue()
+                const localRevIds = new Set(st.loadWeeklyRevenue().map(r => r.id))
+                const missingRev = remoteRev.filter(r => !localRevIds.has(r.id))
+                if (missingRev.length) {
+                  missingRev.forEach(x => st.saveWeeklyRevenue(x))
+                  console.log(`[hydrate] added ${missingRev.length} missing revenue row(s)`)
+                }
               }
 
-              // Design-delivery tracker / progress-claim stages — restore only when empty
-              if (st.loadDesignProjects().length === 0) {
-                const r = await sa.getDesignProjects()
-                if (r.length) { r.forEach(x => st.saveDesignProject(x)); console.log(`[hydrate] restored ${r.length} design project(s)`) }
+              // Design-delivery tracker — add-missing: pull any design project that exists remotely
+              // but not in this browser (e.g. generated office-side on another device).
+              {
+                const remoteDP = await sa.getDesignProjects()
+                const localDPIds = new Set(st.loadDesignProjects().map(d => d.id))
+                const missingDP = remoteDP.filter(d => !localDPIds.has(d.id))
+                if (missingDP.length) {
+                  missingDP.forEach(x => st.saveDesignProject(x))
+                  console.log(`[hydrate] added ${missingDP.length} missing design project(s)`)
+                }
               }
-              if (st.loadProgressPaymentStages().length === 0) {
-                const r = await sa.getPaymentStages()
-                if (r.length) { r.forEach(x => st.saveProgressPaymentStage(x)); console.log(`[hydrate] restored ${r.length} payment stage(s)`) }
+              // Progress-claim stages — add-missing: pull any stage that exists remotely but not in
+              // this browser, so a stage created/edited on another device surfaces here.
+              {
+                const remoteStages = await sa.getPaymentStages()
+                const localStageIds = new Set(st.loadProgressPaymentStages().map(s => s.id))
+                const missingStages = remoteStages.filter(s => !localStageIds.has(s.id))
+                if (missingStages.length) {
+                  missingStages.forEach(x => st.saveProgressPaymentStage(x))
+                  console.log(`[hydrate] added ${missingStages.length} missing payment stage(s)`)
+                }
               }
 
               // Gantt — restore per-project where that project's local copy is empty

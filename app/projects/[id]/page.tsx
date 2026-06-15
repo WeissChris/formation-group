@@ -8,10 +8,10 @@ import Link from 'next/link'
 import {
   loadProjects, loadWeeklyRevenue, loadEstimates, saveEstimate,
   loadGanttEntries, loadWeeklyActuals, loadProgressClaims,
-  loadProgressPaymentStages, saveProject, deleteProject,
+  loadProgressPaymentStages, saveProject,
   loadSubcontractors, saveSubcontractor, deleteSubcontractor,
 } from '@/lib/storage'
-import { getProjects, reconcileVariations } from '@/lib/storageAsync'
+import { getProjects, reconcileVariations, upsertProject, deleteProjectAsync } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { getEstimateTotals } from '@/lib/estimateCalculations'
 import type { Project, Estimate, WeeklyRevenue, GanttEntry, WeeklyActual, ProgressClaim, ProgressPaymentStage, SubcontractorPackage, SubcontractorClaim } from '@/types'
@@ -860,7 +860,7 @@ export default function ProjectDetailPage() {
   const saveNotes = useCallback(() => {
     if (!project) return
     const updated = { ...project, notes: notesValue }
-    saveProject(updated)
+    void upsertProject(updated) // localStorage + Supabase, so the edit reaches other devices
     setProject(updated)
     setNotesSaved(true)
     setTimeout(() => setNotesSaved(false), 2000)
@@ -868,7 +868,8 @@ export default function ProjectDetailPage() {
 
   const handleDelete = () => {
     if (!project) return
-    deleteProject(project.id)
+    // Delete from Supabase too — otherwise the add-missing sync resurrects it on the next load.
+    void deleteProjectAsync(project.id)
     router.push('/projects')
   }
 
@@ -930,7 +931,7 @@ export default function ProjectDetailPage() {
 
     const newChecklist = buildChecklist(newStage)
     const updated = { ...project, stage: newStage, stageChecklist: newChecklist, ...programmeBaselineUpdate }
-    saveProject(updated)
+    void upsertProject(updated) // localStorage + Supabase
     setProject(updated)
   }
 
@@ -942,7 +943,7 @@ export default function ProjectDetailPage() {
         item.id === itemId ? { ...item, completed: !item.completed } : item
       ),
     }
-    saveProject(updated)
+    void upsertProject(updated) // localStorage + Supabase
     setProject(updated)
   }
 
@@ -1122,7 +1123,7 @@ export default function ProjectDetailPage() {
                   onClick={() => {
                     const next = project.invoiceModel === 'progress_claim' ? 'stage_based' : 'progress_claim'
                     const updated = { ...project, invoiceModel: next as 'stage_based' | 'progress_claim' }
-                    saveProject(updated)
+                    void upsertProject(updated) // localStorage + Supabase
                     setProject(updated)
                   }}
                   className="text-sm font-light text-fg-heading hover:text-fg-dark transition-colors border-b border-dashed border-fg-border/60 pb-px"
@@ -1334,7 +1335,7 @@ export default function ProjectDetailPage() {
                   type="text"
                   value={(project.nextAction as string) || ''}
                   onChange={e => handleNextActionChange(e.target.value)}
-                  onBlur={() => saveProject(project)}
+                  onBlur={() => { void upsertProject(project) }}
                   placeholder="e.g. Confirm start date, Review budget variance, Await client approval"
                   className="w-full bg-transparent border-b border-fg-border text-sm font-light text-fg-heading outline-none py-1.5 focus:border-fg-heading transition-colors placeholder-fg-muted/30"
                 />
@@ -1391,7 +1392,7 @@ export default function ProjectDetailPage() {
               onClick={() => {
                 const next = project.invoiceModel === 'progress_claim' ? 'stage_based' : 'progress_claim'
                 const updated = { ...project, invoiceModel: next as 'stage_based' | 'progress_claim' }
-                saveProject(updated)
+                void upsertProject(updated) // localStorage + Supabase
                 setProject(updated)
               }}
               className="text-2xs font-light tracking-wide uppercase border border-fg-border text-fg-muted px-3 py-1.5 hover:text-fg-heading hover:border-fg-heading/40 transition-colors"

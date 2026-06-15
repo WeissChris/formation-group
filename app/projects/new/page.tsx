@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { saveProject } from '@/lib/storage'
+import { upsertProject } from '@/lib/storageAsync'
 import { generateId } from '@/lib/utils'
 import type { EntityType, Project, ProjectScope } from '@/types'
 import Link from 'next/link'
@@ -86,7 +86,9 @@ export default function NewProjectPage() {
       invoiceModel: entity === 'formation' ? 'progress_claim' : 'stage_based',
       createdAt: new Date().toISOString(),
     }
-    saveProject(project)
+    // upsertProject writes localStorage immediately AND pushes to Supabase, so a new project reaches
+    // the DB right away (visible on other devices) rather than waiting for the next hourly bulk-sync.
+    void upsertProject(project)
     router.push(`/projects/${project.id}`)
   }
 

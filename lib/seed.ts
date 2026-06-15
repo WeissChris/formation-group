@@ -1,6 +1,7 @@
 ﻿import type { Project, WeeklyRevenue, Estimate, EstimateLineItem, DesignProposal, DesignProject } from '@/types'
 import type { ProjectStage } from '@/types'
-import { saveProject, saveEstimate, loadProjects, loadEstimates, saveProposal, loadProposals, generateRevenueFromProposal, saveDesignProject, loadDesignProjectByProposalId, loadDesignProjects, saveProgressPaymentStage, loadProgressPaymentStages } from '@/lib/storage'
+import { saveProject, saveEstimate, loadProjects, loadEstimates, saveProposal, loadProposals, generateRevenueFromProposal, saveDesignProject, loadDesignProjectByProposalId, loadDesignProjects, loadProgressPaymentStages } from '@/lib/storage'
+import { upsertPaymentStage } from '@/lib/storageAsync'
 import { generateId, generateForemanPin, isLegacyForemanPin } from '@/lib/utils'
 
 export function seedDemoData(): void {
@@ -1524,7 +1525,9 @@ export function seedRamondettaPayments(): void {
     { id: 'samara-variation-1', projectId: 'samara', stageNumber: 'Variation', description: 'Variation - scope addition (May 2026)', quotedAmount: 4937, paidToDate: 0, status: 'pending' as const, invoiceNumber: '' },
   ]
 
-  stages.forEach(s => saveProgressPaymentStage(s))
+  // Route stage creation through upsertPaymentStage so seeded stages reach Supabase immediately
+  // (localStorage write is synchronous inside; the Supabase push is fire-and-forget).
+  stages.forEach(s => { void upsertPaymentStage(s) })
 }
 
 export function seedQ1331Estimate(): void {

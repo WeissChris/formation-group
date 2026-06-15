@@ -3,7 +3,8 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { loadProjects, loadWeeklyRevenue, saveWeeklyRevenue, deleteWeeklyRevenue, loadEstimates, loadProposals } from '@/lib/storage'
+import { loadProjects, loadWeeklyRevenue, saveWeeklyRevenue, loadEstimates, loadProposals } from '@/lib/storage'
+import { getRevenue, upsertRevenue, deleteWeeklyRevenueAsync } from '@/lib/storageAsync'
 import { getProposalPhases, phasesTotal } from '@/lib/proposalPhases'
 import {
   formatCurrency, getFridaysInMonth, getFinancialYear,
@@ -267,6 +268,18 @@ export default function RevenuePage() {
     setProjects(loadProjects())
     setRevenue(loadWeeklyRevenue())
 
+    // Add-missing from Supabase: pull any revenue row that exists remotely but not in this browser
+    // (e.g. entered on another computer). Design-generated rows carry stable ids
+    // (`design-<proposalId>-...`), so diffing by id never duplicates them.
+    ;(async () => {
+      try {
+        const remote = await getRevenue()
+        const localIds = new Set(loadWeeklyRevenue().map(r => r.id))
+        const missing = remote.filter(r => !localIds.has(r.id))
+        if (missing.length) { missing.forEach(saveWeeklyRevenue); setRevenue(loadWeeklyRevenue()) }
+      } catch { /* offline — show what we have locally */ }
+    })()
+
     const allEstimates = loadEstimates()
     const allProposals = loadProposals()
     const allLoadedProjectsForFilter = loadProjects()
@@ -387,8 +400,11 @@ export default function RevenuePage() {
   }, [])
 
   const refresh = () => setRevenue(loadWeeklyRevenue())
-  const handleSave = (entry: WeeklyRevenue) => { saveWeeklyRevenue(entry); refresh() }
-  const handleDelete = (id: string) => { deleteWeeklyRevenue(id); refresh() }
+  // Manual add/edit → upsertRevenue so the row reaches Supabase immediately (visible on other
+  // devices), not just localStorage.
+  const handleSave = (entry: WeeklyRevenue) => { void upsertRevenue(entry); refresh() }
+  // Delete from Supabase too — otherwise the add-missing sync resurrects it on the next load.
+  const handleDelete = (id: string) => { void deleteWeeklyRevenueAsync(id); refresh() }
 
   const now = new Date()
   const fyLabel = getFinancialYear(now)

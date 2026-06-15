@@ -7,16 +7,20 @@ import {
   buildDesignProjectFromProposal,
   loadProjects,
   saveProject,
+  deleteProject,
+  deleteProposal,
   loadEstimates,
   saveEstimate,
   deleteEstimate,
   loadWeeklyRevenue,
   saveWeeklyRevenue,
+  deleteWeeklyRevenue,
   saveGanttEntries,
   loadDesignProjects,
   saveDesignProject,
   loadProgressPaymentStages,
   saveProgressPaymentStage,
+  deleteProgressPaymentStage,
   loadWeeklyActuals,
   saveWeeklyActual,
 } from './storage'
@@ -130,6 +134,19 @@ export async function upsertProject(project: Project): Promise<void> {
   }
 }
 
+/**
+ * Delete a project from localStorage AND Supabase. The plain localStorage delete leaves the row in
+ * Supabase, which the add-missing sync would then resurrect on the next load — so the delete must
+ * reach the DB too.
+ */
+export async function deleteProjectAsync(id: string): Promise<void> {
+  deleteProject(id) // localStorage (runs synchronously before any await)
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_projects').delete().eq('id', id)
+    if (error) console.error('[Formation] project delete (Supabase) error:', error.message)
+  }
+}
+
 // ── PROPOSALS ────────────────────────────────────────────────────────────────
 
 export async function getProposals(): Promise<DesignProposal[]> {
@@ -198,6 +215,19 @@ export async function upsertProposal(proposal: DesignProposal): Promise<void> {
 }
 
 /**
+ * Delete a proposal from localStorage AND Supabase. The plain localStorage delete leaves the row in
+ * Supabase, which the add-missing reconcile would then resurrect on the next load — so the delete
+ * must reach the DB too.
+ */
+export async function deleteProposalAsync(id: string): Promise<void> {
+  deleteProposal(id) // localStorage (runs synchronously before any await)
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_proposals').delete().eq('id', id)
+    if (error) console.error('[Formation] proposal delete (Supabase) error:', error.message)
+  }
+}
+
+/**
  * Pull client proposal acceptances down from Supabase into localStorage. The client accepts on the
  * public proposal page (straight to Supabase via accept_proposal_by_token); the office reads
  * localStorage, so without this a 'sent' proposal never flips to 'accepted' until the next login.
@@ -223,6 +253,13 @@ export async function reconcileProposals(): Promise<number> {
         saveProposal({ ...lp, status: 'accepted', acceptedAt: r.acceptedAt ?? lp.acceptedAt, acceptedByName: r.acceptedByName ?? lp.acceptedByName })
         changed++
       }
+    }
+    // Add-missing: pull any proposal that exists remotely but not in this browser (e.g. created on
+    // another device). Restore-if-empty above only rescues a fully-wiped device; without this a
+    // device that already has proposals never receives new ones created elsewhere.
+    const localIds = new Set(local.map(p => p.id))
+    for (const r of remote) {
+      if (!localIds.has(r.id)) { saveProposal(r); changed++ }
     }
   }
   // Ensure each accepted proposal's downstream bookkeeping (revenue forecast + design-delivery
@@ -292,6 +329,10 @@ export async function deleteEstimateAsync(id: string): Promise<void> {
   if (isSupabaseConfigured() && supabase) {
     const { error } = await supabase.from('fg_estimates').delete().eq('id', id)
     if (error) console.error('[Formation] estimate delete (Supabase) error:', error.message)
+    // Orphan cleanup: an estimate's takeoff (keyed by estimate_id) would otherwise be left behind in
+    // fg_takeoffs with no estimate to attach to — drop it in the same delete.
+    const { error: tErr } = await supabase.from('fg_takeoffs').delete().eq('estimate_id', id)
+    if (tErr) console.error('[Formation] takeoff orphan delete (Supabase) error:', tErr.message)
   }
 }
 
@@ -404,6 +445,19 @@ export async function upsertRevenue(entry: WeeklyRevenue): Promise<void> {
       notes: fresh.notes,
       updated_at: fresh.updatedAt ?? new Date().toISOString(),
     })
+  }
+}
+
+/**
+ * Delete a weekly-revenue row from localStorage AND Supabase. The plain localStorage delete leaves
+ * the row in Supabase, which the add-missing sync would then resurrect on the next load — so the
+ * delete must reach the DB too.
+ */
+export async function deleteWeeklyRevenueAsync(id: string): Promise<void> {
+  deleteWeeklyRevenue(id) // localStorage (runs synchronously before any await)
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_revenue').delete().eq('id', id)
+    if (error) console.error('[Formation] revenue delete (Supabase) error:', error.message)
   }
 }
 
@@ -660,6 +714,19 @@ export async function upsertPaymentStage(stage: ProgressPaymentStage): Promise<v
       override_amount: fresh.overrideAmount ?? null,
       invoice_description: fresh.invoiceDescription ?? null,
     })
+  }
+}
+
+/**
+ * Delete a progress-claim payment stage from localStorage AND Supabase. The plain localStorage
+ * delete leaves the row in Supabase, which the add-missing sync would then resurrect on the next
+ * load — so the delete must reach the DB too.
+ */
+export async function deletePaymentStageAsync(id: string): Promise<void> {
+  deleteProgressPaymentStage(id) // localStorage (runs synchronously before any await)
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_payment_stages').delete().eq('id', id)
+    if (error) console.error('[Formation] payment stage delete (Supabase) error:', error.message)
   }
 }
 

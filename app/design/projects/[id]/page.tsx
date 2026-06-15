@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { loadDesignProjects, saveDesignProject } from '@/lib/storage'
-import { getDesignProjects } from '@/lib/storageAsync'
+import { getDesignProjects, upsertDesignProject } from '@/lib/storageAsync'
 import { formatCurrency } from '@/lib/utils'
 import type { DesignProject } from '@/types'
 import { Check } from 'lucide-react'
@@ -102,7 +102,9 @@ export default function DesignProjectDetailPage() {
   const autoSave = useCallback((updated: DesignProject) => {
     if (saveTimer) clearTimeout(saveTimer)
     const timer = setTimeout(() => {
-      saveDesignProject({ ...updated, updatedAt: new Date().toISOString() })
+      // upsertDesignProject writes localStorage AND pushes to Supabase (timestamp-guarded), so an
+      // edit here reaches other devices instead of waiting for the next hourly bulk-sync.
+      void upsertDesignProject({ ...updated, updatedAt: new Date().toISOString() })
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     }, 500)

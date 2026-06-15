@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { loadProposals, saveProposal, deleteProposal, generateRevenueFromProposal, generateInvoiceStages, saveDesignProject, loadDesignProjectByProposalId, buildDesignProjectFromProposal } from '@/lib/storage'
-import { upsertProposal, getProposals, reconcileProposals } from '@/lib/storageAsync'
+import { loadProposals, saveProposal, generateRevenueFromProposal, generateInvoiceStages, saveDesignProject, loadDesignProjectByProposalId, buildDesignProjectFromProposal } from '@/lib/storage'
+import { upsertProposal, getProposals, reconcileProposals, deleteProposalAsync } from '@/lib/storageAsync'
 import { formatCurrency } from '@/lib/utils'
 import { getProposalPhases, syncLegacyPhaseFields, phasesTotal, makeBlankPhase, defaultPhaseDescription, defaultPhaseOutcome, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 import { requestSendProposal, sendErrorMessage } from '@/lib/emailClient'
@@ -155,7 +155,8 @@ export default function ProposalDetailPage() {
 
   const handleDelete = () => {
     if (!confirm('Delete this proposal?')) return
-    deleteProposal(id)
+    // Delete from Supabase too — otherwise the add-missing reconcile resurrects it on the next load.
+    void deleteProposalAsync(id)
     router.push('/design')
   }
 

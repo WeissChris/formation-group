@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { loadProjects, loadGanttEntries } from '@/lib/storage'
+import { loadProjects, loadGanttEntries, saveProject } from '@/lib/storage'
+import { getProjects } from '@/lib/storageAsync'
 import { STAGE_LABELS, STAGE_COLOURS } from '@/lib/stageConfig'
 import { scheduleStatus, healthColour, healthBg, getForecastCompletion } from '@/lib/projectHealth'
 import type { ProjectStage, GanttEntry } from '@/types'
@@ -46,11 +47,25 @@ function ProjectsInner() {
   const [entityFilter, setEntityFilter] = useState<EntityType | 'all'>(entityParam ?? 'all')
 
   useEffect(() => {
-    const loaded = loadProjects()
-    setProjects(loaded)
-    const map: Record<string, GanttEntry[]> = {}
-    for (const p of loaded) map[p.id] = loadGanttEntries(p.id)
-    setGanttByProject(map)
+    let cancelled = false
+    ;(async () => {
+      let loaded = loadProjects()
+      // Add-missing from Supabase: pull any project that exists remotely but not in this browser
+      // (e.g. created on another computer). Mirrors the estimates list — without this a device that
+      // already has projects never sees ones created on other devices.
+      try {
+        const remote = await getProjects()
+        const localIds = new Set(loaded.map(p => p.id))
+        const missing = remote.filter(p => !localIds.has(p.id))
+        if (missing.length) { missing.forEach(saveProject); loaded = loadProjects() }
+      } catch { /* offline — show what we have locally */ }
+      if (cancelled) return
+      setProjects(loaded)
+      const map: Record<string, GanttEntry[]> = {}
+      for (const p of loaded) map[p.id] = loadGanttEntries(p.id)
+      setGanttByProject(map)
+    })()
+    return () => { cancelled = true }
   }, [])
 
   const filtered = projects
