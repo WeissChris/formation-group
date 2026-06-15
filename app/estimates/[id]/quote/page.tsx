@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { loadEstimates, loadProjects, loadProposals, saveEstimate } from '@/lib/storage'
 import { getEstimates } from '@/lib/storageAsync'
 import { formatCurrency } from '@/lib/utils'
-import { getEstimateTotals, readLineItemRevenue } from '@/lib/estimateCalculations'
+import { getEstimateTotals, readLineItemRevenue, activeLineItems, getEstimateContract } from '@/lib/estimateCalculations'
 import type { Estimate, Project } from '@/types'
 import { Printer, ArrowLeft } from 'lucide-react'
 
@@ -54,13 +54,31 @@ export default function QuotePage() {
 
   const totals = getEstimateTotals(estimate)
 
-  // Group line items by category and sum revenue per category
-  const categories = Array.from(new Set(estimate.lineItems.map(i => i.category)))
-  const categoryTotals = categories.map(category => {
-    const items = estimate.lineItems.filter(i => i.category === category)
-    const totalRevenue = items.reduce((s, i) => s + readLineItemRevenue(i), 0)
-    return { category, totalRevenue }
+  // Category breakdown for the client. It MUST reconcile with the Subtotal below, so: (1) use ACTIVE
+  // line items only (lines turned off are excluded from the totals), and (2) scale each category by
+  // the contract factor so the project markups (waste/contingency/overheads) + rounding are spread
+  // across the rows. Previously the rows summed to the bare line revenue while the Subtotal showed the
+  // marked-up contract — a ~15% gap where the listed items visibly didn't add up to the total.
+  const active = activeLineItems(estimate)
+  const contract = getEstimateContract(estimate)
+  const factor = contract.factor
+  const categories = Array.from(new Set(active.map(i => i.category)))
+  const rawCategoryTotals = categories.map(category => {
+    const items = active.filter(i => i.category === category)
+    const revenue = items.reduce((s, i) => s + readLineItemRevenue(i), 0) * factor
+    return { category, revenue }
   })
+  // formatCurrency shows whole dollars; round each row and absorb the residual into the largest
+  // category so the column sums EXACTLY to the ex-GST subtotal (no off-by-a-few-dollars on the quote).
+  const categoryTotals = rawCategoryTotals.map(r => ({ category: r.category, totalRevenue: Math.round(r.revenue) }))
+  const residual = Math.round(contract.exGst) - categoryTotals.reduce((s, r) => s + r.totalRevenue, 0)
+  if (residual !== 0 && categoryTotals.length > 0) {
+    let largestIdx = 0
+    for (let i = 1; i < rawCategoryTotals.length; i++) {
+      if (rawCategoryTotals[i].revenue > rawCategoryTotals[largestIdx].revenue) largestIdx = i
+    }
+    categoryTotals[largestIdx].totalRevenue += residual
+  }
 
   const today = new Date()
   const validUntil = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
