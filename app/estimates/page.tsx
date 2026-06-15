@@ -30,12 +30,16 @@ export default function EstimatesPage() {
     let cancelled = false
     ;(async () => {
       let local = loadEstimates()
-      if (local.length === 0) {
-        // localStorage may have been cleared — fall back to the durable Supabase copy and restore it
-        // locally so the list isn't empty just because this browser lost its cache.
+      // Add-missing from Supabase: pull any estimate that exists remotely but not in this browser
+      // (e.g. created on another computer). Previously this only ran when local was empty, so a
+      // device that already had estimates never received new ones created on other devices —
+      // which is why one computer showed 2 estimates and another showed 1.
+      try {
         const remote = await getEstimates()
-        if (remote.length) { remote.forEach(saveEstimate); local = loadEstimates() }
-      }
+        const localIds = new Set(local.map(e => e.id))
+        const missing = remote.filter(e => !localIds.has(e.id))
+        if (missing.length) { missing.forEach(saveEstimate); local = loadEstimates() }
+      } catch { /* offline — show what we have locally */ }
       if (!cancelled) setEstimates(local)
       // Pull any client variation approvals/rejections down from Supabase, then refresh.
       const changed = await reconcileVariations()

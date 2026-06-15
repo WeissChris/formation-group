@@ -161,16 +161,22 @@ export default function LoginGate({ children }: { children: ReactNode }) {
               }
               const remoteEst = await sa.getEstimates()
               const localEst = st.loadEstimates()
-              if (localEst.length === 0 && remoteEst.length) {
-                remoteEst.forEach(x => st.saveEstimate(x))
-                console.log(`[hydrate] restored ${remoteEst.length} estimate(s)`)
-              } else {
+              // Add-missing: pull any estimate that exists in Supabase but not in this browser
+              // (e.g. created on another computer). Previously this only restored when local was
+              // empty, so a device that already had estimates never received new ones from elsewhere.
+              const localEstIds = new Set(localEst.map(e => e.id))
+              const missingEst = remoteEst.filter(e => !localEstIds.has(e.id))
+              if (missingEst.length) {
+                missingEst.forEach(x => st.saveEstimate(x))
+                console.log(`[hydrate] added ${missingEst.length} missing estimate(s)`)
+              }
+              {
                 // Reconcile variation approvals: the client approves/rejects on the public /variation
                 // page (straight to Supabase), so lift a local 'sent' variation to the state the client
                 // set — otherwise the office + project never see the approval.
                 const byId = new Map(remoteEst.map(e => [e.id, e]))
                 let reconciled = 0
-                for (const local of localEst) {
+                for (const local of st.loadEstimates()) {
                   if (!local.parentEstimateId) continue
                   const r = byId.get(local.id)
                   if (!r) continue
