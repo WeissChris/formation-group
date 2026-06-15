@@ -399,7 +399,10 @@ function LineItemRow({
           onChange={e => {
             const t = e.target.value as EstimateLineItem['type']
             // Markup follows the item type — re-apply the type's default on change.
-            update({ type: t, markupPercent: defaultMarkupForType(t) })
+            // Labour is always rated by the hour, so pin its unit of measure to 'hour'.
+            update(t === 'Labour'
+              ? { type: t, markupPercent: defaultMarkupForType(t), uom: 'hour' }
+              : { type: t, markupPercent: defaultMarkupForType(t) })
           }}
           className={`${inputCls} bg-fg-bg appearance-none`}
         >
@@ -433,9 +436,11 @@ function LineItemRow({
       </td>
       <td className="py-1.5 px-1 w-20">
         <select
-          value={item.uom}
+          value={item.type === 'Labour' ? 'hour' : item.uom}
           onChange={e => update({ uom: e.target.value })}
-          className={`${inputCls} bg-fg-bg appearance-none`}
+          disabled={item.type === 'Labour'}
+          title={item.type === 'Labour' ? 'Labour is always rated by the hour' : undefined}
+          className={`${inputCls} bg-fg-bg appearance-none${item.type === 'Labour' ? ' opacity-60 cursor-not-allowed' : ''}`}
         >
           {UOM_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
           {!UOM_OPTIONS.includes(item.uom) && <option value={item.uom}>{item.uom}</option>}
@@ -874,7 +879,7 @@ export default function EstimateBuilderPage() {
         description: li.description,
         type: li.type,
         units: 0,
-        uom: li.defaultUom,
+        uom: li.type === 'Labour' ? 'hour' : li.defaultUom,
         unitCost: li.defaultUnitCost,
         total: 0,
         markupPercent: defaultMarkupForType(li.type),   // per-type default (Material 45 / Labour 75 / Sub 35 / Equip 40)
@@ -928,7 +933,8 @@ export default function EstimateBuilderPage() {
           if (li.id !== lineItemId) return li
           const total = (qty || 0) * (li.unitCost || 0)
           // Reuse the single revenue calculator so this path can't drift from the editor's.
-          return { ...li, units: qty, uom: unit, total, revenue: calculateLineItemRevenue({ ...li, total }) }
+          // Labour stays rated by the hour even when a takeoff measure (m², lm…) is applied.
+          return { ...li, units: qty, uom: li.type === 'Labour' ? 'hour' : unit, total, revenue: calculateLineItemRevenue({ ...li, total }) }
         }),
         updatedAt: new Date().toISOString(),
       }
