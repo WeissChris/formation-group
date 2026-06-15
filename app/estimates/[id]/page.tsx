@@ -492,6 +492,31 @@ function LineItemRow({
   )
 }
 
+// ── Back-to-top button ──────────────────────────────────────────────────────
+// Floating button for long estimates — jump back up to the takeoff summary without scrolling.
+function ScrollToTopButton() {
+  const [show, setShow] = useState(false)
+  useEffect(() => {
+    const onScroll = () => setShow(window.scrollY > 400)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+  if (!show) return null
+  return (
+    <button
+      type="button"
+      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      aria-label="Back to top"
+      title="Back to top — takeoff summary"
+      className="no-print fixed bottom-6 right-6 z-40 flex items-center gap-1.5 px-4 py-2.5 bg-fg-dark text-white/90 shadow-lg hover:bg-fg-darker transition-colors text-2xs font-light tracking-architectural uppercase"
+    >
+      <ChevronUp className="w-4 h-4" />
+      Top
+    </button>
+  )
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────
 
 export default function EstimateBuilderPage() {
@@ -1570,6 +1595,7 @@ export default function EstimateBuilderPage() {
         />
       )}
 
+      <ScrollToTopButton />
     </div>
   )
 }
