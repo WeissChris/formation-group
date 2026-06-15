@@ -7,6 +7,7 @@ import { loadEstimates, loadProposals, saveEstimate, loadTakeoffAsync } from '@/
 import { upsertEstimate, upsertProject, getEstimates, getTakeoff, upsertSubcontractor } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract, activeLineItems, estimateLabourHours } from '@/lib/estimateCalculations'
+import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
 import { getAllLibraryItems, getCategories, defaultMarkupForType } from '@/lib/itemLibrary'
 import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData } from '@/types'
@@ -708,6 +709,20 @@ export default function EstimateBuilderPage() {
   const latestEstimateRef = useRef<Estimate | null>(null)
   const pendingSaveRef = useRef(false)
   latestEstimateRef.current = estimate
+
+  // Live cross-device refresh: when the realtime sync (or another tab) pulls a newer copy of THIS
+  // estimate, re-read it — but never while the user has unsaved edits in progress (don't clobber
+  // their work), and only when the stored copy is genuinely newer (avoids needless field resets).
+  const hasUnsavedRef = useRef(false)
+  hasUnsavedRef.current = hasUnsavedChanges
+  useCrossTabRefresh(['estimates'], () => {
+    if (hasUnsavedRef.current) return
+    const fresh = loadEstimates().find(e => e.id === id)
+    if (!fresh) return
+    const cur = latestEstimateRef.current
+    const newer = fresh.updatedAt && (!cur?.updatedAt || Date.parse(fresh.updatedAt) > Date.parse(cur.updatedAt))
+    if (newer) setEstimate(fresh)
+  })
   const flushEstimate = useCallback(() => {
     if (!pendingSaveRef.current) return
     const est = latestEstimateRef.current

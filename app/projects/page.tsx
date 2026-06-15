@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { loadProjects, loadGanttEntries, saveProject } from '@/lib/storage'
+import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getProjects } from '@/lib/storageAsync'
 import { STAGE_LABELS, STAGE_COLOURS } from '@/lib/stageConfig'
 import { scheduleStatus, healthColour, healthBg, getForecastCompletion } from '@/lib/projectHealth'
@@ -67,6 +68,15 @@ function ProjectsInner() {
     })()
     return () => { cancelled = true }
   }, [])
+
+  // Live cross-device: refresh when realtime sync (or another tab) writes projects.
+  useCrossTabRefresh(['projects'], () => {
+    const loaded = loadProjects()
+    setProjects(loaded)
+    const map: Record<string, GanttEntry[]> = {}
+    for (const p of loaded) map[p.id] = loadGanttEntries(p.id)
+    setGanttByProject(map)
+  })
 
   const filtered = projects
     .filter(p => entityFilter === 'all' || p.entity === entityFilter)

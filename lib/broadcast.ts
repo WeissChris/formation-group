@@ -36,6 +36,17 @@ function getChannel(): BroadcastChannel | null {
   return channel
 }
 
+// Same-tab event bus. BroadcastChannel deliberately does NOT echo a message back to the tab that
+// sent it, which is correct for save helpers (the saving component updates itself synchronously).
+// But the realtime live-sync applies REMOTE writes in the very tab the user is looking at, so that
+// tab needs its own notification — hence this in-process bus that subscribe() also listens to.
+let localBus: EventTarget | null = null
+function getLocalBus(): EventTarget | null {
+  if (typeof window === 'undefined') return null
+  if (!localBus) localBus = new EventTarget()
+  return localBus
+}
+
 /** Announce that a localStorage key has been updated. Safe to call from anywhere. */
 export function notify(event: StorageEvent): void {
   const ch = getChannel()
@@ -45,6 +56,17 @@ export function notify(event: StorageEvent): void {
   } catch {
     // BroadcastChannel can throw if the channel was closed (HMR can do this in dev). Ignore.
   }
+}
+
+/**
+ * Notify subscribers IN THIS TAB. Use when a write happens in the same tab whose subscribers must
+ * react — e.g. the realtime live-sync, which merges remote rows into localStorage while the user is
+ * viewing this tab. (Regular save helpers don't need this; the writing component re-reads itself.)
+ */
+export function notifyThisTab(event: StorageEvent): void {
+  const bus = getLocalBus()
+  if (!bus) return
+  bus.dispatchEvent(new CustomEvent('storage-change', { detail: event }))
 }
 
 /**
@@ -59,13 +81,24 @@ export function subscribe(
   handler: (event: StorageEvent) => void,
   keys?: StorageEvent['key'][],
 ): () => void {
-  const ch = getChannel()
-  if (!ch) return () => {}
-  const listener = (e: MessageEvent<StorageEvent>) => {
-    if (!e.data || typeof e.data.key !== 'string') return
-    if (keys && !keys.includes(e.data.key) && e.data.key !== 'all') return
-    handler(e.data)
+  const accept = (data: StorageEvent | undefined) => {
+    if (!data || typeof data.key !== 'string') return
+    if (keys && !keys.includes(data.key) && data.key !== 'all') return
+    handler(data)
   }
-  ch.addEventListener('message', listener)
-  return () => ch.removeEventListener('message', listener)
+
+  // Other tabs (BroadcastChannel)
+  const ch = getChannel()
+  const bcListener = (e: MessageEvent<StorageEvent>) => accept(e.data)
+  ch?.addEventListener('message', bcListener)
+
+  // This tab (live-sync writes) — see notifyThisTab.
+  const bus = getLocalBus()
+  const busListener = (e: Event) => accept((e as CustomEvent<StorageEvent>).detail)
+  bus?.addEventListener('storage-change', busListener)
+
+  return () => {
+    ch?.removeEventListener('message', bcListener)
+    bus?.removeEventListener('storage-change', busListener)
+  }
 }

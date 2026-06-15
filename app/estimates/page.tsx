@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { loadEstimates, saveEstimate } from '@/lib/storage'
+import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getEstimates, reconcileVariations, deleteEstimateAsync } from '@/lib/storageAsync'
 import { formatCurrency } from '@/lib/utils'
 import { getEstimateTotals, readLineItemRevenue, getEstimateContract } from '@/lib/estimateCalculations'
@@ -47,6 +48,9 @@ export default function EstimatesPage() {
     })()
     return () => { cancelled = true }
   }, [])
+
+  // Live cross-device: refresh when realtime sync (or another tab) writes estimates.
+  useCrossTabRefresh(['estimates'], () => setEstimates(loadEstimates()))
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.preventDefault()

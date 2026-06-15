@@ -4,6 +4,7 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { loadProjects, loadWeeklyRevenue, saveWeeklyRevenue, loadEstimates, loadProposals } from '@/lib/storage'
+import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getRevenue, upsertRevenue, deleteWeeklyRevenueAsync } from '@/lib/storageAsync'
 import { getProposalPhases, phasesTotal } from '@/lib/proposalPhases'
 import {
@@ -263,6 +264,12 @@ export default function RevenuePage() {
   }
   const [projectGPData, setProjectGPData] = useState<ProjectGPEntry[]>([])
   const [belowTargetJobs, setBelowTargetJobs] = useState<ProjectGPEntry[]>([])
+
+  // Live cross-device: refresh when realtime sync (or another tab) writes revenue or projects.
+  useCrossTabRefresh(['revenue', 'projects'], () => {
+    setRevenue(loadWeeklyRevenue())
+    setProjects(loadProjects())
+  })
 
   useEffect(() => {
     setProjects(loadProjects())

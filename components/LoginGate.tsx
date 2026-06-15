@@ -14,6 +14,7 @@ import {
 import { recoverFromIndexedDB } from '@/lib/storage'
 import { autoBackup } from '@/lib/backup'
 import { isSupabaseConfigured } from '@/lib/supabase'
+import { startLiveSync } from '@/lib/liveSync'
 import { upsertProject, upsertProposal, upsertEstimate, upsertRevenue, upsertDesignProject, upsertPaymentStage, upsertActual } from '@/lib/storageAsync'
 
 // Routes that are publicly accessible without auth
@@ -42,6 +43,14 @@ export default function LoginGate({ children }: { children: ReactNode }) {
     })
     return () => { cancelled = true }
   }, [])
+
+  // Realtime cross-device sync — start once the user is authed (fresh login or already-authed on
+  // load). Idempotent; stops on logout/unmount. Pulls newest-wins edits + live row changes so the
+  // other computer reflects changes within ~1s instead of only on reload.
+  useEffect(() => {
+    if (!authed) return
+    return startLiveSync()
+  }, [authed])
 
   // Public routes skip auth entirely — still wrapped so a render crash on /proposal/[token]
   // (e.g. malformed proposal data) shows the recoverable fallback rather than a blank page
