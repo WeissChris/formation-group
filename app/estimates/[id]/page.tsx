@@ -1488,8 +1488,22 @@ export default function EstimateBuilderPage() {
             <table className="w-full border-collapse text-xs min-w-[900px]">
               <thead>
                 <tr className="border-b border-fg-border">
-                  {['#', 'Description', 'Type', 'Crew', 'Units', 'UOM', 'Unit Cost', 'Total', 'Mkup%', 'Revenue', ''].map(h => (
-                    <th key={h} className="pb-2.5 px-1 text-left text-2xs font-medium tracking-architectural uppercase text-[#6B6560] whitespace-nowrap">
+                  {/* Numeric columns are right-aligned in the body, so right-align their headers too —
+                      otherwise a left-aligned heading sits a column away from its own values. */}
+                  {[
+                    { h: '#', align: 'text-center' },
+                    { h: 'Description', align: 'text-left' },
+                    { h: 'Type', align: 'text-left' },
+                    { h: 'Crew', align: 'text-left' },
+                    { h: 'Units', align: 'text-right pr-2.5' },
+                    { h: 'UOM', align: 'text-left' },
+                    { h: 'Unit Cost', align: 'text-right pr-2.5' },
+                    { h: 'Total', align: 'text-right pr-2' },
+                    { h: 'Mkup%', align: 'text-right pr-2.5' },
+                    { h: 'Revenue', align: 'text-right pr-2' },
+                    { h: '', align: 'text-left' },
+                  ].map(({ h, align }) => (
+                    <th key={h || 'actions'} className={`pb-2.5 px-1 ${align} text-2xs font-medium tracking-architectural uppercase text-[#6B6560] whitespace-nowrap`}>
                       {h}
                     </th>
                   ))}
