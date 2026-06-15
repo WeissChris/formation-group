@@ -42,6 +42,14 @@ function needsFollowUp(p: DesignProposal): boolean {
   return (Date.now() - new Date(refDate).getTime()) / 86400000 > 6
 }
 
+// Opened the proposal but hasn't accepted after a couple of days — a warm lead gone quiet,
+// the strongest follow-up signal (they were engaged enough to look).
+function viewedAwaitingResponse(p: DesignProposal): boolean {
+  if (p.status !== 'sent' && p.status !== 'pending') return false
+  if (!p.firstViewedAt) return false
+  return (Date.now() - new Date(p.firstViewedAt).getTime()) / 86400000 >= 2
+}
+
 export default function DesignPage() {
   const [proposals, setProposals] = useState<DesignProposal[]>([])
   const [filter, setFilter] = useState<FilterStatus>('all')
@@ -97,7 +105,7 @@ export default function DesignPage() {
   const avgFee = accepted.length > 0
     ? Math.round(totalAcceptedValue / accepted.length)
     : 0
-  const needsFollowUpCount = pending.filter(p => p.status === 'sent' && needsFollowUp(p)).length
+  const needsFollowUpCount = pending.filter(p => needsFollowUp(p) || viewedAwaitingResponse(p)).length
 
   const filterTabs: { label: string; value: FilterStatus }[] = [
     { label: 'All',      value: 'all' },
@@ -200,8 +208,8 @@ export default function DesignPage() {
               </span>
             )}
 
-            {/* Follow up badge */}
-            {p.status === 'sent' && needsFollowUp(p) && (
+            {/* Follow up badge — overdue by time, or viewed-but-still-no-response */}
+            {(p.status === 'sent' || p.status === 'pending') && (needsFollowUp(p) || viewedAwaitingResponse(p)) && (
               <span className="text-2xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-sm font-medium">
                 ⏰ Follow up
               </span>

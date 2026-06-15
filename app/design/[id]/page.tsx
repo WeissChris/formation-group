@@ -268,6 +268,16 @@ export default function ProposalDetailPage() {
 
         {sentMsg && <span className="text-xs font-light text-emerald-600">{sentMsg}</span>}
 
+        {(proposal.status === 'sent' || proposal.status === 'pending') && proposal.firstViewedAt && (
+          <span
+            className="flex items-center gap-1.5 text-xs font-light text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-sm"
+            title={`Opened ${new Date(proposal.firstViewedAt).toLocaleString('en-AU')}`}
+          >
+            👁 Opened by client on{' '}
+            {new Date(proposal.firstViewedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}
+          </span>
+        )}
+
         {proposal.acceptedAt && (
           <p className="text-xs font-light text-fg-muted">
             Accepted by {proposal.acceptedByName || 'Client'} on{' '}
