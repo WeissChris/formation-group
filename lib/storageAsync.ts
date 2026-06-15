@@ -517,7 +517,22 @@ export async function upsertGanttEntries(projectId: string, entries: GanttEntry[
  */
 export async function replaceGanttRevenueRemote(projectId: string, rows: WeeklyRevenue[]): Promise<void> {
   if (!isSupabaseConfigured() || !supabase) return
-  await supabase.from('fg_revenue').delete().eq('project_id', projectId).like('notes', '%(Gantt)')
+  // Match the LOCAL predicate exactly (deleteGanttGeneratedRevenueByProject: trim().endsWith('(Gantt)')).
+  // A bare `.like('notes', '%(Gantt)')` is end-anchored, so a Gantt row with a trailing space
+  // ("Excavation (Gantt) ") gets deleted locally but survives remotely, then the add-missing sync
+  // resurrects it as a duplicate forecast row. A `%(Gantt)%` like would over-match (it would also
+  // catch a manual note with "(Gantt)" mid-string). Fetch the project's rows and filter with the same
+  // trim/endsWith logic so the two sides can't drift in either direction.
+  const { data: existing } = await supabase
+    .from('fg_revenue')
+    .select('id, notes')
+    .eq('project_id', projectId)
+  const staleIds = (existing ?? [])
+    .filter(r => ((r.notes as string | null) ?? '').trim().endsWith('(Gantt)'))
+    .map(r => r.id as string)
+  if (staleIds.length > 0) {
+    await supabase.from('fg_revenue').delete().in('id', staleIds)
+  }
   if (rows.length === 0) return
   const mapped = rows.map(r => ({
     id: r.id,
@@ -826,11 +841,12 @@ export async function getPaymentStages(): Promise<ProgressPaymentStage[]> {
 }
 
 export async function upsertPaymentStage(stage: ProgressPaymentStage): Promise<void> {
-  saveProgressPaymentStage(stage)
+  saveProgressPaymentStage(stage) // localStorage (this also stamps updatedAt)
   if (isSupabaseConfigured() && supabase) {
+    // Re-read so we use the freshly-stamped updatedAt; route through safeUpsert so a newer remote row
+    // (written by another device) isn't clobbered. fg_payment_stages now has an updated_at column.
     const fresh = loadProgressPaymentStages().find(s => s.id === stage.id) ?? stage
-    // fg_payment_stages has no updated_at column, so plain upsert by id (no conflict guard).
-    await supabase.from('fg_payment_stages').upsert({
+    await safeUpsert('fg_payment_stages', {
       id: fresh.id,
       project_id: fresh.projectId,
       stage_number: fresh.stageNumber,
@@ -844,6 +860,7 @@ export async function upsertPaymentStage(stage: ProgressPaymentStage): Promise<v
       invoiced_amount: fresh.invoicedAmount ?? null,
       override_amount: fresh.overrideAmount ?? null,
       invoice_description: fresh.invoiceDescription ?? null,
+      updated_at: fresh.updatedAt ?? new Date().toISOString(),
     })
   }
 }
@@ -872,17 +889,21 @@ export async function getActuals(): Promise<WeeklyActual[]> {
 }
 
 export async function upsertActual(actual: WeeklyActual): Promise<void> {
-  saveWeeklyActual(actual)
+  saveWeeklyActual(actual) // localStorage (this also stamps updatedAt)
   if (isSupabaseConfigured() && supabase) {
-    // fg_actuals has no updated_at; cost rows are immutable, so plain upsert by id.
-    await supabase.from('fg_actuals').upsert({
-      id: actual.id,
-      project_id: actual.projectId,
-      category: actual.category,
-      week_ending: actual.weekEnding,
-      supply_cost: actual.supplyCost,
-      labour_cost: actual.labourCost,
-      notes: actual.notes ?? null,
+    // Re-read so we use the freshly-stamped updatedAt; route through safeUpsert so a newer remote row
+    // isn't clobbered. fg_actuals now has an updated_at column. (Cost rows are largely immutable, so
+    // this is belt-and-suspenders, but keeps every sync path on the conflict-aware primitive.)
+    const fresh = loadWeeklyActuals().find(a => a.id === actual.id) ?? actual
+    await safeUpsert('fg_actuals', {
+      id: fresh.id,
+      project_id: fresh.projectId,
+      category: fresh.category,
+      week_ending: fresh.weekEnding,
+      supply_cost: fresh.supplyCost,
+      labour_cost: fresh.labourCost,
+      notes: fresh.notes ?? null,
+      updated_at: fresh.updatedAt ?? new Date().toISOString(),
     })
   }
 }
@@ -1042,6 +1063,7 @@ function mapPaymentStage(row: Record<string, unknown>): ProgressPaymentStage {
     invoicedAmount: row.invoiced_amount != null ? Number(row.invoiced_amount) : undefined,
     overrideAmount: row.override_amount != null ? Number(row.override_amount) : undefined,
     invoiceDescription: (row.invoice_description as string | null) || undefined,
+    updatedAt: (row.updated_at as string | null) || undefined,
   }
 }
 
@@ -1054,6 +1076,7 @@ function mapActual(row: Record<string, unknown>): WeeklyActual {
     supplyCost: Number(row.supply_cost) || 0,
     labourCost: Number(row.labour_cost) || 0,
     notes: (row.notes as string | null) || undefined,
+    updatedAt: (row.updated_at as string | null) || undefined,
   }
 }
 

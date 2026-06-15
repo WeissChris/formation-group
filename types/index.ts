@@ -195,6 +195,8 @@ export interface ProgressPaymentStage {
   invoicedAmount?: number   // ACTUAL amount invoiced (may differ from quotedAmount)
   overrideAmount?: number   // User-entered override if different from schedule
   invoiceDescription?: string // editable description for invoice
+  /** ISO timestamp set automatically by save helpers — drives Supabase conflict resolution. */
+  updatedAt?: string
 }
 
 // ── MARGIN SUMMARY ────────────────────────────────────────────────────────────
@@ -509,4 +511,6 @@ export interface WeeklyActual {
   supplyCost: number    // actual material/supply cost this week
   labourCost: number    // actual labour cost this week
   notes?: string
+  /** ISO timestamp set automatically by save helpers — drives Supabase conflict resolution. */
+  updatedAt?: string
 }

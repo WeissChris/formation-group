@@ -470,6 +470,12 @@ export default function EstimateBuilderPage() {
   const [takeoffData, setTakeoffData] = useState<TakeoffData | null>(null)
   const [takeoffSummaryOpen, setTakeoffSummaryOpen] = useState(true)
   const [lastUnitsLineId, setLastUnitsLineId] = useState<string | null>(null)
+  // In-flight guard for the async Convert→Project flow. The handler is gated only by confirm()
+  // dialogs and awaits several upserts; without this a fast double-click would create two projects
+  // (and two sets of subbie packages). The ref blocks re-entry synchronously (before any state
+  // flush); the state disables the button for the user.
+  const [isConverting, setIsConverting] = useState(false)
+  const convertingRef = useRef(false)
 
   // Warn user about unsaved changes before leaving
   useEffect(() => {
@@ -781,6 +787,9 @@ export default function EstimateBuilderPage() {
 
   const handleConvertToProject = async () => {
     if (!estimate) return
+    // Re-entry guard: a fast double-click would otherwise run this twice and create two projects.
+    // The ref blocks synchronously (state updates are async and wouldn't stop the second click in time).
+    if (convertingRef.current) return
     const missingQuotes = estimate.lineItems.filter(i => (i.type === 'Subcontractor' || i.crewType === 'Subcontractor') && i.enabled !== false && !i.quoteFileName)
     if (missingQuotes.length > 0) {
       const proceed = confirm(`${missingQuotes.length} subcontractor line${missingQuotes.length !== 1 ? 's have' : ' has'} no quote attached:\n\n${missingQuotes.map(i => `• ${i.description || 'Untitled'}`).join('\n')}\n\nYou shouldn't go to contract without their quotes. Convert anyway?`)
@@ -788,6 +797,9 @@ export default function EstimateBuilderPage() {
     }
     if (!confirm('Convert this estimate to a project? The estimate will be locked as the financial baseline.')) return
 
+    convertingRef.current = true
+    setIsConverting(true)
+    try {
     const totals = getEstimateTotals(estimate)
     const categories = Array.from(new Set(estimate.lineItems.filter(i => i.enabled !== false).map(i => i.category).filter(Boolean)))
 
@@ -900,6 +912,11 @@ export default function EstimateBuilderPage() {
     setEstimate(updated)
 
     router.push(`/projects/${newProject.id}`)
+    } finally {
+      // Reset even though we navigate away — if anything above threw, the button must work again.
+      convertingRef.current = false
+      setIsConverting(false)
+    }
   }
 
   const renameCategory = (oldName: string, newName: string) => {
@@ -1136,9 +1153,10 @@ export default function EstimateBuilderPage() {
           {estimate.lineItems.length > 0 && !estimate.isBaseline && !estimate.parentEstimateId && (
             <button
               onClick={handleConvertToProject}
-              className="flex items-center gap-2 px-3 py-1.5 border border-green-500/40 text-green-600 text-xs font-light tracking-architectural uppercase hover:bg-green-500/10 transition-colors"
+              disabled={isConverting}
+              className="flex items-center gap-2 px-3 py-1.5 border border-green-500/40 text-green-600 text-xs font-light tracking-architectural uppercase hover:bg-green-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
             >
-              Convert to Project →
+              {isConverting ? 'Converting…' : 'Convert to Project →'}
             </button>
           )}
 

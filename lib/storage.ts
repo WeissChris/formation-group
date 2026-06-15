@@ -139,6 +139,7 @@ export function deleteWeeklyRevenue(id: string): void {
   const all = loadWeeklyRevenue().filter(w => w.id !== id)
   localStorage.setItem('fg_revenue', JSON.stringify(all))
   backupToIndexedDB('fg_revenue', all)
+  notify({ key: 'revenue' })
 }
 
 // Design proposals
@@ -162,6 +163,7 @@ export function deleteProposal(id: string): void {
   const all = loadProposals().filter(p => p.id !== id)
   localStorage.setItem('fg_proposals', JSON.stringify(all))
   backupToIndexedDB('fg_proposals', all)
+  notify({ key: 'proposals' })
 }
 
 // Estimates
@@ -199,6 +201,7 @@ export function deleteEstimate(id: string): void {
   const all = loadEstimates().filter(e => e.id !== id)
   localStorage.setItem('fg_estimates', JSON.stringify(all))
   backupToIndexedDB('fg_estimates', all)
+  notify({ key: 'estimates' })
 }
 
 // Gantt entries
@@ -221,12 +224,16 @@ function loadAllGanttEntries(): GanttEntry[] {
 
 // Weekly actuals
 export function saveWeeklyActual(actual: WeeklyActual): void {
+  // Stamp updatedAt on every save — drives Supabase conflict resolution (safeUpsert won't clobber a
+  // remote row newer than this stamp). Callers don't need to set it themselves.
+  const stamped = { ...actual, updatedAt: new Date().toISOString() }
   const all = loadWeeklyActuals()
-  const idx = all.findIndex(a => a.id === actual.id)
-  if (idx >= 0) all[idx] = actual
-  else all.push(actual)
+  const idx = all.findIndex(a => a.id === stamped.id)
+  if (idx >= 0) all[idx] = stamped
+  else all.push(stamped)
   localStorage.setItem('fg_actuals', JSON.stringify(all))
   backupToIndexedDB('fg_actuals', loadWeeklyActuals())
+  notify({ key: 'actuals' })
 }
 
 export function loadWeeklyActuals(projectId?: string): WeeklyActual[] {
@@ -267,12 +274,16 @@ export function deleteGanttGeneratedRevenueByProject(projectId: string): void {
 
 // Progress Payment Stages
 export function saveProgressPaymentStage(stage: ProgressPaymentStage): void {
+  // Stamp updatedAt on every save — drives Supabase conflict resolution (safeUpsert won't clobber a
+  // remote row newer than this stamp). Callers don't need to set it themselves.
+  const stamped = { ...stage, updatedAt: new Date().toISOString() }
   const all = loadProgressPaymentStages()
-  const idx = all.findIndex(s => s.id === stage.id)
-  if (idx >= 0) all[idx] = stage
-  else all.push(stage)
+  const idx = all.findIndex(s => s.id === stamped.id)
+  if (idx >= 0) all[idx] = stamped
+  else all.push(stamped)
   localStorage.setItem('fg_payment_stages', JSON.stringify(all))
   backupToIndexedDB('fg_payment_stages', loadProgressPaymentStages())
+  notify({ key: 'payment_stages' })
 }
 
 export function loadProgressPaymentStages(projectId?: string): ProgressPaymentStage[] {
@@ -287,6 +298,7 @@ export function deleteProgressPaymentStage(id: string): void {
   const all = loadProgressPaymentStages().filter(s => s.id !== id)
   localStorage.setItem('fg_payment_stages', JSON.stringify(all))
   backupToIndexedDB('fg_payment_stages', all)
+  notify({ key: 'payment_stages' })
 }
 
 export function deleteProgressPaymentStagesByProject(projectId: string): void {
@@ -368,6 +380,7 @@ export function deleteProgressClaim(id: string): void {
   const all = loadProgressClaims().filter(c => c.id !== id)
   localStorage.setItem('fg_progress_claims', JSON.stringify(all))
   backupToIndexedDB('fg_progress_claims', all)
+  notify({ key: 'progress_claims' })
 }
 
 // Takeoff data
@@ -650,4 +663,5 @@ export function deleteSubcontractor(id: string): void {
   const all = loadSubcontractors().filter(s => s.id !== id)
   localStorage.setItem('fg_subcontractors', JSON.stringify(all))
   backupToIndexedDB('fg_subcontractors', all)
+  notify({ key: 'subcontractors' })
 }
