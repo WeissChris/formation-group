@@ -75,7 +75,7 @@ export async function recoverFromIndexedDB(): Promise<boolean> {
     try {
       const tx = db.transaction(BACKUP_STORE, 'readonly')
       const store = tx.objectStore(BACKUP_STORE)
-      const keys = ['fg_projects', 'fg_proposals', 'fg_estimates', 'fg_revenue', 'fg_gantt', 'fg_actuals', 'fg_payment_stages', 'fg_design_projects']
+      const keys = ['fg_projects', 'fg_proposals', 'fg_estimates', 'fg_revenue', 'fg_gantt', 'fg_actuals', 'fg_payment_stages', 'fg_design_projects', 'fg_progress_claims']
       let recovered = false
       keys.forEach(k => {
         const req = store.get(k)

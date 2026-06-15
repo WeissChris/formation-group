@@ -5,9 +5,9 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   loadEstimates, loadWeeklyActuals,
-  loadProgressClaims, saveProgressClaim, deleteProgressClaim,
+  loadProgressClaims,
 } from '@/lib/storage'
-import { upsertEstimate } from '@/lib/storageAsync'
+import { upsertEstimate, upsertProgressClaim, deleteProgressClaimAsync } from '@/lib/storageAsync'
 import { createXeroDraftInvoice } from '@/lib/xero'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { getEstimateTotals, readLineItemRevenue } from '@/lib/estimateCalculations'
@@ -756,7 +756,7 @@ function InvoicesSubTab({
   const refreshClaims = () => setClaims(loadProgressClaims(projectId))
 
   const handleSave = (claim: ProgressClaim) => {
-    saveProgressClaim(claim)
+    void upsertProgressClaim(claim)   // localStorage (immediate) + Supabase (background)
     refreshClaims()
     setShowBuilder(false)
     setEditingClaim(null)
@@ -764,7 +764,7 @@ function InvoicesSubTab({
 
   const handleDelete = (id: string) => {
     if (!confirm('Delete this invoice?')) return
-    deleteProgressClaim(id)
+    void deleteProgressClaimAsync(id)   // localStorage (immediate) + Supabase (background)
     refreshClaims()
   }
 
@@ -787,7 +787,7 @@ function InvoicesSubTab({
       status: 'paid',
       paidAt: new Date(ms).toISOString(),
     }
-    saveProgressClaim(updated)
+    void upsertProgressClaim(updated)   // localStorage (immediate) + Supabase (background)
     refreshClaims()
   }
 
@@ -829,7 +829,7 @@ function InvoicesSubTab({
         : `Could not create the Xero draft: ${res.error}`)
       return
     }
-    saveProgressClaim({ ...claim, xeroInvoiceId: res.invoiceId ?? undefined, xeroInvoiceNumber: res.invoiceNumber ?? undefined })
+    void upsertProgressClaim({ ...claim, xeroInvoiceId: res.invoiceId ?? undefined, xeroInvoiceNumber: res.invoiceNumber ?? undefined })   // localStorage (immediate) + Supabase (background)
     refreshClaims()
     alert(`Draft invoice created in Xero${res.invoiceNumber ? ` (${res.invoiceNumber})` : ''}. Review and approve it in Xero.`)
   }

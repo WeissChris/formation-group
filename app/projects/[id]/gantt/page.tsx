@@ -11,7 +11,7 @@ import {
   loadWeeklyRevenue,
   saveWeeklyRevenue,
 } from '@/lib/storage'
-import { upsertGanttEntries, replaceGanttRevenueRemote, getProjects } from '@/lib/storageAsync'
+import { upsertGanttEntries, replaceGanttRevenueRemote, getProjects, upsertGanttMilestones, getAllGanttMilestones } from '@/lib/storageAsync'
 import { saveProject } from '@/lib/storage'
 import {
   formatCurrency,
@@ -163,10 +163,6 @@ function loadMilestones(projectId: string): Milestone[] {
   } catch {
     return []
   }
-}
-
-function saveMilestones(projectId: string, milestones: Milestone[]) {
-  localStorage.setItem(`fg_gantt_milestones_${projectId}`, JSON.stringify(milestones))
 }
 
 // ── Segment edit popover ──────────────────────────────────────────────────────
@@ -370,6 +366,17 @@ export default function GanttPage() {
       setEstimate(ests.find(e => e.status === 'accepted') ?? ests[0] ?? null)
       setEntries(loadGanttEntries(id))
       setMilestones(loadMilestones(id))
+      // Cross-device: pull this project's milestones from Supabase and overwrite local if a remote row
+      // exists (replace-semantics array; remote is the durable copy written by the last editor).
+      try {
+        const remote = await getAllGanttMilestones()
+        if (cancelled) return
+        const mine = remote.find(r => r.projectId === id)
+        if (mine) {
+          localStorage.setItem(`fg_gantt_milestones_${id}`, JSON.stringify(mine.milestones))
+          setMilestones(mine.milestones as Milestone[])
+        }
+      } catch { /* keep local copy on any sync error */ }
     })()
     return () => { cancelled = true }
   }, [id, router])
@@ -681,19 +688,19 @@ export default function GanttPage() {
     }
     const updated = [...milestones, newM]
     setMilestones(updated)
-    saveMilestones(id, updated)
+    void upsertGanttMilestones(id, updated)   // localStorage (immediate) + Supabase (background)
   }
 
   const handleMilestoneUpdate = (updated: Milestone) => {
     const next = milestones.map(m => m.id === updated.id ? updated : m)
     setMilestones(next)
-    saveMilestones(id, next)
+    void upsertGanttMilestones(id, next)   // localStorage (immediate) + Supabase (background)
   }
 
   const handleMilestoneDelete = (milestoneId: string) => {
     const next = milestones.filter(m => m.id !== milestoneId)
     setMilestones(next)
-    saveMilestones(id, next)
+    void upsertGanttMilestones(id, next)   // localStorage (immediate) + Supabase (background)
     setMilestonePopover(null)
   }
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { loadProjects, loadGanttEntries } from '@/lib/storage'
+import { getAllGanttMilestones } from '@/lib/storageAsync'
 import { formatCurrency, SHORT_MONTH_NAMES, generateId, toISODate } from '@/lib/utils'
 import type { Project, GanttEntry } from '@/types'
 import EntityBadge from '@/components/EntityBadge'
@@ -53,6 +54,7 @@ export default function ProgrammePage() {
   const [filterStatus, setFilterStatus] = useState<'active' | 'all'>('active')
 
   useEffect(() => {
+    let cancelled = false
     const all = loadProjects()
     setProjects(all)
     const gantt: Record<string, GanttEntry[]> = {}
@@ -63,6 +65,23 @@ export default function ProgrammePage() {
     })
     setGanttByProject(gantt)
     setMilestonesByProject(miles)
+    // Cross-device: pull all projects' milestones from Supabase and overwrite local for projects
+    // where a remote row exists (replace-semantics array; remote is the durable last-editor copy).
+    ;(async () => {
+      try {
+        const remote = await getAllGanttMilestones()
+        if (cancelled || remote.length === 0) return
+        setMilestonesByProject(prev => {
+          const next = { ...prev }
+          for (const r of remote) {
+            localStorage.setItem(`fg_gantt_milestones_${r.projectId}`, JSON.stringify(r.milestones))
+            next[r.projectId] = r.milestones
+          }
+          return next
+        })
+      } catch { /* keep local copies on any sync error */ }
+    })()
+    return () => { cancelled = true }
   }, [])
 
   const fridays = getNextFridays(WEEKS)

@@ -258,6 +258,45 @@ export default function LoginGate({ children }: { children: ReactNode }) {
                 if (restoredG) console.log(`[hydrate] restored ${restoredG} gantt row(s)`)
               }
 
+              // Subcontractor packages — add-missing: pull any package that exists remotely but not in
+              // this browser, so a package created/edited on another device surfaces here.
+              {
+                const remoteSubs = await sa.getSubcontractors()
+                const localSubIds = new Set(st.loadSubcontractors().map(s => s.id))
+                const missingSubs = remoteSubs.filter(s => !localSubIds.has(s.id))
+                if (missingSubs.length) {
+                  missingSubs.forEach(x => st.saveSubcontractor(x))
+                  console.log(`[hydrate] added ${missingSubs.length} missing subcontractor package(s)`)
+                }
+              }
+
+              // Progress claims — add-missing: pull any claim that exists remotely but not in this
+              // browser, so a claim created/edited on another device surfaces here.
+              {
+                const remoteClaims = await sa.getProgressClaims()
+                const localClaimIds = new Set(st.loadProgressClaims().map(c => c.id))
+                const missingClaims = remoteClaims.filter(c => !localClaimIds.has(c.id))
+                if (missingClaims.length) {
+                  missingClaims.forEach(x => st.saveProgressClaim(x))
+                  console.log(`[hydrate] added ${missingClaims.length} missing progress claim(s)`)
+                }
+              }
+
+              // Gantt milestones — per-project, one row each. Write each project's
+              // `fg_gantt_milestones_${projectId}` key when this browser doesn't already have it
+              // (e.g. milestones set on another device).
+              {
+                const remoteMilestones = await sa.getAllGanttMilestones()
+                let addedMilestoneProjects = 0
+                for (const { projectId, milestones } of remoteMilestones) {
+                  if (!localStorage.getItem(`fg_gantt_milestones_${projectId}`)) {
+                    localStorage.setItem(`fg_gantt_milestones_${projectId}`, JSON.stringify(milestones))
+                    addedMilestoneProjects++
+                  }
+                }
+                if (addedMilestoneProjects) console.log(`[hydrate] added milestones for ${addedMilestoneProjects} project(s)`)
+              }
+
               // Foreman actuals — add any the office hasn't seen. A foreman submits straight to the DB
               // from their phone, so add-missing (not restore-if-empty) is needed to surface new rows.
               const remoteActuals = await sa.getActuals()

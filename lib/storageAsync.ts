@@ -23,6 +23,10 @@ import {
   deleteProgressPaymentStage,
   loadWeeklyActuals,
   saveWeeklyActual,
+  saveSubcontractor,
+  deleteSubcontractor,
+  saveProgressClaim,
+  deleteProgressClaim,
 } from './storage'
 import type {
   DesignProposal,
@@ -34,7 +38,20 @@ import type {
   ProgressPaymentStage,
   WeeklyActual,
   TakeoffData,
+  SubcontractorPackage,
+  ProgressClaim,
 } from '@/types'
+
+// Gantt milestones are defined structurally in the gantt/programme pages (not in @/types). The sync
+// layer only needs id/projectId/label/date so it can store + restore the array verbatim — declare a
+// minimal shape here rather than coupling to either page's local interface.
+export interface Milestone {
+  id: string
+  projectId: string
+  label: string
+  date: string
+  colour?: string
+}
 
 /**
  * Conflict-aware upsert primitive. Reads `updated_at` for the row currently in Supabase, and
@@ -514,6 +531,117 @@ export async function replaceGanttRevenueRemote(projectId: string, rows: WeeklyR
     updated_at: r.updatedAt ?? new Date().toISOString(),
   }))
   await supabase.from('fg_revenue').insert(mapped)
+}
+
+// ── SUBCONTRACTOR PACKAGES ────────────────────────────────────────────────────
+//
+// jsonb-blob pattern: the whole package lives in `data`, so there's no per-column drift to keep in
+// sync. quoteFileData is a base64 PDF — fine inside the jsonb blob (subbie quotes are small).
+
+export async function getSubcontractors(): Promise<SubcontractorPackage[]> {
+  if (isSupabaseConfigured() && supabase) {
+    const { data } = await supabase.from('fg_subcontractors').select('*')
+    if (data) return data.map(r => r.data as SubcontractorPackage)
+  }
+  return []
+}
+
+export async function upsertSubcontractor(pkg: SubcontractorPackage): Promise<void> {
+  saveSubcontractor(pkg) // localStorage (immediate)
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_subcontractors').upsert({
+      id: pkg.id,
+      project_id: pkg.projectId,
+      data: pkg,
+      updated_at: new Date().toISOString(),
+    })
+    if (error) console.error('[Formation] subcontractor upsert (Supabase) error:', error.message)
+  }
+}
+
+/**
+ * Delete a subcontractor package from localStorage AND Supabase. The plain localStorage delete leaves
+ * the row in Supabase, which the add-missing sync would then resurrect on the next load — so the
+ * delete must reach the DB too.
+ */
+export async function deleteSubcontractorAsync(id: string): Promise<void> {
+  deleteSubcontractor(id) // localStorage (runs synchronously before any await)
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_subcontractors').delete().eq('id', id)
+    if (error) console.error('[Formation] subcontractor delete (Supabase) error:', error.message)
+  }
+}
+
+// ── PROGRESS CLAIMS ───────────────────────────────────────────────────────────
+//
+// jsonb-blob pattern: the whole claim lives in `data`.
+
+export async function getProgressClaims(): Promise<ProgressClaim[]> {
+  if (isSupabaseConfigured() && supabase) {
+    const { data } = await supabase.from('fg_progress_claims').select('*')
+    if (data) return data.map(r => r.data as ProgressClaim)
+  }
+  return []
+}
+
+export async function upsertProgressClaim(claim: ProgressClaim): Promise<void> {
+  saveProgressClaim(claim) // localStorage (immediate)
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_progress_claims').upsert({
+      id: claim.id,
+      project_id: claim.projectId,
+      data: claim,
+      updated_at: new Date().toISOString(),
+    })
+    if (error) console.error('[Formation] progress claim upsert (Supabase) error:', error.message)
+  }
+}
+
+/**
+ * Delete a progress claim from localStorage AND Supabase. The plain localStorage delete leaves the
+ * row in Supabase, which the add-missing sync would then resurrect on the next load — so the delete
+ * must reach the DB too.
+ */
+export async function deleteProgressClaimAsync(id: string): Promise<void> {
+  deleteProgressClaim(id) // localStorage (runs synchronously before any await)
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_progress_claims').delete().eq('id', id)
+    if (error) console.error('[Formation] progress claim delete (Supabase) error:', error.message)
+  }
+}
+
+// ── GANTT MILESTONES (per-project array, one row per project) ──────────────────
+//
+// Stored per-project under localStorage key `fg_gantt_milestones_${projectId}`. The save/load helpers
+// are component-local (gantt + programme pages), so this layer writes the localStorage key directly
+// and mirrors the whole array into the single per-project Supabase row. Replace-semantics: each upsert
+// overwrites the project's milestones array wholesale.
+
+function ganttMilestonesKey(projectId: string): string {
+  return `fg_gantt_milestones_${projectId}`
+}
+
+export async function upsertGanttMilestones(projectId: string, milestones: Milestone[]): Promise<void> {
+  if (typeof window !== 'undefined') {
+    try { localStorage.setItem(ganttMilestonesKey(projectId), JSON.stringify(milestones)) } catch { /* ignore */ }
+  }
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_gantt_milestones').upsert({
+      project_id: projectId,
+      milestones,
+      updated_at: new Date().toISOString(),
+    })
+    if (error) console.error('[Formation] gantt milestones upsert (Supabase) error:', error.message)
+  }
+}
+
+/** All projects' milestone arrays — used by the gantt/programme mounts + login hydrate to restore. */
+export async function getAllGanttMilestones(): Promise<{ projectId: string; milestones: Milestone[] }[]> {
+  if (isSupabaseConfigured() && supabase) {
+    const { data } = await supabase.from('fg_gantt_milestones').select('*')
+    if (data) return data.map(r => ({ projectId: r.project_id as string, milestones: (r.milestones as Milestone[]) || [] }))
+  }
+  return []
 }
 
 // ── MAPPERS ──────────────────────────────────────────────────────────────────

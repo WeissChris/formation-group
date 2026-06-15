@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { loadEstimates, loadProposals, saveEstimate, saveSubcontractor, loadTakeoffAsync } from '@/lib/storage'
-import { upsertEstimate, upsertProject, getEstimates, getTakeoff } from '@/lib/storageAsync'
+import { loadEstimates, loadProposals, saveEstimate, loadTakeoffAsync } from '@/lib/storage'
+import { upsertEstimate, upsertProject, getEstimates, getTakeoff, upsertSubcontractor } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract } from '@/lib/estimateCalculations'
 import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
@@ -844,7 +844,7 @@ export default function EstimateBuilderPage() {
     })
     subbieGroups.forEach(lines => {
       const first = lines[0]
-      saveSubcontractor({
+      void upsertSubcontractor({   // localStorage (immediate) + Supabase (background)
         id: generateId(),
         projectId: newProject.id,
         name: '',

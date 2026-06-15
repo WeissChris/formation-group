@@ -9,9 +9,9 @@ import {
   loadProjects, loadWeeklyRevenue, loadEstimates, saveEstimate,
   loadGanttEntries, loadWeeklyActuals, loadProgressClaims,
   loadProgressPaymentStages, saveProject,
-  loadSubcontractors, saveSubcontractor, deleteSubcontractor,
+  loadSubcontractors,
 } from '@/lib/storage'
-import { getProjects, reconcileVariations, upsertProject, deleteProjectAsync } from '@/lib/storageAsync'
+import { getProjects, reconcileVariations, upsertProject, deleteProjectAsync, upsertSubcontractor, deleteSubcontractorAsync } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { getEstimateTotals } from '@/lib/estimateCalculations'
 import type { Project, Estimate, WeeklyRevenue, GanttEntry, WeeklyActual, ProgressClaim, ProgressPaymentStage, SubcontractorPackage, SubcontractorClaim } from '@/types'
@@ -78,7 +78,7 @@ function SubcontractorsTab({ projectId }: { projectId: string }) {
   const refresh = () => setPackages(loadSubcontractors(projectId))
 
   const handleSave = (pkg: SubcontractorPackage) => {
-    saveSubcontractor(pkg)
+    void upsertSubcontractor(pkg)   // localStorage (immediate) + Supabase (background)
     refresh()
     setEditing(null)
     setShowForm(false)
@@ -86,7 +86,7 @@ function SubcontractorsTab({ projectId }: { projectId: string }) {
 
   const handleDelete = (id: string) => {
     if (!confirm('Delete this subcontractor package?')) return
-    deleteSubcontractor(id)
+    void deleteSubcontractorAsync(id)   // localStorage (immediate) + Supabase (background)
     refresh()
   }
 
