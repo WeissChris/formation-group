@@ -613,7 +613,18 @@ export default function EstimateBuilderPage() {
   const [parentEstimate, setParentEstimate] = useState<Estimate | null>(null)
   const [activeTab, setActiveTab] = useState<'estimate' | 'takeoff'>('estimate')
   const [takeoffData, setTakeoffData] = useState<TakeoffData | null>(null)
-  const [takeoffSummaryOpen, setTakeoffSummaryOpen] = useState(true)
+  // Default collapsed; remember the user's choice so it stops resetting to open on every load.
+  const [takeoffSummaryOpen, setTakeoffSummaryOpen] = useState(false)
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('fg_takeoffSummaryOpen') === '1') setTakeoffSummaryOpen(true)
+    } catch {}
+  }, [])
+  const toggleTakeoffSummary = () => setTakeoffSummaryOpen(o => {
+    const next = !o
+    try { localStorage.setItem('fg_takeoffSummaryOpen', next ? '1' : '0') } catch {}
+    return next
+  })
   const [lastUnitsLineId, setLastUnitsLineId] = useState<string | null>(null)
   // In-flight guard for the async Convert→Project flow. The handler is gated only by confirm()
   // dialogs and awaits several upserts; without this a fast double-click would create two projects
@@ -1379,7 +1390,7 @@ export default function EstimateBuilderPage() {
           <div className="mb-6 border border-fg-border rounded-sm bg-fg-bg">
             <div className="flex items-center justify-between px-4 py-2.5">
               <button
-                onClick={() => setTakeoffSummaryOpen(o => !o)}
+                onClick={toggleTakeoffSummary}
                 className="flex items-center gap-2 text-xs font-light tracking-architectural uppercase text-fg-muted hover:text-fg-heading transition-colors"
               >
                 <span className="text-[9px]">{takeoffSummaryOpen ? '▼' : '▶'}</span>
