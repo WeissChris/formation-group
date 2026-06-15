@@ -7,11 +7,12 @@ import {
   loadProjects,
   loadEstimatesByProject,
   loadGanttEntries,
+  saveGanttEntries,
   deleteGanttGeneratedRevenueByProject,
   loadWeeklyRevenue,
   saveWeeklyRevenue,
 } from '@/lib/storage'
-import { upsertGanttEntries, replaceGanttRevenueRemote, getProjects, upsertGanttMilestones, getAllGanttMilestones } from '@/lib/storageAsync'
+import { upsertGanttEntries, replaceGanttRevenueRemote, getProjects, upsertGanttMilestones, getAllGanttMilestones, getAllGanttEntries } from '@/lib/storageAsync'
 import { saveProject } from '@/lib/storage'
 import {
   formatCurrency,
@@ -306,6 +307,13 @@ export default function GanttPage() {
   const [successMsg, setSuccessMsg] = useState('')
   const [timeView, setTimeView] = useState<TimeView>('weeks')
 
+  // Persistence safety: every bar/segment/subtask/schedule edit only calls setEntries — the only
+  // persist path is the manual "Save Gantt" button. Track a dirty flag + the latest entries so we can
+  // flush to localStorage + Supabase on navigate/unmount (otherwise unsaved edits are lost).
+  const hasUnsavedChangesRef = useRef(false)
+  const latestEntriesRef = useRef<GanttEntry[]>([])
+  latestEntriesRef.current = entries
+
   // Drawing state
   const [drawing, setDrawing] = useState<{
     category: string
@@ -364,19 +372,38 @@ export default function GanttPage() {
       setProject(p)
       const ests = loadEstimatesByProject(id)
       setEstimate(ests.find(e => e.status === 'accepted') ?? ests[0] ?? null)
-      setEntries(loadGanttEntries(id))
-      setMilestones(loadMilestones(id))
-      // Cross-device: pull this project's milestones from Supabase and overwrite local if a remote row
-      // exists (replace-semantics array; remote is the durable copy written by the last editor).
-      try {
-        const remote = await getAllGanttMilestones()
-        if (cancelled) return
-        const mine = remote.find(r => r.projectId === id)
-        if (mine) {
-          localStorage.setItem(`fg_gantt_milestones_${id}`, JSON.stringify(mine.milestones))
-          setMilestones(mine.milestones as Milestone[])
-        }
-      } catch { /* keep local copy on any sync error */ }
+      const localEntries = loadGanttEntries(id)
+      setEntries(localEntries)
+      const localMilestones = loadMilestones(id)
+      setMilestones(localMilestones)
+      // Cross-device: if this device never loaded this project the local gantt is empty — pull the
+      // remote bars and adopt them, so the user's first Save here doesn't wipe another device's
+      // schedule (the empty-clobber landmine). If local already has bars, keep them (this device may
+      // hold unsaved edits) and let Save reconcile.
+      if (localEntries.length === 0) {
+        try {
+          const allRemote = await getAllGanttEntries()
+          if (cancelled) return
+          const mine = allRemote.filter(e => e.projectId === id)
+          if (mine.length > 0) {
+            saveGanttEntries(id, mine)   // cache locally so subsequent loads/Saves see them
+            setEntries(mine)
+          }
+        } catch { /* keep local (empty) copy on any sync error */ }
+      }
+      // Cross-device milestones: only adopt the remote copy when LOCAL is empty. If local already has
+      // milestones, keep them — a milestone added on this device must not be wiped before it syncs.
+      if (localMilestones.length === 0) {
+        try {
+          const remote = await getAllGanttMilestones()
+          if (cancelled) return
+          const mine = remote.find(r => r.projectId === id)
+          if (mine && mine.milestones.length > 0) {
+            localStorage.setItem(`fg_gantt_milestones_${id}`, JSON.stringify(mine.milestones))
+            setMilestones(mine.milestones as Milestone[])
+          }
+        } catch { /* keep local copy on any sync error */ }
+      }
     })()
     return () => { cancelled = true }
   }, [id, router])
@@ -401,6 +428,7 @@ export default function GanttPage() {
   }
 
   const updateEntry = (updated: GanttEntry) => {
+    hasUnsavedChangesRef.current = true   // a user edit — mark dirty so flush persists it on leave
     setEntries(prev => {
       const idx = prev.findIndex(e => e.category === updated.category)
       if (idx >= 0) { const next = [...prev]; next[idx] = updated; return next }
@@ -709,9 +737,31 @@ export default function GanttPage() {
   const handleSave = () => {
     const toSave = entries.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0))
     void upsertGanttEntries(id, toSave)   // localStorage (immediate) + Supabase (background)
+    hasUnsavedChangesRef.current = false   // persisted — nothing for flush to re-save
     setSuccessMsg('Gantt saved')
     setTimeout(() => setSuccessMsg(''), 2000)
   }
+
+  // Flush unsaved edits to localStorage + Supabase on navigate-away / tab close / unmount. Without
+  // this, every edit lives only in React state until the manual Save button — so leaving the page
+  // (in-app Link/router) loses the schedule. upsertGanttEntries' localStorage write is synchronous,
+  // so it persists even on unmount.
+  const flushGantt = useCallback(() => {
+    if (!hasUnsavedChangesRef.current) return
+    hasUnsavedChangesRef.current = false
+    const toSave = latestEntriesRef.current.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0))
+    void upsertGanttEntries(id, toSave)
+  }, [id])
+
+  useEffect(() => {
+    window.addEventListener('beforeunload', flushGantt)
+    window.addEventListener('pagehide', flushGantt)
+    return () => {
+      window.removeEventListener('beforeunload', flushGantt)
+      window.removeEventListener('pagehide', flushGantt)
+      flushGantt()
+    }
+  }, [flushGantt])
 
   // ── Seed timeline from the estimate ─────────────────────────────────────────
   // Drops one starter bar per category (budget fully allocated), staggered in sequence, so the
@@ -761,6 +811,7 @@ export default function GanttPage() {
     const next = [...seeded, ...entries.filter(e => !covered.has(e.category))]
     setEntries(next)
     void upsertGanttEntries(id, next.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0)))
+    hasUnsavedChangesRef.current = false   // persisted — nothing for flush to re-save
     setSuccessMsg(`Seeded ${seededCount} ${seededCount === 1 ? 'category' : 'categories'} from the estimate — set each task's start date + duration, then Generate Revenue Forecast`)
     setTimeout(() => setSuccessMsg(''), 6000)
   }
@@ -873,6 +924,7 @@ export default function GanttPage() {
     // project's prior "(Gantt)" rows in the DB so nothing goes stale).
     await upsertGanttEntries(id, entries.filter(e => e.segments.length > 0))
     await replaceGanttRevenueRemote(id, newEntries)
+    hasUnsavedChangesRef.current = false   // persisted — nothing for flush to re-save
 
     setSuccessMsg(`Revenue forecast generated — ${totalWeekly} weekly entries added to Revenue Calendar`)
     setTimeout(() => setSuccessMsg(''), 6000)

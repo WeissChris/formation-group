@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { loadDesignProjects, saveDesignProject } from '@/lib/storage'
@@ -81,7 +81,12 @@ export default function DesignProjectDetailPage() {
 
   const [project, setProject] = useState<DesignProject | null>(null)
   const [saved, setSaved] = useState(false)
-  const [saveTimer, setSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
+  // Debounce timer lives in a ref (not state) so it isn't stale across renders. latestProjectRef +
+  // pendingSaveRef let flush() persist on navigate/unmount before the 500ms debounce fires — without
+  // it, editing a phase status/date/invoice#/notes and leaving within 500ms loses the edit.
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const latestProjectRef = useRef<DesignProject | null>(null)
+  const pendingSaveRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -100,16 +105,39 @@ export default function DesignProjectDetailPage() {
   }, [id, router])
 
   const autoSave = useCallback((updated: DesignProject) => {
-    if (saveTimer) clearTimeout(saveTimer)
-    const timer = setTimeout(() => {
+    latestProjectRef.current = updated
+    pendingSaveRef.current = true
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
+      pendingSaveRef.current = false
       // upsertDesignProject writes localStorage AND pushes to Supabase (timestamp-guarded), so an
       // edit here reaches other devices instead of waiting for the next hourly bulk-sync.
       void upsertDesignProject({ ...updated, updatedAt: new Date().toISOString() })
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     }, 500)
-    setSaveTimer(timer)
-  }, [saveTimer])
+  }, [])
+
+  // Persist a pending edit on navigate-away / tab close / unmount before the 500ms debounce fires.
+  // upsertDesignProject's localStorage write is synchronous, so it persists even on unmount.
+  const flushProject = useCallback(() => {
+    if (!pendingSaveRef.current) return
+    const p = latestProjectRef.current
+    if (!p) return
+    pendingSaveRef.current = false
+    if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null }
+    void upsertDesignProject({ ...p, updatedAt: new Date().toISOString() })
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener('beforeunload', flushProject)
+    window.addEventListener('pagehide', flushProject)
+    return () => {
+      window.removeEventListener('beforeunload', flushProject)
+      window.removeEventListener('pagehide', flushProject)
+      flushProject()
+    }
+  }, [flushProject])
 
   const updateField = useCallback((field: keyof DesignProject, value: unknown) => {
     setProject(prev => {

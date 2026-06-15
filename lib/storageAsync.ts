@@ -489,8 +489,11 @@ export async function deleteWeeklyRevenueAsync(id: string): Promise<void> {
 export async function upsertGanttEntries(projectId: string, entries: GanttEntry[]): Promise<void> {
   saveGanttEntries(projectId, entries)   // localStorage (immediate)
   if (!isSupabaseConfigured() || !supabase) return
-  await supabase.from('fg_gantt').delete().eq('project_id', projectId)
+  // EMPTY-CLOBBER GUARD: an empty set is almost always "not loaded yet" (a device that never opened
+  // this project), never an intentional full clear — so don't run the delete, which would wipe the
+  // project's remote bars written by another device.
   if (entries.length === 0) return
+  await supabase.from('fg_gantt').delete().eq('project_id', projectId)
   const rows = entries.map(e => ({
     id: e.id,
     project_id: projectId,

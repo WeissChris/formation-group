@@ -535,15 +535,41 @@ export default function EstimateBuilderPage() {
   // Autosave — debounce a save ~1s after the last edit (local + Supabase). The initial load-set is
   // skipped so opening an estimate doesn't trigger a write.
   const didInitialLoad = useRef(false)
+  // Latest estimate + a pending-save flag so flush() can persist on navigate/unmount before the 1s
+  // debounce fires (otherwise an edit followed by an in-app navigate within 1s is lost from BOTH
+  // localStorage and Supabase — upsertEstimate is the only persist path).
+  const latestEstimateRef = useRef<Estimate | null>(null)
+  const pendingSaveRef = useRef(false)
+  latestEstimateRef.current = estimate
+  const flushEstimate = useCallback(() => {
+    if (!pendingSaveRef.current) return
+    const est = latestEstimateRef.current
+    if (!est) return
+    pendingSaveRef.current = false
+    void upsertEstimate(est)   // localStorage write is synchronous, so it persists even on unmount
+    setHasUnsavedChanges(false)
+  }, [])
   useEffect(() => {
     if (!estimate) return
     if (!didInitialLoad.current) { didInitialLoad.current = true; return }
+    pendingSaveRef.current = true
     const handle = setTimeout(() => {
+      pendingSaveRef.current = false
       void upsertEstimate(estimate)
       setHasUnsavedChanges(false)
     }, 1000)
     return () => clearTimeout(handle)
   }, [estimate])
+  // Flush a pending autosave on navigate-away / tab close / unmount so the last edits aren't lost.
+  useEffect(() => {
+    window.addEventListener('beforeunload', flushEstimate)
+    window.addEventListener('pagehide', flushEstimate)
+    return () => {
+      window.removeEventListener('beforeunload', flushEstimate)
+      window.removeEventListener('pagehide', flushEstimate)
+      flushEstimate()
+    }
+  }, [flushEstimate])
 
   const updateEstimate = useCallback((patch: Partial<Estimate>) => {
     setEstimate(prev => prev ? { ...prev, ...patch, updatedAt: new Date().toISOString() } : prev)
