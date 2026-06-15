@@ -506,6 +506,7 @@ function LabourChecker({ estimate }: { estimate: Estimate }) {
   // rated at the standard $/hr, so hours come from the labour dollar value — see estimateLabourHours.
   // The BOQ uses the same helper so the two reports can never disagree.
   const labourHours = estimateLabourHours(items)
+  const labourCost = items.filter(i => i.type === 'Labour').reduce((s, i) => s + (i.total || 0), 0)
   const totals = getEstimateTotals(estimate)
   // Line-level (before the project-level waste/contingency markups), matching the sheet's summary.
   const grossProfit = totals.lineRevenue - totals.totalCost
@@ -536,6 +537,10 @@ function LabourChecker({ estimate }: { estimate: Estimate }) {
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs font-light text-fg-muted">Labour hours allowed</span>
           <span className="text-sm font-light text-fg-heading tabular-nums">{labourHours.toLocaleString('en-AU', { maximumFractionDigits: 0 })}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-light text-fg-muted">Total labour allowance</span>
+          <span className="text-sm font-light text-fg-heading tabular-nums">{fmtCurrency(labourCost)}</span>
         </div>
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs font-light text-fg-muted">Labour weeks (team of {teamSize})</span>
