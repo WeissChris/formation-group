@@ -346,19 +346,17 @@ function ProjectFinancialPosition({
   const acceptedEstimates = estimates.filter(e => e.status === 'accepted' && !e.parentEstimateId)
   const variationEstimates = estimates.filter(e => e.parentEstimateId && e.status === 'accepted')
 
-  const originalContract = acceptedEstimates.reduce((sum, e) => {
-    const rev = e.lineItems.reduce((s, li) => s + li.revenue, 0)
-    return sum + rev
-  }, 0)
-  const variationsTotal = variationEstimates.reduce((sum, e) => {
-    return sum + (e.variationAmount || e.lineItems.reduce((s, li) => s + li.revenue, 0))
-  }, 0)
+  // Contract uses the marked-up, rounded ex-GST value (getEstimateTotals.totalRevenue) over ACTIVE
+  // lines — the same basis as the project report and the dashboard Live Jobs row. Summing bare
+  // li.revenue understated the contract (and forecast GP) by the project markups + rounding.
+  const originalContract = acceptedEstimates.reduce((sum, e) => sum + getEstimateTotals(e).totalRevenue, 0)
+  const variationsTotal = variationEstimates.reduce((sum, e) => sum + (e.variationAmount || getEstimateTotals(e).totalRevenue), 0)
   const revisedContract = originalContract + variationsTotal
 
-  // Budget cost from estimates
+  // Budget cost from estimates (active lines, matching the revenue basis above)
   const budgetCost = estimates
     .filter(e => e.status === 'accepted')
-    .reduce((sum, e) => sum + e.lineItems.reduce((s, li) => s + li.total, 0), 0)
+    .reduce((sum, e) => sum + getEstimateTotals(e).totalCost, 0)
 
   // Actual cost from actuals
   const actualCost = actuals.reduce((sum, a) => sum + a.supplyCost + a.labourCost, 0)
@@ -1434,10 +1432,10 @@ export default function ProjectDetailPage() {
           const acceptedBase = estimates.filter(e => e.status === 'accepted' && !e.parentEstimateId)
           const acceptedVariations = estimates.filter(e => e.status === 'accepted' && !!e.parentEstimateId)
           const baseContract = acceptedBase.reduce(
-            (s, e) => s + e.lineItems.reduce((ls, li) => ls + (li.revenue ?? 0), 0), 0,
+            (s, e) => s + getEstimateTotals(e).totalRevenue, 0,
           )
           const variationsTotal = acceptedVariations.reduce(
-            (s, e) => s + (e.variationAmount || e.lineItems.reduce((ls, li) => ls + (li.revenue ?? 0), 0)),
+            (s, e) => s + (e.variationAmount || getEstimateTotals(e).totalRevenue),
             0,
           )
           const revisedContract = baseContract + variationsTotal

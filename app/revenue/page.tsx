@@ -7,6 +7,7 @@ import { loadProjects, loadWeeklyRevenue, saveWeeklyRevenue, loadEstimates, load
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getRevenue, upsertRevenue, deleteWeeklyRevenueAsync } from '@/lib/storageAsync'
 import { getProposalPhases, phasesTotal } from '@/lib/proposalPhases'
+import { getEstimateTotals } from '@/lib/estimateCalculations'
 import {
   formatCurrency, getFridaysInMonth, getFinancialYear,
   generateId, snapToFriday, toISODate, formatDayMonth,
@@ -299,8 +300,10 @@ export default function RevenuePage() {
     const formationEstimates = allEstimates.filter(e =>
       e.status === 'accepted' && formationProjectIds.has(e.projectId)
     )
-    const fmCost = formationEstimates.reduce((s, e) => s + e.lineItems.reduce((ls, li) => ls + li.total, 0), 0)
-    const fmRevenue = formationEstimates.reduce((s, e) => s + e.lineItems.reduce((ls, li) => ls + li.revenue, 0), 0)
+    // Use the marked-up contract (getEstimateTotals) over active lines — the same basis as each
+    // project's report tab — so a job's GP% here matches its report and the at-risk flags are honest.
+    const fmCost = formationEstimates.reduce((s, e) => s + getEstimateTotals(e).totalCost, 0)
+    const fmRevenue = formationEstimates.reduce((s, e) => s + getEstimateTotals(e).totalRevenue, 0)
     const calcFormationGP = fmRevenue > 0 ? ((fmRevenue - fmCost) / fmRevenue) * 100 : null
 
     // Design GP% from accepted proposals
@@ -371,8 +374,8 @@ export default function RevenuePage() {
         if (!projectGPMap[e.projectId]) {
           projectGPMap[e.projectId] = { projectName: proj.name, entity: proj.entity, stage: proj.stage, cost: 0, revenue: 0 }
         }
-        projectGPMap[e.projectId].cost += e.lineItems.reduce((s, li) => s + li.total, 0)
-        projectGPMap[e.projectId].revenue += e.lineItems.reduce((s, li) => s + li.revenue, 0)
+        projectGPMap[e.projectId].cost += getEstimateTotals(e).totalCost
+        projectGPMap[e.projectId].revenue += getEstimateTotals(e).totalRevenue
       })
 
     const calcProjectGPData = Object.entries(projectGPMap)

@@ -1645,11 +1645,11 @@ export default function EstimateBuilderPage() {
                       Total
                     </td>
                     <td className="py-3 px-1 text-right text-sm font-semibold text-fg-heading tabular-nums">
-                      {fmtCurrency(estimate.lineItems.reduce((s, i) => s + i.total, 0))}
+                      {fmtCurrency(activeLineItems(estimate).reduce((s, i) => s + i.total, 0))}
                     </td>
                     <td />
                     <td className="py-3 px-1 text-right text-sm font-semibold text-fg-heading tabular-nums">
-                      {fmtCurrency(estimate.lineItems.reduce((s, i) => s + readLineItemRevenue(i), 0))}
+                      {fmtCurrency(activeLineItems(estimate).reduce((s, i) => s + readLineItemRevenue(i), 0))}
                     </td>
                     <td />
                   </tr>

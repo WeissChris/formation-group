@@ -289,9 +289,10 @@ export default function ProposalAcceptancePage() {
           phase2Status: 'not_started',
           phase3Fee: updated.phase3Fee,
           phase3Status: updated.phase3Fee ? 'not_started' : undefined,
-          totalFee: updated.phase1Fee + updated.phase2Fee + (updated.phase3Fee || 0),
+          // Sum ALL phases (the client total uses phasesTotal); phase1+2+3 dropped any 4th+ phase fee.
+          totalFee: phasesTotal(getProposalPhases(updated)),
           totalPaid: 0,
-          totalOutstanding: updated.phase1Fee + updated.phase2Fee + (updated.phase3Fee || 0),
+          totalOutstanding: phasesTotal(getProposalPhases(updated)),
           notes: '',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),

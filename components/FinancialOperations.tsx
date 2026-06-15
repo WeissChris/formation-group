@@ -10,7 +10,7 @@ import {
 import { upsertEstimate, upsertProgressClaim, deleteProgressClaimAsync } from '@/lib/storageAsync'
 import { createXeroDraftInvoice } from '@/lib/xero'
 import { formatCurrency, generateId } from '@/lib/utils'
-import { getEstimateTotals, readLineItemRevenue } from '@/lib/estimateCalculations'
+import { getEstimateTotals, getEstimateContract, readLineItemRevenue, activeLineItems } from '@/lib/estimateCalculations'
 import type { ProgressPaymentStage, Estimate, WeeklyActual, ProgressClaim, ProgressClaimLineItem, EntityType } from '@/types'
 import { Plus, X, FileText, Receipt, GitBranch, Eye, Check, ChevronRight, ArrowLeft } from 'lucide-react'
 
@@ -186,18 +186,22 @@ function ProgressClaimBuilder({
 
     const items: ProgressClaimLineItem[] = []
 
-    // Group base estimate line items by category
+    // Group base estimate line items by category. Scale by the contract factor (project markups +
+    // rounding) and use ACTIVE lines only, so the per-category amounts sum to the real contract
+    // (getEstimateTotals().totalRevenue) — the same basis variations use below. Without the factor
+    // a claim filled to 100% would leave the project markup permanently un-billed.
     if (baseEstimates.length > 0) {
       const latestBase = baseEstimates[baseEstimates.length - 1]
+      const factor = getEstimateContract(latestBase).factor
       const categoryKeys: string[] = []
       const categoryAmounts: Record<string, number> = {}
-      for (const li of latestBase.lineItems) {
+      for (const li of activeLineItems(latestBase)) {
         const cat = li.category || 'General'
         if (!categoryAmounts[cat]) {
           categoryKeys.push(cat)
           categoryAmounts[cat] = 0
         }
-        categoryAmounts[cat] += readLineItemRevenue(li)
+        categoryAmounts[cat] += readLineItemRevenue(li) * factor
       }
 
       // Calculate claimed to date for each category from previous claims
