@@ -33,6 +33,25 @@ export function activeLineItems(estimate: Estimate): EstimateLineItem[] {
   return estimate.lineItems.filter(i => i.enabled !== false)
 }
 
+/** Standard field-labour rate ($/hr). Labour is always priced at this rate, so labour hours
+ *  derive from the labour dollar value, never from the unit of measure. */
+export const STD_LABOUR_RATE = 68
+
+/**
+ * Equivalent labour hours for a set of line items.
+ *
+ * Every line whose TYPE is 'Labour' counts — regardless of its unit of measure. Because labour is
+ * always rated at {@link STD_LABOUR_RATE}, the hours come from the labour dollar value
+ * (`total / STD_LABOUR_RATE`): a labour line priced per hour, per lm, per m² or "EA" all resolve to
+ * the right number of hours. Deciding off the uom string (e.g. only counting "hour") silently drops
+ * labour entered with any other unit. Shared by the Labour Checker and the BOQ so the two agree.
+ */
+export function estimateLabourHours(items: EstimateLineItem[]): number {
+  return items
+    .filter(i => i.type === 'Labour')
+    .reduce((sum, i) => sum + (i.total || 0) / STD_LABOUR_RATE, 0)
+}
+
 /** A cost split by line-item type. Costs are item.total (units × unitCost, ex-markup). */
 export interface CostBreakdown {
   labour: number

@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { loadEstimates, loadProposals, saveEstimate, loadTakeoffAsync } from '@/lib/storage'
 import { upsertEstimate, upsertProject, getEstimates, getTakeoff, upsertSubcontractor } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
-import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract, activeLineItems } from '@/lib/estimateCalculations'
+import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract, activeLineItems, estimateLabourHours } from '@/lib/estimateCalculations'
 import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
 import { getAllLibraryItems, getCategories, defaultMarkupForType } from '@/lib/itemLibrary'
 import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData } from '@/types'
@@ -496,24 +496,16 @@ function LineItemRow({
 // Mirrors Chris's quote-analysis sheet: allowed labour hours → crew-weeks → revenue/GP per week,
 // with a Formation-revenue-per-week feasibility target by crew size.
 const HOURS_PER_PERSON_WEEK = 40
-const STD_LABOUR_RATE = 68 // $/hr — used to convert non-hourly labour lines into equivalent hours
 // Formation-revenue-per-week feasibility floors by crew size (from the source sheet's notes).
 const FORMATION_WEEK_TARGET: Record<number, number> = { 2: 15000, 3: 20000, 4: 28000 }
 
 function LabourChecker({ estimate }: { estimate: Estimate }) {
   const [teamSize, setTeamSize] = useState(3)
   const items = activeLineItems(estimate)
-  // Allowed labour hours: hourly labour lines contribute their units; labour priced by a measure
-  // (lm, m², day…) is converted to equivalent hours at the standard rate; lump-sum allowances
-  // (e.g. project management) are excluded — matching the source sheet's labour-hours formula.
-  const labourHours = items
-    .filter(i => i.type === 'Labour')
-    .reduce((s, i) => {
-      const uom = (i.uom || '').toLowerCase()
-      if (/hour|hr/.test(uom)) return s + (i.units || 0)
-      if (/allow|lump|item/.test(uom)) return s
-      return s + (i.total || 0) / STD_LABOUR_RATE
-    }, 0)
+  // Allowed labour hours: every labour line counts, by TYPE not unit of measure. Labour is always
+  // rated at the standard $/hr, so hours come from the labour dollar value — see estimateLabourHours.
+  // The BOQ uses the same helper so the two reports can never disagree.
+  const labourHours = estimateLabourHours(items)
   const totals = getEstimateTotals(estimate)
   // Line-level (before the project-level waste/contingency markups), matching the sheet's summary.
   const grossProfit = totals.lineRevenue - totals.totalCost

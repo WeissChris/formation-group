@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { loadEstimates } from '@/lib/storage'
 import { getEstimates } from '@/lib/storageAsync'
-import { activeLineItems } from '@/lib/estimateCalculations'
+import { activeLineItems, estimateLabourHours } from '@/lib/estimateCalculations'
 import { formatCurrency } from '@/lib/utils'
 import type { Estimate, EstimateLineItem } from '@/types'
 
@@ -54,25 +54,24 @@ export default function EstimateBoQPage() {
   const grandTotal = items.reduce((s, li) => s + (li.total || 0), 0)
 
   // Materials / labour / subbie+equipment breakdown for the summary.
-  // Labour hours come from labour lines rated by the hour (uom matches hr/hour);
-  // lump-sum labour carries a dollar allowance but no hours.
+  // Labour hours count every labour line by TYPE (not unit of measure) and derive from the labour
+  // dollar value at the standard rate — see estimateLabourHours. The Labour Checker uses the same
+  // helper, so the BOQ total always matches it.
   const sumTotal = (arr: EstimateLineItem[], pred: (li: EstimateLineItem) => boolean) =>
     arr.filter(pred).reduce((s, li) => s + (li.total || 0), 0)
   const isMaterial = (li: EstimateLineItem) => li.type === 'Material'
   const isLabour = (li: EstimateLineItem) => li.type === 'Labour'
   const isOther = (li: EstimateLineItem) => li.type === 'Subcontractor' || li.type === 'Equipment'
-  const sumLabourHrs = (arr: EstimateLineItem[]) =>
-    arr.filter(li => isLabour(li) && /hour|hr/i.test(li.uom || '')).reduce((s, li) => s + (li.units || 0), 0)
 
   const catMaterials = (cat: string) => sumTotal(byCat[cat], isMaterial)
   const catLabour = (cat: string) => sumTotal(byCat[cat], isLabour)
   const catOther = (cat: string) => sumTotal(byCat[cat], isOther)
-  const catLabourHrs = (cat: string) => sumLabourHrs(byCat[cat])
+  const catLabourHrs = (cat: string) => estimateLabourHours(byCat[cat])
 
   const totMaterials = sumTotal(items, isMaterial)
   const totLabour = sumTotal(items, isLabour)
   const totOther = sumTotal(items, isOther)
-  const totLabourHrs = sumLabourHrs(items)
+  const totLabourHrs = estimateLabourHours(items)
   const hasOther = items.some(isOther)
 
   const fmtHrs = (n: number) => (n % 1 === 0 ? String(n) : n.toFixed(1))
@@ -144,7 +143,7 @@ export default function EstimateBoQPage() {
                 </tr>
               </tfoot>
             </table>
-            <p className="text-2xs font-light text-fg-muted/70 mt-2">Cost allowance excludes GST and contract markup — it is the budget allowed for each item, for site reference. Labour hours show where labour is rated by the hour; lump-sum labour carries a dollar allowance only.</p>
+            <p className="text-2xs font-light text-fg-muted/70 mt-2">Cost allowance excludes GST and contract markup — it is the budget allowed for each item, for site reference. Labour hours cover every labour line at the standard $68/hr rate, matching the Labour Checker.</p>
           </section>
 
           {/* Per-category detail */}
