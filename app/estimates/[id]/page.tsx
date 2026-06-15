@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { loadEstimates, loadProposals, saveEstimate, loadTakeoffAsync } from '@/lib/storage'
 import { upsertEstimate, upsertProject, getEstimates, getTakeoff, upsertSubcontractor } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
-import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract } from '@/lib/estimateCalculations'
+import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract, activeLineItems } from '@/lib/estimateCalculations'
 import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
 import { getAllLibraryItems, getCategories, defaultMarkupForType } from '@/lib/itemLibrary'
 import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData } from '@/types'
@@ -489,6 +489,64 @@ function LineItemRow({
         </div>
       </td>
     </tr>
+  )
+}
+
+// ── Labour Checker ──────────────────────────────────────────────────────────
+// Converts the allowed labour hours into weeks (by crew size) and the project's gross profit into
+// a per-crew-week figure, so you can sanity-check the labour budget against the value of the job.
+const HOURS_PER_PERSON_WEEK = 40
+
+function LabourChecker({ estimate }: { estimate: Estimate }) {
+  const [teamSize, setTeamSize] = useState(3)
+  const items = activeLineItems(estimate)
+  // Allowed labour hours = labour lines priced by the hour (same rule as the financial report).
+  const labourHours = items
+    .filter(i => i.type === 'Labour' && /hour|hr/i.test(i.uom || ''))
+    .reduce((s, i) => s + (i.units || 0), 0)
+  const totals = getEstimateTotals(estimate)
+  const grossProfit = totals.totalRevenue - totals.totalCost
+  const weeks = teamSize > 0 ? labourHours / (teamSize * HOURS_PER_PERSON_WEEK) : 0
+  const gpPerWeek = weeks > 0 ? grossProfit / weeks : 0
+
+  return (
+    <div className="bg-fg-card/20 border border-fg-border p-5 space-y-4 mt-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-2xs font-medium tracking-wide uppercase text-[#5A5550]">Labour Checker</h3>
+        <select
+          value={teamSize}
+          onChange={e => setTeamSize(Number(e.target.value))}
+          className="bg-transparent border border-fg-border text-fg-heading text-2xs font-light px-2 py-1 rounded-none outline-none focus:border-fg-heading"
+        >
+          <option value={2}>Team of 2</option>
+          <option value={3}>Team of 3</option>
+          <option value={4}>Team of 4</option>
+        </select>
+      </div>
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-light text-fg-muted">Labour hours allowed</span>
+          <span className="text-sm font-light text-fg-heading tabular-nums">{labourHours.toLocaleString('en-AU', { maximumFractionDigits: 1 })}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-light text-fg-muted">Labour weeks (team of {teamSize})</span>
+          <span className="text-sm font-light text-fg-heading tabular-nums">{weeks.toFixed(2)} wks</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-light text-fg-muted">Formation revenue</span>
+          <span className="text-sm font-light text-fg-heading tabular-nums">{fmtCurrency(totals.formationRevenue)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-light text-fg-muted">Gross profit</span>
+          <span className="text-sm font-light text-fg-heading tabular-nums">{fmtCurrency(grossProfit)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3 pt-2.5 border-t border-fg-border/50">
+          <span className="text-xs font-light text-fg-heading">GP / week allowed</span>
+          <span className="text-sm text-green-600 tabular-nums">{fmtCurrency(gpPerWeek)}</span>
+        </div>
+      </div>
+      <p className="text-2xs font-light text-fg-muted/70">Based on {HOURS_PER_PERSON_WEEK}h/week per person; labour hours come from hourly labour lines.</p>
+    </div>
   )
 }
 
@@ -1583,6 +1641,7 @@ export default function EstimateBuilderPage() {
         {/* Sidebar */}
         <div className="w-96 shrink-0">
           <MarginSidebar estimate={estimate} />
+          <LabourChecker estimate={estimate} />
           <MarkupRoundingPanel estimate={estimate} onChange={updateEstimate} />
         </div>
       </div>
