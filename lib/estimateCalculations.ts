@@ -141,16 +141,21 @@ export function roundToMode(value: number, mode?: Estimate['roundingMode']): num
 }
 
 /**
- * The estimate's ex-GST contract value: marked-up line subtotal × (1 + project markups), then
- * rounded. Returns each piece for the breakdown UI, plus `factor` (contract ÷ line revenue) used to
- * scale category budgets so the Gantt/baseline sum to the contract rather than the bare line total.
+ * The estimate's ex-GST contract value: marked-up line subtotal + project markups, then rounded.
+ * Project markups (waste/contingency/overhead) are added as a % of COST (matching BuildXact), NOT a %
+ * of the marked-up line revenue — so the uplift is markupPct% of total cost. Returns each piece for
+ * the breakdown UI, plus `factor` (contract ÷ line revenue) used to scale category budgets so the
+ * Gantt/baseline sum to the contract rather than the bare line total.
  */
 export function getEstimateContract(estimate: Estimate): {
   lineRevenue: number; markupPct: number; markupAmount: number; markedUp: number; rounding: number; exGst: number; factor: number
 } {
-  const lineRevenue = activeLineItems(estimate).reduce((s, i) => s + readLineItemRevenue(i), 0)
+  const active = activeLineItems(estimate)
+  const lineRevenue = active.reduce((s, i) => s + readLineItemRevenue(i), 0)
+  const totalCost = active.reduce((s, i) => s + (i.total || 0), 0)
   const markupPct = projectMarkupPct(estimate)
-  const markedUp = lineRevenue * (1 + markupPct / 100)
+  // % of COST added on top of the marked-up line revenue (BuildXact-style), not % of revenue.
+  const markedUp = lineRevenue + totalCost * (markupPct / 100)
   const exGst = roundToMode(markedUp, estimate.roundingMode)
   return {
     lineRevenue,

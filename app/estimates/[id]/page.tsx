@@ -265,7 +265,7 @@ function MarkupRoundingPanel({ estimate, onChange }: { estimate: Estimate; onCha
     <div className="bg-fg-card/20 border border-fg-border p-5 mt-4 space-y-4">
       <div>
         <h3 className="text-xs font-medium tracking-wide uppercase text-fg-heading">Markup &amp; Rounding</h3>
-        <p className="text-2xs text-fg-muted mt-1">Up to 5 project markups (e.g. waste, contingency), applied on top of the line totals.</p>
+        <p className="text-2xs text-fg-muted mt-1">Up to 5 project markups (e.g. waste, contingency), added as a % of <span className="text-fg-heading/70">cost</span> on top of the line totals.</p>
       </div>
       <div className="space-y-1.5">
         {rows.map((r, i) => (

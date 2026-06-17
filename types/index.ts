@@ -153,8 +153,8 @@ export interface Estimate {
   defaultMarkupFormation: number
   defaultMarkupSubcontractor: number
   lineItems: EstimateLineItem[]
-  // Project-level markups (waste, contingency, etc. — up to 5) applied ON TOP of the marked-up
-  // line subtotal, plus rounding of the ex-GST total. See lib/estimateCalculations getEstimateContract.
+  // Project-level markups (waste, contingency, etc. — up to 5) added as a % of COST on top of the
+  // marked-up line subtotal, plus rounding of the ex-GST total. See getEstimateContract.
   projectMarkups?: { id: string; description: string; percent: number }[]
   roundingMode?: 'none' | 'ten' | 'hundred' | 'thousand'
   notes?: string
