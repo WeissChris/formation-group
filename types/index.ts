@@ -21,6 +21,7 @@ export interface Project {
   plannedCompletion: string
   foreman: string
   foremanPin?: string
+  crewSize?: number          // project-wide crew size for the Gantt labour-hours model (2/3/4)
   notes: string
   stage?: ProjectStage
   stageChecklist?: { id: string; label: string; completed: boolean }[]

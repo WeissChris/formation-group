@@ -142,6 +142,7 @@ export async function upsertProject(project: Project): Promise<void> {
       baseline: fresh.baseline ?? null,
       forecast_completion: fresh.forecastCompletion ?? null,
       forecast_cost: fresh.forecastCost ?? null,
+      crew_size: fresh.crewSize ?? null,
       // Only push the foreman PIN when we actually have one — never null out an existing PIN in the
       // DB. It's used by the foreman portal, not edited in the office UI, so the office copy can lack
       // it; a blanket `foreman_pin: null` would lock foremen out.
@@ -697,6 +698,7 @@ function mapProject(row: Record<string, unknown>): Project {
     forecastCompletion: (row.forecast_completion as string | null) || undefined,
     forecastCost: row.forecast_cost != null ? Number(row.forecast_cost) : undefined,
     foremanPin: (row.foreman_pin as string | null) || undefined,
+    crewSize: row.crew_size != null ? Number(row.crew_size) : undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string | undefined,
   }

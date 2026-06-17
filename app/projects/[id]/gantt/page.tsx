@@ -12,7 +12,7 @@ import {
   loadWeeklyRevenue,
   saveWeeklyRevenue,
 } from '@/lib/storage'
-import { upsertGanttEntries, replaceGanttRevenueRemote, getProjects, upsertGanttMilestones, getAllGanttMilestones, getAllGanttEntries } from '@/lib/storageAsync'
+import { upsertGanttEntries, replaceGanttRevenueRemote, getProjects, upsertProject, upsertGanttMilestones, getAllGanttMilestones, getAllGanttEntries } from '@/lib/storageAsync'
 import { saveProject } from '@/lib/storage'
 import {
   formatCurrency,
@@ -22,7 +22,7 @@ import {
   toISODate,
   SHORT_MONTH_NAMES,
 } from '@/lib/utils'
-import { readLineItemRevenue, getEstimateContract, lineContractValue, addLineCost, emptyCostBreakdown, type CostBreakdown } from '@/lib/estimateCalculations'
+import { readLineItemRevenue, getEstimateContract, lineContractValue, addLineCost, emptyCostBreakdown, STD_LABOUR_RATE, type CostBreakdown } from '@/lib/estimateCalculations'
 import type { Project, Estimate, GanttEntry, GanttSegment, GanttSubtask, WeeklyRevenue } from '@/types'
 import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react'
 
@@ -792,6 +792,17 @@ export default function GanttPage() {
     setTimeout(() => setSuccessMsg(''), 3000)
   }
 
+  // Project-wide crew size (2/3/4) for the labour-hours model: a crew of N works N × 8 labour hours/day,
+  // so a bar of D working days consumes D × crew × 8 hours. Persisted on the project (syncs cross-device).
+  const crewSize = project?.crewSize ?? 3
+  const crewHoursPerDay = crewSize * 8
+  const setCrew = (n: number) => {
+    if (!project) return
+    const updated = { ...project, crewSize: n }
+    setProject(updated)
+    void upsertProject(updated)
+  }
+
   // Flush unsaved edits to localStorage + Supabase on navigate-away / tab close / unmount. Without
   // this, every edit lives only in React state until the manual Save button — so leaving the page
   // (in-app Link/router) loses the schedule. upsertGanttEntries' localStorage write is synchronous,
@@ -1136,6 +1147,21 @@ export default function GanttPage() {
             </button>
           </div>
 
+          {/* Crew size — drives the labour-hours model (2 = 16h/day, 3 = 24h, 4 = 32h) */}
+          <div className="flex items-center gap-1.5 border border-fg-border px-2.5 py-1.5">
+            <span className="text-[10px] font-light tracking-wide uppercase text-fg-muted">Crew</span>
+            <select
+              value={crewSize}
+              onChange={e => setCrew(Number(e.target.value))}
+              title="Project crew size — a crew of N works N × 8 labour hours per day"
+              className="bg-transparent text-xs font-light text-fg-heading outline-none cursor-pointer"
+            >
+              <option value={2}>2 · 16h/day</option>
+              <option value={3}>3 · 24h/day</option>
+              <option value={4}>4 · 32h/day</option>
+            </select>
+          </div>
+
           {/* Add Milestone */}
           {addingMilestone ? (
             <div className="flex items-center gap-2 border border-fg-border px-2 py-1.5 bg-fg-bg">
@@ -1365,7 +1391,9 @@ export default function GanttPage() {
                           {COST_TYPE_KEYS.map(k => cat.cost[k] > 0 ? (
                             <div key={k} className="flex items-center justify-end gap-1 text-[9px] leading-tight">
                               <span style={{ color: COST_TYPE_META[k].colour }}>{COST_TYPE_META[k].label}</span>
-                              <span className="text-fg-muted/60 tabular-nums">{formatCurrency(cat.cost[k])}</span>
+                              <span className="text-fg-muted/60 tabular-nums">
+                                {formatCurrency(cat.cost[k])}{k === 'labour' ? ` · ${Math.round(cat.cost[k] / STD_LABOUR_RATE)}h` : ''}
+                              </span>
                             </div>
                           ) : null)}
                         </div>
