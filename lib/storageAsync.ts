@@ -385,6 +385,8 @@ export async function upsertEstimate(estimate: Estimate): Promise<void> {
       id: fresh.id,
       project_id: fresh.projectId || null,   // '' would violate the FK to fg_projects
       project_name: fresh.projectName,
+      client_name: fresh.clientName ?? null,
+      project_address: fresh.projectAddress ?? null,
       name: fresh.name,
       version: fresh.version,
       status: fresh.status,
@@ -739,6 +741,8 @@ function mapEstimate(row: Record<string, unknown>): Estimate {
     id: row.id as string,
     projectId: row.project_id as string,
     projectName: row.project_name as string,
+    clientName: (row.client_name as string | null) || undefined,
+    projectAddress: (row.project_address as string | null) || undefined,
     name: row.name as string | undefined,
     version: row.version as number,
     status: row.status as Estimate['status'],

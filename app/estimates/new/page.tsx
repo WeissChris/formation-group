@@ -111,6 +111,8 @@ function NewEstimateForm() {
   const [form, setForm] = useState({
     projectId: preselectedProject,
     name: suggestedName,
+    clientName: fromClientName,
+    projectAddress: fromAddress,
     notes: '',
     defaultMarkupFormation: 40,
     defaultMarkupSubcontractor: 35,
@@ -171,6 +173,8 @@ function NewEstimateForm() {
       id: estimateId,
       projectId: form.projectId || '',
       projectName: project?.name || form.name || 'Unassigned',
+      ...(form.clientName.trim() ? { clientName: form.clientName.trim() } : {}),
+      ...(form.projectAddress.trim() ? { projectAddress: form.projectAddress.trim() } : {}),
       name: form.name,
       version: nextVersion,
       status: 'draft',
@@ -244,6 +248,31 @@ function NewEstimateForm() {
               </select>
             </div>
           )}
+
+          {/* Client + site details — used on the quote/BOQ. When linked to a project or proposal those
+              pull through automatically, but a standalone estimate needs them entered here. */}
+          <div className="space-y-4">
+            <div>
+              <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Client Name</label>
+              <input
+                type="text"
+                value={form.clientName}
+                onChange={e => setForm(f => ({ ...f, clientName: e.target.value }))}
+                placeholder="e.g. Mark Alter"
+                className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors placeholder-[#8A8580]"
+              />
+            </div>
+            <div>
+              <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Project Address</label>
+              <input
+                type="text"
+                value={form.projectAddress}
+                onChange={e => setForm(f => ({ ...f, projectAddress: e.target.value }))}
+                placeholder="e.g. 26 Halstead Road, North Caulfield"
+                className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors placeholder-[#8A8580]"
+              />
+            </div>
+          </div>
 
           {/* Project Type — required */}
           <div>

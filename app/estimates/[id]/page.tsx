@@ -1252,6 +1252,34 @@ export default function EstimateBuilderPage() {
         <span className="text-fg-heading">{estimate.projectName} v{estimate.version}</span>
       </div>
 
+      {/* Client + site details. For a standalone estimate (no linked project/proposal) this is the only
+          place to capture who it's for — these flow through to the quote + BOQ. Linked estimates inherit
+          the client/address from the project or proposal, so the fields aren't duplicated there. */}
+      {!estimate.projectId && !estimate.proposalId && (
+        <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+          <div>
+            <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Client Name</label>
+            <input
+              type="text"
+              value={estimate.clientName || ''}
+              onChange={e => updateEstimate({ clientName: e.target.value })}
+              placeholder="e.g. Mark Alter"
+              className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors placeholder-[#8A8580]"
+            />
+          </div>
+          <div>
+            <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Project Address</label>
+            <input
+              type="text"
+              value={estimate.projectAddress || ''}
+              onChange={e => updateEstimate({ projectAddress: e.target.value })}
+              placeholder="e.g. 26 Halstead Road, North Caulfield"
+              className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors placeholder-[#8A8580]"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Proposal link banner */}
       {estimate.proposalId && (
         <div className="mb-4 px-4 py-2.5 border border-fg-border/50 bg-fg-card/20 flex items-center justify-between">

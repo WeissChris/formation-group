@@ -40,8 +40,11 @@ export default function QuotePage() {
       const linkedProposal = found.proposalId
         ? loadProposals().find(pr => pr.id === found.proposalId)
         : null
-      setClientName(p?.clientName || linkedProposal?.clientName || found.projectName || 'Client')
-      setClientAddress(p?.address || linkedProposal?.projectAddress || found.projectName || '')
+      // Resolve client details: linked project > linked proposal > the estimate's own fields (for a
+      // standalone estimate). Address no longer falls back to the project NAME (that showed the project
+      // title where the site address should be).
+      setClientName(p?.clientName || linkedProposal?.clientName || found.clientName || found.projectName || 'Client')
+      setClientAddress(p?.address || linkedProposal?.projectAddress || found.projectAddress || '')
     })()
     return () => { cancelled = true }
   }, [id, router])

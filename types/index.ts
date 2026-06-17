@@ -145,6 +145,8 @@ export interface Estimate {
   id: string
   projectId: string
   projectName: string
+  clientName?: string          // client/customer name — for standalone estimates not linked to a project/proposal
+  projectAddress?: string      // site address — for standalone estimates not linked to a project/proposal
   name?: string
   version: number
   status: 'draft' | 'sent' | 'accepted' | 'variation' | 'declined'
