@@ -78,7 +78,8 @@ function EntryModal({ projects, initialProjectId, initialWeekEnding, entry, onSa
   const [weekEnding, setWeekEnding] = useState(
     entry?.weekEnding ?? initialWeekEnding ?? toISODate(snapToFriday(new Date()))
   )
-  const [amount, setAmount] = useState(entry ? String(entry.plannedRevenue) : '')
+  const [amount, setAmount] = useState(entry && entry.plannedRevenue ? String(entry.plannedRevenue) : '')
+  const [cost, setCost] = useState(entry?.scheduledCost ? String(entry.scheduledCost) : '')
   const [isDeposit, setIsDeposit] = useState(entry?.isDeposit ?? false)
   const [notes, setNotes] = useState(entry?.notes ?? '')
   const [error, setError] = useState('')
@@ -91,8 +92,9 @@ function EntryModal({ projects, initialProjectId, initialWeekEnding, entry, onSa
 
   const handleSave = () => {
     if (!projectId) return setError('Select a project')
-    const num = parseFloat(amount.replace(/[^0-9.]/g, ''))
-    if (isNaN(num) || num <= 0) return setError('Enter a valid amount')
+    const rev = parseFloat(amount.replace(/[^0-9.]/g, '')) || 0
+    const cst = parseFloat(cost.replace(/[^0-9.]/g, '')) || 0
+    if (rev <= 0 && cst <= 0) return setError('Enter a revenue and/or cost amount')
     const proj = projects.find(p => p.id === projectId)
     if (!proj) return setError('Project not found')
     onSave({
@@ -101,10 +103,11 @@ function EntryModal({ projects, initialProjectId, initialWeekEnding, entry, onSa
       projectName: proj.name,
       entity: proj.entity,
       weekEnding,
-      weekNumber: 0,
-      plannedRevenue: num,
+      weekNumber: entry?.weekNumber ?? 0,
+      plannedRevenue: rev,
       actualInvoiced: entry?.actualInvoiced ?? 0,
       isDeposit,
+      scheduledCost: cst,   // money out this week — kept in step so editing a Gantt cell can't drop it
       notes,
     })
     onClose()
@@ -154,18 +157,32 @@ function EntryModal({ projects, initialProjectId, initialWeekEnding, entry, onSa
             />
           </div>
 
-          {/* Amount */}
-          <div>
-            <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">
-              Amount ($)
-            </label>
-            <input
-              type="text"
-              value={amount}
-              onChange={e => setAmount(e.target.value)}
-              placeholder="0"
-              className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors tabular-nums"
-            />
+          {/* Revenue in + Cost out — allocate both for the week's cash flow (either can be blank) */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">
+                Revenue in ($)
+              </label>
+              <input
+                type="text"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+                placeholder="0"
+                className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors tabular-nums"
+              />
+            </div>
+            <div>
+              <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">
+                Cost out ($)
+              </label>
+              <input
+                type="text"
+                value={cost}
+                onChange={e => setCost(e.target.value)}
+                placeholder="0"
+                className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors tabular-nums"
+              />
+            </div>
           </div>
 
           {/* Type */}
@@ -421,7 +438,7 @@ export default function RevenuePage() {
 
   const fridays = getFridaysInMonth(year, month)
   const calendarProjects = projects.filter(proj =>
-    revenue.some(r => r.projectId === proj.id && r.plannedRevenue > 0)
+    revenue.some(r => r.projectId === proj.id && (r.plannedRevenue > 0 || (r.scheduledCost ?? 0) > 0))
   )
   const colTotals = fridays.map(friday =>
     revenue.filter(r => isSameWeek(r.weekEnding, friday)).reduce((s, r) => s + r.plannedRevenue, 0)
@@ -644,7 +661,7 @@ export default function RevenuePage() {
                     const y = q.years[mi]
                     const mFridays = getFridaysInMonth(y, m)
                     const mRevenue = revenue.filter(r => { const d = new Date(r.weekEnding); return d.getMonth() === m && d.getFullYear() === y })
-                    const mProjects = projects.filter(proj => mRevenue.some(r => r.projectId === proj.id && r.plannedRevenue > 0))
+                    const mProjects = projects.filter(proj => mRevenue.some(r => r.projectId === proj.id && (r.plannedRevenue > 0 || (r.scheduledCost ?? 0) > 0)))
                     const mColTotals = mFridays.map(fri => mRevenue.filter(r => isSameWeek(r.weekEnding, fri)).reduce((s, r) => s + r.plannedRevenue, 0))
                     const mActualTotals = mFridays.map(fri => mRevenue.filter(r => isSameWeek(r.weekEnding, fri)).reduce((s, r) => s + (r.actualInvoiced || 0), 0))
                     // Budgeted cost out per week (from the Gantt forecast — scheduledCost on the same rows).
@@ -725,18 +742,25 @@ export default function RevenuePage() {
                                       return (
                                         <td key={fi} className={`py-0 px-2 text-right ${curr ? 'bg-fg-border/10' : ''}`}>
                                           {entry ? (
-                                            <button onClick={() => setModal({ open: true, entry })} className="w-full text-right">
-                                              <span className={`text-xs tabular-nums ${
-                                                invoiced ? 'text-green-600' :
-                                                slipped  ? 'text-amber-500/70' :
-                                                past     ? 'text-fg-muted/40' :
-                                                           'text-fg-heading'
-                                              }`}>
-                                                {formatCurrency(entry.plannedRevenue)}
-                                              </span>
+                                            <button onClick={() => setModal({ open: true, entry })} className="w-full text-right leading-tight">
+                                              {entry.plannedRevenue > 0 && (
+                                                <span className={`block text-xs tabular-nums ${
+                                                  invoiced ? 'text-green-600' :
+                                                  slipped  ? 'text-amber-500/70' :
+                                                  past     ? 'text-fg-muted/40' :
+                                                             'text-fg-heading'
+                                                }`}>
+                                                  {formatCurrency(entry.plannedRevenue)}
+                                                </span>
+                                              )}
                                               {invoiced && entry.actualInvoiced !== entry.plannedRevenue && (
                                                 <span className="block text-2xs text-green-600/70 tabular-nums">
                                                   {formatCurrency(entry.actualInvoiced || 0)} actual
+                                                </span>
+                                              )}
+                                              {(entry.scheduledCost ?? 0) > 0 && (
+                                                <span className="block text-2xs text-fg-muted/50 tabular-nums" title="Cost out (money out this week)">
+                                                  −{formatCurrency(entry.scheduledCost ?? 0)}
                                                 </span>
                                               )}
                                             </button>
