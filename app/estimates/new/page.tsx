@@ -181,6 +181,13 @@ function NewEstimateForm() {
       defaultMarkupFormation: form.defaultMarkupFormation,
       defaultMarkupSubcontractor: form.defaultMarkupSubcontractor,
       lineItems,
+      // Default project markups (applied as a % of cost — see getEstimateContract). Editable/removable
+      // in the estimate's Markup & Rounding panel.
+      projectMarkups: [
+        { id: generateId(), description: 'Waste', percent: 5 },
+        { id: generateId(), description: 'Contingency', percent: 5 },
+        { id: generateId(), description: 'Overhead', percent: 6 },
+      ],
       notes: form.notes,
       ...(fromProposalId ? { proposalId: fromProposalId } : {}),
       ...(projectType ? { projectType: projectType as 'landscape_only' | 'landscape_and_pool' | 'pool_only' } : {}),
