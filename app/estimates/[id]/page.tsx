@@ -327,6 +327,7 @@ function LineItemRow({
   onMoveDown,
   onUnitsFocus,
   index = 0,
+  factor = 1,
 }: {
   item: EstimateLineItem
   categories: string[]
@@ -338,6 +339,7 @@ function LineItemRow({
   onMoveDown: () => void
   onUnitsFocus?: () => void
   index?: number
+  factor?: number
 }) {
   const update = (patch: Partial<EstimateLineItem>) => {
     const updated = { ...item, ...patch }
@@ -474,6 +476,9 @@ function LineItemRow({
       </td>
       <td className="py-1.5 px-1 w-24 text-right text-xs font-light text-fg-heading tabular-nums pr-2">
         {fmtCurrency(item.revenue)}
+      </td>
+      <td className="py-1.5 px-1 w-24 text-right text-xs font-normal text-fg-heading tabular-nums pr-2">
+        {fmtCurrency(readLineItemRevenue(item) * factor)}
       </td>
       <td className="py-1.5 px-1">
         <div className="flex items-center gap-0.5">
@@ -1221,6 +1226,9 @@ export default function EstimateBuilderPage() {
   )
 
   const categories = Array.from(new Set(estimate.lineItems.map(i => i.category)))
+  // Per-line "sell incl. project markups" = line revenue x this factor (= exGst / lineRevenue, so it
+  // folds in the project markups + rounding). The column sums to the contract value.
+  const contractFactor = getEstimateContract(estimate).factor
   // For a variation, fold in the parent estimate's categories + sub-categories so it allocates to the
   // same structure (it rolls up to the same project), alongside the global library. Free-text still
   // adds a genuinely new one.
@@ -1520,6 +1528,7 @@ export default function EstimateBuilderPage() {
                     { h: 'Total', align: 'text-right pr-2' },
                     { h: 'Mkup%', align: 'text-right pr-2.5' },
                     { h: 'Revenue', align: 'text-right pr-2' },
+                    { h: 'Incl. markups', align: 'text-right pr-2' },
                     { h: '', align: 'text-left' },
                   ].map(({ h, align }) => (
                     <th key={h || 'actions'} className={`pb-2.5 px-1 ${align} text-2xs font-medium tracking-architectural uppercase text-[#6B6560] whitespace-nowrap`}>
@@ -1544,6 +1553,7 @@ export default function EstimateBuilderPage() {
                       category={category}
                       total={catTotal}
                       revenue={catRevenue}
+                      factor={contractFactor}
                       hidden={catHidden}
                       isFirst={catIdx === 0}
                       isLast={catIdx === categories.length - 1}
@@ -1556,7 +1566,7 @@ export default function EstimateBuilderPage() {
                     />,
                     // Internal notes row
                     <tr key={`notes-${category}`}>
-                      <td colSpan={11} className="px-2 pb-1.5">
+                      <td colSpan={12} className="px-2 pb-1.5">
                         <textarea
                           value={estimate.categoryNotes?.[category] || ''}
                           onChange={e => updateCategoryNote(category, e.target.value)}
@@ -1596,6 +1606,7 @@ export default function EstimateBuilderPage() {
                               <td className="py-1 px-1 text-right text-2xs text-fg-muted tabular-nums">{fmtCurrency(subTotal)}</td>
                               <td />
                               <td className="py-1 px-1 text-right text-2xs text-fg-muted tabular-nums">{fmtCurrency(subRevenue)}</td>
+                              <td className="py-1 px-1 text-right text-2xs text-fg-muted tabular-nums">{fmtCurrency(subRevenue * contractFactor)}</td>
                               <td />
                             </tr>
                           )
@@ -1605,6 +1616,7 @@ export default function EstimateBuilderPage() {
                             <LineItemRow
                               key={item.id}
                               index={rowIdx++}
+                              factor={contractFactor}
                               item={item}
                               categories={allCategories}
                               onChange={(updated) => updateLineItem(item.id, updated)}
@@ -1622,7 +1634,7 @@ export default function EstimateBuilderPage() {
                     })(),
                     // Category action buttons
                     <tr key={`cat-actions-${category}`}>
-                      <td colSpan={11} className="py-1.5 px-2">
+                      <td colSpan={12} className="py-1.5 px-2">
                         <div className="flex items-center gap-4">
                           <button
                             onClick={() => {
@@ -1656,6 +1668,9 @@ export default function EstimateBuilderPage() {
                     <td />
                     <td className="py-3 px-1 text-right text-sm font-semibold text-fg-heading tabular-nums">
                       {fmtCurrency(activeLineItems(estimate).reduce((s, i) => s + readLineItemRevenue(i), 0))}
+                    </td>
+                    <td className="py-3 px-1 text-right text-sm font-semibold text-fg-heading tabular-nums">
+                      {fmtCurrency(activeLineItems(estimate).reduce((s, i) => s + readLineItemRevenue(i), 0) * contractFactor)}
                     </td>
                     <td />
                   </tr>
@@ -1739,6 +1754,7 @@ function CategoryHeaderRow({
   category,
   total,
   revenue,
+  factor,
   hidden,
   isFirst,
   isLast,
@@ -1752,6 +1768,7 @@ function CategoryHeaderRow({
   category: string
   total: number
   revenue: number
+  factor: number
   hidden: boolean
   isFirst: boolean
   isLast: boolean
@@ -1794,6 +1811,9 @@ function CategoryHeaderRow({
       </td>
       <td className="py-2 px-1 text-right text-2xs text-fg-heading tabular-nums font-light">
         {fmtCurrency(revenue)}
+      </td>
+      <td className="py-2 px-1 text-right text-2xs text-fg-heading tabular-nums font-medium">
+        {fmtCurrency(revenue * factor)}
       </td>
       <td className="py-2 px-1">
         <div className="flex items-center gap-0.5">
