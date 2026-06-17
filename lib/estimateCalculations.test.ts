@@ -196,8 +196,8 @@ describe('getEstimateTotals', () => {
       { projectMarkups: [{ id: 'm1', description: 'Contingency', percent: 10 }] },
     )
     const totals = getEstimateTotals(e)
-    expect(totals.formationRevenue).toBeCloseTo(1502.94, 2) // 1400 × factor (4380/4080)
-    expect(totals.subRevenue).toBeCloseTo(2877.06, 2) // 2680 × factor
+    expect(totals.formationRevenue).toBeCloseTo(1500, 4) // 1400 + 10% of its own cost (1000)
+    expect(totals.subRevenue).toBeCloseTo(2880, 4) // 2680 + 10% of its own cost (2000)
     // crew revenue sums to the ex-GST contract
     expect(totals.formationRevenue + totals.subRevenue).toBeCloseTo(totals.totalRevenue, 4)
   })

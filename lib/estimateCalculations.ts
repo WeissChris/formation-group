@@ -85,15 +85,15 @@ export function costBreakdown(items: EstimateLineItem[]): CostBreakdown {
 export function getMarginSummary(estimate: Estimate): CategoryMargin[] {
   const active = activeLineItems(estimate)
   const categories = Array.from(new Set(active.map(i => i.category)))
-  // Spread the project-level markups (waste, contingency) + rounding across categories in proportion
-  // to line revenue, so each category's margin reflects the real contract price, not just the line
-  // markup. `factor` is 1 when there are no project markups, so plain estimates are unaffected.
-  const factor = getEstimateContract(estimate).factor
+  // Each category's revenue = its lines' contract value (line revenue + project markup on each line's
+  // OWN cost, BuildXact-style), so the margin reflects the real contract price, not just the line
+  // markup. No project markups → contract value == line revenue, so plain estimates are unaffected.
+  const contract = getEstimateContract(estimate)
 
   return categories.map(category => {
     const items = active.filter(i => i.category === category)
     const totalCost = items.reduce((s, i) => s + i.total, 0)
-    const totalRevenue = items.reduce((s, i) => s + readLineItemRevenue(i), 0) * factor
+    const totalRevenue = itemsContractValue(items, contract)
     const marginPercent = totalRevenue > 0 ? (totalRevenue - totalCost) / totalRevenue : 0
     const markupPercent = totalCost > 0 ? (totalRevenue - totalCost) / totalCost : 0
 
@@ -147,9 +147,11 @@ export function roundToMode(value: number, mode?: Estimate['roundingMode']): num
  * the breakdown UI, plus `factor` (contract ÷ line revenue) used to scale category budgets so the
  * Gantt/baseline sum to the contract rather than the bare line total.
  */
-export function getEstimateContract(estimate: Estimate): {
+export interface EstimateContract {
   lineRevenue: number; markupPct: number; markupAmount: number; markedUp: number; rounding: number; exGst: number; factor: number
-} {
+}
+
+export function getEstimateContract(estimate: Estimate): EstimateContract {
   const active = activeLineItems(estimate)
   const lineRevenue = active.reduce((s, i) => s + readLineItemRevenue(i), 0)
   const totalCost = active.reduce((s, i) => s + (i.total || 0), 0)
@@ -168,6 +170,23 @@ export function getEstimateContract(estimate: Estimate): {
   }
 }
 
+/**
+ * A line item's share of the ex-GST contract: its revenue PLUS the project markup on its OWN cost
+ * (BuildXact-style), scaled by the rounding correction so a sum over the active lines lands exactly on
+ * the rounded contract. Use this — NOT `readLineItemRevenue(i) * contract.factor` — wherever a per-line
+ * or per-group "with project markups" figure is shown, so each line/category/section carries the
+ * project markup on its own cost (matching BuildXact) instead of a revenue-proportional spread.
+ */
+export function lineContractValue(item: EstimateLineItem, contract: EstimateContract): number {
+  const raw = readLineItemRevenue(item) + (item.total || 0) * (contract.markupPct / 100)
+  return contract.markedUp > 0 ? raw * (contract.exGst / contract.markedUp) : raw
+}
+
+/** Contract value (sum of lineContractValue) for a set of line items — a category, crew split, etc. */
+export function itemsContractValue(items: EstimateLineItem[], contract: EstimateContract): number {
+  return items.reduce((s, i) => s + lineContractValue(i, contract), 0)
+}
+
 export function getEstimateTotals(estimate: Estimate) {
   const active = activeLineItems(estimate)
   const totalCost = active.reduce((s, i) => s + i.total, 0)
@@ -180,11 +199,11 @@ export function getEstimateTotals(estimate: Estimate) {
 
   const formationCost = active.filter(i => i.crewType === 'Formation').reduce((s, i) => s + i.total, 0)
   const subCost = active.filter(i => i.crewType === 'Subcontractor').reduce((s, i) => s + i.total, 0)
-  // Crew revenue includes the project markups (waste, contingency) + rounding, distributed in
-  // proportion to line revenue, so the Margin Checker's Formation/Sub split reflects the real
-  // contract. `contract.factor` is 1 when there are no project markups.
-  const formationRevenue = active.filter(i => i.crewType === 'Formation').reduce((s, i) => s + readLineItemRevenue(i), 0) * contract.factor
-  const subRevenue = active.filter(i => i.crewType === 'Subcontractor').reduce((s, i) => s + readLineItemRevenue(i), 0) * contract.factor
+  // Crew revenue = each crew's lines' contract value (line revenue + project markup on each line's own
+  // cost), so the Margin Checker's Formation/Sub split reflects the real contract. No project markups →
+  // contract value == line revenue.
+  const formationRevenue = itemsContractValue(active.filter(i => i.crewType === 'Formation'), contract)
+  const subRevenue = itemsContractValue(active.filter(i => i.crewType === 'Subcontractor'), contract)
 
   return {
     totalCost,

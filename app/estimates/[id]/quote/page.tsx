@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { loadEstimates, loadProjects, loadProposals, saveEstimate } from '@/lib/storage'
 import { getEstimates } from '@/lib/storageAsync'
 import { formatCurrency } from '@/lib/utils'
-import { getEstimateTotals, readLineItemRevenue, activeLineItems, getEstimateContract } from '@/lib/estimateCalculations'
+import { getEstimateTotals, readLineItemRevenue, activeLineItems, getEstimateContract, itemsContractValue } from '@/lib/estimateCalculations'
 import type { Estimate, Project } from '@/types'
 import { Printer, ArrowLeft } from 'lucide-react'
 
@@ -57,18 +57,16 @@ export default function QuotePage() {
 
   const totals = getEstimateTotals(estimate)
 
-  // Category breakdown for the client. It MUST reconcile with the Subtotal below, so: (1) use ACTIVE
-  // line items only (lines turned off are excluded from the totals), and (2) scale each category by
-  // the contract factor so the project markups (waste/contingency/overheads) + rounding are spread
-  // across the rows. Previously the rows summed to the bare line revenue while the Subtotal showed the
-  // marked-up contract — a ~15% gap where the listed items visibly didn't add up to the total.
+  // Category breakdown for the client. It MUST reconcile with the Subtotal below, so use ACTIVE line
+  // items only and each category's contract value (line revenue + project markup on each line's OWN
+  // cost), which sums to the contract. Previously the rows summed to bare line revenue while the
+  // Subtotal showed the marked-up contract — a ~15% gap where the items didn't add up to the total.
   const active = activeLineItems(estimate)
   const contract = getEstimateContract(estimate)
-  const factor = contract.factor
   const categories = Array.from(new Set(active.map(i => i.category)))
   const rawCategoryTotals = categories.map(category => {
     const items = active.filter(i => i.category === category)
-    const revenue = items.reduce((s, i) => s + readLineItemRevenue(i), 0) * factor
+    const revenue = itemsContractValue(items, contract)
     return { category, revenue }
   })
   // formatCurrency shows whole dollars; round each row and absorb the residual into the largest

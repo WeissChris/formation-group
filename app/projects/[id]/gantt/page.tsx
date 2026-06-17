@@ -22,7 +22,7 @@ import {
   toISODate,
   SHORT_MONTH_NAMES,
 } from '@/lib/utils'
-import { readLineItemRevenue, getEstimateContract, addLineCost, emptyCostBreakdown, type CostBreakdown } from '@/lib/estimateCalculations'
+import { readLineItemRevenue, getEstimateContract, lineContractValue, addLineCost, emptyCostBreakdown, type CostBreakdown } from '@/lib/estimateCalculations'
 import type { Project, Estimate, GanttEntry, GanttSegment, GanttSubtask, WeeklyRevenue } from '@/types'
 import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react'
 
@@ -148,9 +148,9 @@ function addDays(isoDate: string, days: number): string {
 }
 
 function extractCategories(estimate: Estimate): CategorySummary[] {
-  // Scale category revenue by the contract factor so the Gantt's budgeted revenue sums to the
-  // ex-GST contract (incl project markups + rounding), matching the baseline.
-  const factor = getEstimateContract(estimate).factor
+  // Each posting's budgeted revenue = its lines' contract value (line revenue + project markup on each
+  // line's own cost), so the Gantt's budgeted revenue sums to the ex-GST contract, matching the baseline.
+  const contract = getEstimateContract(estimate)
   const map: Record<string, CategorySummary> = {}
   for (const item of estimate.lineItems.filter(i => i.enabled !== false)) {
     // Each (category, sub-category) is its own Gantt posting so a sub-category's cost + labour can be
@@ -161,7 +161,7 @@ function extractCategories(estimate: Estimate): CategorySummary[] {
     if (!map[key]) {
       map[key] = { category: label, crewType: item.crewType, budgetedRevenue: 0, budgetedCost: 0, cost: emptyCostBreakdown() }
     }
-    map[key].budgetedRevenue += readLineItemRevenue(item) * factor
+    map[key].budgetedRevenue += lineContractValue(item, contract)
     map[key].budgetedCost += item.total
     addLineCost(map[key].cost, item)
   }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { getVariationByToken, approveVariationByToken, rejectVariationByToken } from '@/lib/publicData'
-import { getEstimateTotals, readLineItemRevenue, getEstimateContract } from '@/lib/estimateCalculations'
+import { getEstimateTotals, readLineItemRevenue, getEstimateContract, lineContractValue } from '@/lib/estimateCalculations'
 import { formatCurrency } from '@/lib/utils'
 import type { Estimate } from '@/types'
 
@@ -52,7 +52,7 @@ export default function VariationApprovalPage() {
   if (!variation) return <div className="min-h-screen bg-[#eceae7] flex items-center justify-center text-[#8A8580] text-sm font-light px-6 text-center">This variation link is invalid or has expired.</div>
 
   const totals = getEstimateTotals(variation)
-  const factor = getEstimateContract(variation).factor
+  const contract = getEstimateContract(variation)
   const label = `Variation${variation.variationNumber ? ` VMO-${variation.variationNumber}` : ''}`
   const activeLines = variation.lineItems.filter(i => i.enabled !== false)
 
@@ -76,7 +76,7 @@ export default function VariationApprovalPage() {
             {activeLines.map(li => (
               <tr key={li.id} className="border-b border-[#eeeae5]">
                 <td className="py-2 text-[#1a1a1a]">{li.description || '—'}</td>
-                <td className="py-2 text-right tabular-nums text-[#1a1a1a]">{formatCurrency(readLineItemRevenue(li) * factor)}</td>
+                <td className="py-2 text-right tabular-nums text-[#1a1a1a]">{formatCurrency(lineContractValue(li, contract))}</td>
               </tr>
             ))}
           </tbody>

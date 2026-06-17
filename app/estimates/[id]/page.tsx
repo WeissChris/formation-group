@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { loadEstimates, loadProposals, saveEstimate, loadTakeoffAsync } from '@/lib/storage'
 import { upsertEstimate, upsertProject, getEstimates, getTakeoff, upsertSubcontractor } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
-import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract, activeLineItems, estimateLabourHours } from '@/lib/estimateCalculations'
+import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract, activeLineItems, estimateLabourHours, lineContractValue, itemsContractValue } from '@/lib/estimateCalculations'
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
 import { getAllLibraryItems, getCategories, defaultMarkupForType } from '@/lib/itemLibrary'
@@ -327,7 +327,7 @@ function LineItemRow({
   onMoveDown,
   onUnitsFocus,
   index = 0,
-  factor = 1,
+  inclMarkups = 0,
 }: {
   item: EstimateLineItem
   categories: string[]
@@ -339,7 +339,7 @@ function LineItemRow({
   onMoveDown: () => void
   onUnitsFocus?: () => void
   index?: number
-  factor?: number
+  inclMarkups?: number
 }) {
   const update = (patch: Partial<EstimateLineItem>) => {
     const updated = { ...item, ...patch }
@@ -478,7 +478,7 @@ function LineItemRow({
         {fmtCurrency(item.revenue)}
       </td>
       <td className="py-1.5 px-1 w-24 text-right text-xs font-normal text-fg-heading tabular-nums pr-2">
-        {fmtCurrency(readLineItemRevenue(item) * factor)}
+        {fmtCurrency(inclMarkups)}
       </td>
       <td className="py-1.5 px-1">
         <div className="flex items-center gap-0.5">
@@ -997,15 +997,15 @@ export default function EstimateBuilderPage() {
     const clientName = linkedProposal?.clientName || projectName
     const projectAddress = linkedProposal?.projectAddress || ''
 
-    // Build baseline from estimate. Scale each category's revenue by the contract factor so the
-    // categories sum to the ex-GST contract (line revenue + project markups + rounding), not the
+    // Build baseline from estimate. Each category's revenue = its lines' contract value (line revenue
+    // + project markup on each line's own cost), so the categories sum to the ex-GST contract, not the
     // bare line subtotal.
-    const factor = getEstimateContract(estimate).factor
+    const contract = getEstimateContract(estimate)
     const categoryMap: Record<string, { revenue: number; cost: number }> = {}
     estimate.lineItems.filter(li => li.enabled !== false).forEach(li => {
       const cat = li.category || 'General'
       if (!categoryMap[cat]) categoryMap[cat] = { revenue: 0, cost: 0 }
-      categoryMap[cat].revenue += readLineItemRevenue(li) * factor
+      categoryMap[cat].revenue += lineContractValue(li, contract)
       categoryMap[cat].cost += li.total
     })
     const baselineCategories = Object.entries(categoryMap).map(([name, v]) => ({ name, ...v }))
@@ -1226,9 +1226,9 @@ export default function EstimateBuilderPage() {
   )
 
   const categories = Array.from(new Set(estimate.lineItems.map(i => i.category)))
-  // Per-line "sell incl. project markups" = line revenue x this factor (= exGst / lineRevenue, so it
-  // folds in the project markups + rounding). The column sums to the contract value.
-  const contractFactor = getEstimateContract(estimate).factor
+  // "Incl. markups" = each line's contract value (line revenue + the project markup on its OWN cost,
+  // BuildXact-style — see lineContractValue). The column sums to the contract value.
+  const contract = getEstimateContract(estimate)
   // For a variation, fold in the parent estimate's categories + sub-categories so it allocates to the
   // same structure (it rolls up to the same project), alongside the global library. Free-text still
   // adds a genuinely new one.
@@ -1581,7 +1581,7 @@ export default function EstimateBuilderPage() {
                       category={category}
                       total={catTotal}
                       revenue={catRevenue}
-                      factor={contractFactor}
+                      inclMarkups={itemsContractValue(catActive, contract)}
                       hidden={catHidden}
                       isFirst={catIdx === 0}
                       isLast={catIdx === categories.length - 1}
@@ -1634,7 +1634,7 @@ export default function EstimateBuilderPage() {
                               <td className="py-1 px-1 text-right text-2xs text-fg-muted tabular-nums">{fmtCurrency(subTotal)}</td>
                               <td />
                               <td className="py-1 px-1 text-right text-2xs text-fg-muted tabular-nums">{fmtCurrency(subRevenue)}</td>
-                              <td className="py-1 px-1 text-right text-2xs text-fg-muted tabular-nums">{fmtCurrency(subRevenue * contractFactor)}</td>
+                              <td className="py-1 px-1 text-right text-2xs text-fg-muted tabular-nums">{fmtCurrency(itemsContractValue(subActive, contract))}</td>
                               <td />
                             </tr>
                           )
@@ -1644,7 +1644,7 @@ export default function EstimateBuilderPage() {
                             <LineItemRow
                               key={item.id}
                               index={rowIdx++}
-                              factor={contractFactor}
+                              inclMarkups={lineContractValue(item, contract)}
                               item={item}
                               categories={allCategories}
                               onChange={(updated) => updateLineItem(item.id, updated)}
@@ -1698,7 +1698,7 @@ export default function EstimateBuilderPage() {
                       {fmtCurrency(activeLineItems(estimate).reduce((s, i) => s + readLineItemRevenue(i), 0))}
                     </td>
                     <td className="py-3 px-1 text-right text-sm font-semibold text-fg-heading tabular-nums">
-                      {fmtCurrency(activeLineItems(estimate).reduce((s, i) => s + readLineItemRevenue(i), 0) * contractFactor)}
+                      {fmtCurrency(itemsContractValue(activeLineItems(estimate), contract))}
                     </td>
                     <td />
                   </tr>
@@ -1782,7 +1782,7 @@ function CategoryHeaderRow({
   category,
   total,
   revenue,
-  factor,
+  inclMarkups,
   hidden,
   isFirst,
   isLast,
@@ -1796,7 +1796,7 @@ function CategoryHeaderRow({
   category: string
   total: number
   revenue: number
-  factor: number
+  inclMarkups: number
   hidden: boolean
   isFirst: boolean
   isLast: boolean
@@ -1841,7 +1841,7 @@ function CategoryHeaderRow({
         {fmtCurrency(revenue)}
       </td>
       <td className="py-2 px-1 text-right text-2xs text-fg-heading tabular-nums font-medium">
-        {fmtCurrency(revenue * factor)}
+        {fmtCurrency(inclMarkups)}
       </td>
       <td className="py-2 px-1">
         <div className="flex items-center gap-0.5">
