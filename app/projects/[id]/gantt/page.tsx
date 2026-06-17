@@ -1100,7 +1100,7 @@ export default function GanttPage() {
 
   return (
     <div
-      className="max-w-[1600px] mx-auto px-4 lg:px-8 py-12"
+      className="w-full px-3 lg:px-5 py-6"
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
