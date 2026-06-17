@@ -48,6 +48,17 @@ const DAY_LABELS = ['M', 'T', 'W', 'T', 'F']
 const MILESTONE_PRESETS = ['Practical Completion', 'Pool Dig', 'Steel Complete', 'Handover', 'Concrete Pour']
 const MILESTONE_COLOURS = ['#8A8580', '#C8A870', '#7A9E87', '#A07080', '#6A8CA0']
 
+// Compact currency for the dense cash-flow strip — "$192k", "$8.9k", "$420". Full figures like
+// $192,452 overflow the narrow forecast columns and become unreadable; this keeps the strip glanceable.
+function fmtK(n: number): string {
+  const neg = n < 0
+  const a = Math.abs(n)
+  const body = a < 1000 ? `$${Math.round(a)}`
+    : a < 10000 ? `$${(a / 1000).toFixed(1)}k`
+    : `$${Math.round(a / 1000)}k`
+  return neg ? `-${body}` : body
+}
+
 // ── types ─────────────────────────────────────────────────────────────────────
 
 type TimeView = 'weeks' | 'days'
@@ -968,6 +979,25 @@ export default function GanttPage() {
     return { rev, cost }
   })
 
+  // Collapse the cash-flow strip into runs: consecutive columns within the SAME week carrying the same
+  // figures become one colSpan cell. In days view this turns five cramped 24px repeats of the weekly
+  // figure into one wide, readable cell per week; in weeks view each column is its own week, so every
+  // run stays a single cell (unchanged).
+  const footerRuns = (() => {
+    const runs: { startIdx: number; span: number; rev: number; cost: number; weekKey: string }[] = []
+    for (let i = 0; i < weekTotals.length; i++) {
+      const { rev, cost } = weekTotals[i]
+      const weekKey = toISODate(snapToFriday(columns[i]))
+      const last = runs[runs.length - 1]
+      if (last && last.rev === rev && last.cost === cost && last.weekKey === weekKey) {
+        last.span++
+      } else {
+        runs.push({ startIdx: i, span: 1, rev, cost, weekKey })
+      }
+    }
+    return runs
+  })()
+
   // ── Today indicator column index ──────────────────────────────────────────
 
   const todayColIdx = (() => {
@@ -1512,25 +1542,26 @@ export default function GanttPage() {
 
             {/* ── Totals footer ── */}
             <tfoot>
-              <tr className="border-t-2 border-fg-border" style={{ height: 36 }}>
-                <td colSpan={4} className="px-3 py-2 border-r border-fg-border text-[10px] font-light tracking-architectural uppercase text-fg-muted">
-                  Weekly Cash Flow
+              <tr className="border-t-2 border-fg-border" style={{ height: 46 }}>
+                <td colSpan={4} className="px-3 py-2 border-r border-fg-border align-top">
+                  <div className="text-[10px] font-light tracking-architectural uppercase text-fg-muted">Weekly Cash Flow</div>
+                  <div className="text-[8px] font-light text-fg-muted/50 mt-0.5">revenue · cost · net / wk</div>
                 </td>
-                {weekTotals.map((wt, i) => {
-                  const net = wt.rev - wt.cost
-                  const hasActivity = wt.rev > 0 || wt.cost > 0
-                  const isMonthBoundary = monthBoundaryIndices.has(i)
+                {footerRuns.map((run, ri) => {
+                  const net = run.rev - run.cost
+                  const hasActivity = run.rev > 0 || run.cost > 0
+                  const isMonthBoundary = monthBoundaryIndices.has(run.startIdx)
                   return (
-                    <td key={i} style={{
-                      width: CELL_W,
+                    <td key={ri} colSpan={run.span} style={{
+                      width: run.span * CELL_W,
                       borderLeft: isMonthBoundary ? '2px solid rgba(255,255,255,0.12)' : undefined,
-                    }} className="border-r border-fg-border/30 px-0.5 py-1 align-top">
+                    }} className="border-r border-fg-border/30 px-1 py-1 align-top overflow-hidden">
                       {hasActivity && (
-                        <div className="text-center leading-tight">
-                          <div className="text-[8px] text-fg-muted/80 tabular-nums truncate">{formatCurrency(wt.rev)}</div>
-                          <div className="text-[8px] text-fg-muted/50 tabular-nums truncate">{formatCurrency(wt.cost)}</div>
-                          <div className={`text-[8px] font-light tabular-nums truncate ${net >= 0 ? 'text-fg-muted/70' : 'text-amber-600/70'}`}>
-                            {net >= 0 ? '+' : ''}{formatCurrency(net)}
+                        <div className="text-center leading-tight whitespace-nowrap">
+                          <div className="text-[10px] text-fg-heading/80 tabular-nums">{fmtK(run.rev)}</div>
+                          <div className="text-[10px] text-fg-muted/50 tabular-nums">{fmtK(run.cost)}</div>
+                          <div className={`text-[10px] font-medium tabular-nums ${net >= 0 ? 'text-green-600/90' : 'text-amber-600/90'}`}>
+                            {net >= 0 ? '+' : ''}{fmtK(net)}
                           </div>
                         </div>
                       )}
