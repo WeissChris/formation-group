@@ -745,12 +745,51 @@ export default function GanttPage() {
 
   // ── Save ──────────────────────────────────────────────────────────────────
 
+  // The revenue forecast is a DERIVED view of the schedule: regenerate the project's "(Gantt)" revenue
+  // rows from the current segments so the Revenue Calendar always matches the timeline. Manual rows
+  // (deposits, milestones — anything not tagged "(Gantt)") are never touched, and any actuals already
+  // entered against a Gantt row are carried forward by week so re-saving never wipes them. Returns the
+  // number of forecast weeks written.
+  const syncForecast = useCallback((currentEntries: GanttEntry[]): number => {
+    if (!project) return 0
+    const prevGantt = loadWeeklyRevenue().filter(w => w.projectId === id && (w.notes ?? '').trim().endsWith('(Gantt)'))
+    const actualByKey = new Map<string, number>()
+    for (const r of prevGantt) if (r.actualInvoiced) actualByKey.set(`${r.weekEnding}|${r.notes}`, r.actualInvoiced)
+
+    deleteGanttGeneratedRevenueByProject(id)   // only "(Gantt)" rows — manual entries survive
+
+    const rows: WeeklyRevenue[] = []
+    for (const entry of currentEntries) {
+      for (const seg of entry.segments) {
+        if (!seg.startDate || !seg.endDate || seg.weekCount <= 0) continue
+        const weeklyRev = seg.revenueAllocation / seg.weekCount
+        const weeklyCost = seg.costAllocation / seg.weekCount
+        const start = new Date(seg.startDate)
+        for (let w = 0; w < seg.weekCount; w++) {
+          const d = new Date(start); d.setDate(d.getDate() + w * 7)
+          const weekEnding = toISODate(snapToFriday(d))
+          const notes = `${entry.category}${seg.label ? ` — ${seg.label}` : ''} (Gantt)`
+          rows.push({
+            id: generateId(), projectId: project.id, projectName: project.name, entity: project.entity,
+            weekEnding, weekNumber: w + 1, plannedRevenue: weeklyRev,
+            actualInvoiced: actualByKey.get(`${weekEnding}|${notes}`) ?? 0,
+            isDeposit: false, scheduledCost: weeklyCost, notes,
+          })
+        }
+      }
+    }
+    for (const e of rows) saveWeeklyRevenue(e)
+    void replaceGanttRevenueRemote(id, rows)
+    return rows.length
+  }, [project, id])
+
   const handleSave = () => {
     const toSave = entries.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0))
     void upsertGanttEntries(id, toSave)   // localStorage (immediate) + Supabase (background)
+    const n = syncForecast(entries)       // build the revenue forecast in the same action
     hasUnsavedChangesRef.current = false   // persisted — nothing for flush to re-save
-    setSuccessMsg('Gantt saved')
-    setTimeout(() => setSuccessMsg(''), 2000)
+    setSuccessMsg(`Saved — timeline + revenue forecast (${n} forecast week${n === 1 ? '' : 's'})`)
+    setTimeout(() => setSuccessMsg(''), 3000)
   }
 
   // Flush unsaved edits to localStorage + Supabase on navigate-away / tab close / unmount. Without
@@ -762,7 +801,8 @@ export default function GanttPage() {
     hasUnsavedChangesRef.current = false
     const toSave = latestEntriesRef.current.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0))
     void upsertGanttEntries(id, toSave)
-  }, [id])
+    syncForecast(latestEntriesRef.current)   // keep the forecast in step on navigate-away too
+  }, [id, syncForecast])
 
   useEffect(() => {
     window.addEventListener('beforeunload', flushGantt)
@@ -822,8 +862,9 @@ export default function GanttPage() {
     const next = [...seeded, ...entries.filter(e => !covered.has(e.category))]
     setEntries(next)
     void upsertGanttEntries(id, next.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0)))
+    const fc = syncForecast(next)   // seed the revenue forecast alongside the timeline
     hasUnsavedChangesRef.current = false   // persisted — nothing for flush to re-save
-    setSuccessMsg(`Seeded ${seededCount} ${seededCount === 1 ? 'category' : 'categories'} from the estimate — set each task's start date + duration, then Generate Revenue Forecast`)
+    setSuccessMsg(`Seeded ${seededCount} ${seededCount === 1 ? 'category' : 'categories'} + ${fc} forecast week${fc === 1 ? '' : 's'} — adjust each task's start + duration and re-save to update both`)
     setTimeout(() => setSuccessMsg(''), 6000)
   }
 
@@ -870,75 +911,6 @@ export default function GanttPage() {
     const s = segs[0]
     if (!s) return ''
     return timeView === 'days' ? daysBetweenIso(s.startDate, s.endDate) + 1 : (s.weekCount || 1)
-  }
-
-  // ── Generate Revenue Forecast ─────────────────────────────────────────────
-
-  const handleGenerateForecast = async () => {
-    if (!project) return
-    const validEntries = entries.filter(e => e.segments.some(s => s.startDate && s.endDate && s.weekCount > 0))
-    if (validEntries.length === 0) {
-      setSuccessMsg('No Gantt segments with dates — set a start date + duration first')
-      setTimeout(() => setSuccessMsg(''), 3000)
-      return
-    }
-
-    // Count what will be regenerated vs what will be preserved so the user can decide.
-    const existing = loadWeeklyRevenue().filter(w => w.projectId === id)
-    const ganttRows = existing.filter(w => (w.notes ?? '').trim().endsWith('(Gantt)'))
-    const manualRows = existing.length - ganttRows.length
-    const summary =
-      `This will replace ${ganttRows.length} Gantt-generated revenue ${ganttRows.length === 1 ? 'row' : 'rows'} for this project.` +
-      (manualRows > 0
-        ? `\n${manualRows} hand-entered ${manualRows === 1 ? 'row will be preserved' : 'rows will be preserved'} (deposits, milestones, etc).`
-        : '') +
-      `\n\nContinue?`
-    if (existing.length > 0 && !window.confirm(summary)) return
-
-    // Only wipe Gantt-tagged rows — manual entries (deposits, milestones, anything not tagged
-    // "(Gantt)" in notes) survive regeneration.
-    deleteGanttGeneratedRevenueByProject(id)
-
-    const newEntries: WeeklyRevenue[] = []
-    let totalWeekly = 0
-
-    for (const entry of validEntries) {
-      for (const seg of entry.segments) {
-        if (!seg.startDate || !seg.endDate || seg.weekCount <= 0) continue
-        const weeklyRev = seg.revenueAllocation / seg.weekCount
-        const weeklyCost = seg.costAllocation / seg.weekCount
-        const start = new Date(seg.startDate)
-        for (let w = 0; w < seg.weekCount; w++) {
-          const d = new Date(start)
-          d.setDate(d.getDate() + w * 7)
-          const snapped = snapToFriday(d)
-          newEntries.push({
-            id: generateId(),
-            projectId: project.id,
-            projectName: project.name,
-            entity: project.entity,
-            weekEnding: toISODate(snapped),
-            weekNumber: w + 1,
-            plannedRevenue: weeklyRev,
-            actualInvoiced: 0,
-            isDeposit: false,
-            scheduledCost: weeklyCost,
-            notes: `${entry.category}${seg.label ? ` — ${seg.label}` : ''} (Gantt)`,
-          })
-          totalWeekly++
-        }
-      }
-    }
-
-    for (const e of newEntries) saveWeeklyRevenue(e)
-    // Persist to Supabase too: the Gantt itself + the regenerated forecast rows (replacing the
-    // project's prior "(Gantt)" rows in the DB so nothing goes stale).
-    await upsertGanttEntries(id, entries.filter(e => e.segments.length > 0))
-    await replaceGanttRevenueRemote(id, newEntries)
-    hasUnsavedChangesRef.current = false   // persisted — nothing for flush to re-save
-
-    setSuccessMsg(`Revenue forecast generated — ${totalWeekly} weekly entries added to Revenue Calendar`)
-    setTimeout(() => setSuccessMsg(''), 6000)
   }
 
   // ── Header groupings ──────────────────────────────────────────────────────
@@ -1225,17 +1197,14 @@ export default function GanttPage() {
             </button>
           )}
           <button onClick={handleSave}
-            className="px-4 py-2 border border-fg-border text-fg-heading text-xs font-light tracking-architectural uppercase hover:border-fg-heading transition-colors">
-            Save Gantt
-          </button>
-          <button onClick={handleGenerateForecast}
+            title="Saves the timeline and rebuilds the revenue forecast from it — they stay in sync"
             className="px-4 py-2 bg-fg-dark text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-fg-darker transition-colors">
-            Generate Revenue Forecast
+            Save timeline + forecast
           </button>
         </div>
       </div>
 
-      {successMsg.includes('Revenue Calendar') && (
+      {successMsg.includes('forecast') && (
         <div className="mb-4">
           <Link href="/revenue" className="text-xs font-light text-fg-heading underline">
             View Revenue Calendar →
