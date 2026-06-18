@@ -976,8 +976,9 @@ export default function GanttPage() {
       setTimeout(() => setSuccessMsg(''), 3000)
       return
     }
-    const DEFAULT_WEEKS = 2
+    const DEFAULT_WEEKS = 1   // no-labour scopes (materials/equipment only): 1-week placeholder
     const lastIdx = fridays.length - 1
+    const crew = crewSize
     // Start at the project's start week if set, else the first column.
     let cursor = project?.startDate ? fridays.findIndex(f => toISODate(f) >= project.startDate) : 0
     if (cursor < 0) cursor = 0
@@ -985,8 +986,16 @@ export default function GanttPage() {
     const seeded: GanttEntry[] = categories.map(cat => {
       const existing = entries.find(e => e.category === cat.category)
       if (existing && existing.segments.length > 0) return existing  // keep hand-drawn work
+      // Size the bar from the category's LABOUR budget so a freshly seeded scope reconciles to the
+      // estimate (scheduled labour hours ≈ budget) instead of every category getting the same length and
+      // over-stating labour 2x+. A weeks-view bar of W columns spans 5W-4 working days, so invert that to
+      // pick W from the budget's working days. Scopes with no labour keep the placeholder width (their
+      // cost is materials/equipment %, independent of bar length).
+      const labourBudget = cat.cost.labour ?? 0
+      const targetDays = labourBudget > 0 ? labourBudget / (STD_LABOUR_RATE * crew * 8) : 0
+      const weeks = labourBudget > 0 ? Math.max(1, Math.round((targetDays + 4) / 5)) : DEFAULT_WEEKS
       const sIdx = Math.min(cursor, lastIdx)
-      const eIdx = Math.min(cursor + DEFAULT_WEEKS - 1, lastIdx)
+      const eIdx = Math.min(sIdx + weeks - 1, lastIdx)
       cursor = eIdx + 1   // next category follows this one
       seededCount++
       const seg: GanttSegment = {
