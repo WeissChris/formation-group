@@ -499,16 +499,20 @@ export default function GanttPage() {
     const materialsBudget = (cat?.cost.material ?? 0) + (cat?.cost.subcontractor ?? 0)
     const equipmentBudget = cat?.cost.equipment ?? 0
     const catRevenue = cat?.budgetedRevenue ?? entry.budgetedRevenue
+    const clampPct = (v: number) => Math.max(0, Math.min(100, v))
     const derived = entry.segments.map(s => {
+      const hasDates = !!(s.startDate && s.endDate)
       // Labour only applies to scopes that carry a labour budget — otherwise the bar would conjure
-      // phantom labour cost (e.g. Preliminaries, which is equipment/sub only).
-      const labourHours = labourBudget > 0 ? workingDaysBetween(s.startDate, s.endDate) * crew * 8 : 0
-      const matPct = s.materialsPct ?? 100 / n   // default to an even split for legacy/new segments
-      const eqPct = s.equipmentPct ?? 100 / n
-      const cost = labourHours * STD_LABOUR_RATE + (matPct / 100) * materialsBudget + (eqPct / 100) * equipmentBudget
-      return { labourHours, matPct, eqPct, cost }
+      // phantom labour cost (e.g. Preliminaries, which is equipment/sub only). An undrawn period
+      // (no dates) carries no cost yet, so it can't over-allocate or dilute the revenue split.
+      const labourHours = labourBudget > 0 && hasDates ? workingDaysBetween(s.startDate, s.endDate) * crew * 8 : 0
+      const matPct = clampPct(s.materialsPct ?? 100 / n)   // default to an even split for legacy/new
+      const eqPct = clampPct(s.equipmentPct ?? 100 / n)
+      const cost = hasDates ? labourHours * STD_LABOUR_RATE + (matPct / 100) * materialsBudget + (eqPct / 100) * equipmentBudget : 0
+      return { hasDates, labourHours, matPct, eqPct, cost }
     })
     const totalCost = derived.reduce((sum, d) => sum + d.cost, 0)
+    const datedCount = derived.filter(d => d.hasDates).length
     return {
       ...entry,
       segments: entry.segments.map((s, i) => ({
@@ -517,14 +521,22 @@ export default function GanttPage() {
         equipmentPct: derived[i].eqPct,
         labourHours: derived[i].labourHours,
         costAllocation: derived[i].cost,
-        revenueAllocation: totalCost > 0 ? catRevenue * (derived[i].cost / totalCost) : 0,
+        // Revenue follows progress (cost-weighted). If a scope has revenue but no cost yet (zero-cost
+        // allowance, or all periods undrawn), spread it evenly across the dated periods rather than
+        // dropping the contract revenue to $0.
+        revenueAllocation: totalCost > 0
+          ? catRevenue * (derived[i].cost / totalCost)
+          : (derived[i].hasDates && datedCount > 0 ? catRevenue / datedCount : 0),
       })),
     }
   }
 
   const setCrew = (n: number) => {
-    if (!project) return
-    const updatedProject = { ...project, crewSize: n }
+    // Re-read the freshest project (a crew/other change may have synced in from another device) so we
+    // only override crewSize, not stale fields. Then upsert; safeUpsert's newer-guard still protects it.
+    const fresh = loadProjects().find(p => p.id === id) ?? project
+    if (!fresh) return
+    const updatedProject = { ...fresh, crewSize: n }
     setProject(updatedProject)
     void upsertProject(updatedProject)
     // Labour hours depend on crew → re-derive every category's segments with the new crew.
@@ -760,18 +772,14 @@ export default function GanttPage() {
 
   const handleAddSplit = (category: string) => {
     const entry = getEntry(category)
-    const n = entry.segments.length + 1
+    // A new period starts unallocated (0% materials/equipment, no dates) — you draw it and move the
+    // allocation across. Existing periods keep their allocation, so the totals never jump past 100%.
+    // recalcEntry (via updateEntry) re-derives cost/revenue from the per-period inputs.
     const newSeg: GanttSegment = {
       id: generateId(), startDate: '', endDate: '', weekCount: 0,
-      revenueAllocation: evenSplit(entry.budgetedRevenue, n),
-      costAllocation: evenSplit(entry.budgetedCost, n),
+      revenueAllocation: 0, costAllocation: 0, materialsPct: 0, equipmentPct: 0,
     }
-    const rebalanced = entry.segments.map(s => ({
-      ...s,
-      revenueAllocation: evenSplit(entry.budgetedRevenue, n),
-      costAllocation: evenSplit(entry.budgetedCost, n),
-    }))
-    updateEntry({ ...entry, segments: [...rebalanced, newSeg] })
+    updateEntry({ ...entry, segments: [...entry.segments, newSeg] })
   }
 
   // ── Subtask management ────────────────────────────────────────────────────
@@ -956,9 +964,12 @@ export default function GanttPage() {
     // Preserve any entries whose category is no longer in the estimate (defensive).
     const covered = new Set(categories.map(c => c.category))
     const next = [...seeded, ...entries.filter(e => !covered.has(e.category))]
-    setEntries(next)
-    void upsertGanttEntries(id, next.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0)))
-    const fc = syncForecast(next)   // seed the revenue forecast alongside the timeline
+    // Derive each seeded scope's allocation up front so the reconciliation + forecast are right from
+    // the first click (not only after the scope is touched).
+    const seededRecalc = next.map(e => recalcEntry(e))
+    setEntries(seededRecalc)
+    void upsertGanttEntries(id, seededRecalc.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0)))
+    const fc = syncForecast(seededRecalc)   // seed the revenue forecast alongside the timeline
     hasUnsavedChangesRef.current = false   // persisted — nothing for flush to re-save
     setSuccessMsg(`Seeded ${seededCount} ${seededCount === 1 ? 'category' : 'categories'} + ${fc} forecast week${fc === 1 ? '' : 's'} — adjust each task's start + duration and re-save to update both`)
     setTimeout(() => setSuccessMsg(''), 6000)
@@ -1428,12 +1439,17 @@ export default function GanttPage() {
                 const hasSubtasks = subtasks.length > 0
                 // Allocation reconciliation vs budget: labour HOURS scheduled (bar × crew) and the
                 // material/equipment % spread, so the foreman sees over/under at a glance.
-                const labHrsAlloc = Math.round(segs.reduce((s, sg) => s + (sg.labourHours ?? 0), 0))
                 const labHrsBudget = Math.round((cat.cost.labour ?? 0) / STD_LABOUR_RATE)
+                // Compute the allocation status LIVE off the bars + crew (don't depend on stored
+                // labourHours, which is only set once a scope is edited) so a freshly seeded/loaded
+                // schedule reconciles immediately. Material/equipment default to an even split.
+                const labHrsAlloc = (cat.cost.labour ?? 0) > 0
+                  ? Math.round(segs.reduce((s, sg) => s + workingDaysBetween(sg.startDate, sg.endDate) * crewSize * 8, 0))
+                  : 0
                 const matBudgetCat = (cat.cost.material ?? 0) + (cat.cost.subcontractor ?? 0)
                 const eqBudgetCat = cat.cost.equipment ?? 0
-                const matAlloc = Math.round(segs.reduce((s, sg) => s + (sg.materialsPct ?? 0), 0))
-                const eqAlloc = Math.round(segs.reduce((s, sg) => s + (sg.equipmentPct ?? 0), 0))
+                const matAlloc = Math.round(segs.reduce((s, sg) => s + (sg.materialsPct ?? (segs.length ? 100 / segs.length : 0)), 0))
+                const eqAlloc = Math.round(segs.reduce((s, sg) => s + (sg.equipmentPct ?? (segs.length ? 100 / segs.length : 0)), 0))
                 const scheduled = segs.some(sg => sg.startDate)
 
                 return (
