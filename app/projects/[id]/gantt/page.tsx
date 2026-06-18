@@ -196,6 +196,7 @@ function loadMilestones(projectId: string): Milestone[] {
 
 interface SegEditProps {
   seg: GanttSegment
+  labourBudget: number
   materialsBudget: number
   equipmentBudget: number
   crew: number
@@ -205,14 +206,19 @@ interface SegEditProps {
   anchorRef: React.RefObject<HTMLDivElement | null>
 }
 
-function SegmentPopover({ seg, materialsBudget, equipmentBudget, crew, onUpdate, onDelete, onClose, anchorRef }: SegEditProps) {
+function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, crew, onUpdate, onDelete, onClose, anchorRef }: SegEditProps) {
   const [label, setLabel] = useState(seg.label ?? '')
   const [matPct, setMatPct] = useState(seg.materialsPct != null ? String(Math.round(seg.materialsPct)) : '')
   const [eqPct, setEqPct] = useState(seg.equipmentPct != null ? String(Math.round(seg.equipmentPct)) : '')
 
-  // Labour is read straight off the bar: working days × crew × 8h. Materials/equipment are % of budget.
+  // Only show the cost types this scope actually carries. Labour is read off the bar (working days ×
+  // crew × 8h) — but only when the scope has a labour budget (else no phantom labour). Materials/
+  // equipment are % of their budget.
+  const hasLabour = labourBudget > 0
+  const hasMaterials = materialsBudget > 0
+  const hasEquipment = equipmentBudget > 0
   const workDays = workingDaysBetween(seg.startDate, seg.endDate)
-  const labourHours = workDays * crew * 8
+  const labourHours = hasLabour ? workDays * crew * 8 : 0
   const labourCost = labourHours * STD_LABOUR_RATE
   const matCost = (parseFloat(matPct) || 0) / 100 * materialsBudget
   const eqCost = (parseFloat(eqPct) || 0) / 100 * equipmentBudget
@@ -247,23 +253,29 @@ function SegmentPopover({ seg, materialsBudget, equipmentBudget, crew, onUpdate,
           <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Slab prep"
             className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading" />
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="text-2xs font-light text-fg-muted block mb-1">Materials %</label>
-            <input type="number" value={matPct} onChange={e => setMatPct(e.target.value)} placeholder="0"
-              className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
+        {(hasMaterials || hasEquipment) && (
+          <div className="grid grid-cols-2 gap-2">
+            {hasMaterials && (
+              <div>
+                <label className="text-2xs font-light text-fg-muted block mb-1">Materials %</label>
+                <input type="number" value={matPct} onChange={e => setMatPct(e.target.value)} placeholder="0"
+                  className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
+              </div>
+            )}
+            {hasEquipment && (
+              <div>
+                <label className="text-2xs font-light text-fg-muted block mb-1">Equipment %</label>
+                <input type="number" value={eqPct} onChange={e => setEqPct(e.target.value)} placeholder="0"
+                  className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
+              </div>
+            )}
           </div>
-          <div>
-            <label className="text-2xs font-light text-fg-muted block mb-1">Equipment %</label>
-            <input type="number" value={eqPct} onChange={e => setEqPct(e.target.value)} placeholder="0"
-              className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
-          </div>
-        </div>
-        {/* Derived from the bar length + crew + the %s */}
+        )}
+        {/* Derived from the bar length + crew + the %s — only the cost types this scope carries */}
         <div className="text-[10px] text-fg-muted space-y-0.5 border-t border-fg-border/50 pt-2">
-          <div className="flex justify-between"><span>Labour · {workDays}d × {crew} crew</span><span className="tabular-nums text-fg-heading">{labourHours}h · {formatCurrency(labourCost)}</span></div>
-          <div className="flex justify-between"><span>Materials</span><span className="tabular-nums">{formatCurrency(matCost)}</span></div>
-          <div className="flex justify-between"><span>Equipment</span><span className="tabular-nums">{formatCurrency(eqCost)}</span></div>
+          {hasLabour && <div className="flex justify-between"><span>Labour · {workDays}d × {crew} crew</span><span className="tabular-nums text-fg-heading">{labourHours}h · {formatCurrency(labourCost)}</span></div>}
+          {hasMaterials && <div className="flex justify-between"><span>Materials</span><span className="tabular-nums">{formatCurrency(matCost)}</span></div>}
+          {hasEquipment && <div className="flex justify-between"><span>Equipment</span><span className="tabular-nums">{formatCurrency(eqCost)}</span></div>}
           <div className="flex justify-between font-medium text-fg-heading pt-0.5"><span>Period cost</span><span className="tabular-nums">{formatCurrency(periodCost)}</span></div>
         </div>
         <div className="flex justify-between items-center pt-1">
@@ -483,11 +495,14 @@ export default function GanttPage() {
     const n = entry.segments.length
     if (n === 0) return entry
     const cat = categories.find(c => c.category === entry.category)
+    const labourBudget = cat?.cost.labour ?? 0
     const materialsBudget = (cat?.cost.material ?? 0) + (cat?.cost.subcontractor ?? 0)
     const equipmentBudget = cat?.cost.equipment ?? 0
     const catRevenue = cat?.budgetedRevenue ?? entry.budgetedRevenue
     const derived = entry.segments.map(s => {
-      const labourHours = workingDaysBetween(s.startDate, s.endDate) * crew * 8
+      // Labour only applies to scopes that carry a labour budget — otherwise the bar would conjure
+      // phantom labour cost (e.g. Preliminaries, which is equipment/sub only).
+      const labourHours = labourBudget > 0 ? workingDaysBetween(s.startDate, s.endDate) * crew * 8 : 0
       const matPct = s.materialsPct ?? 100 / n   // default to an even split for legacy/new segments
       const eqPct = s.equipmentPct ?? 100 / n
       const cost = labourHours * STD_LABOUR_RATE + (matPct / 100) * materialsBudget + (eqPct / 100) * equipmentBudget
@@ -1686,11 +1701,13 @@ export default function GanttPage() {
         }
         if (!seg) return null
         const cat = categories.find(c => c.category === popover.category)
+        const labBudget = cat?.cost.labour ?? 0
         const matBudget = (cat?.cost.material ?? 0) + (cat?.cost.subcontractor ?? 0)
         const eqBudget = cat?.cost.equipment ?? 0
         return (
           <SegmentPopover
             seg={seg}
+            labourBudget={labBudget}
             materialsBudget={matBudget}
             equipmentBudget={eqBudget}
             crew={crewSize}
