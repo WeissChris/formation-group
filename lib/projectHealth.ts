@@ -75,11 +75,16 @@ export function calcProjectHealth(
   // ── Forecast GP% ──────────────────────────────────────────────────────────
   const acceptedEstimate = estimates.find(e => e.status === 'accepted' && !e.parentEstimateId)
   const forecastRevenue = project.contractValue || 0
-  const forecastCost = ganttEntries.length > 0
-    ? ganttEntries.reduce((s, g) => s + g.budgetedCost, 0)
-    : acceptedEstimate
-      ? acceptedEstimate.lineItems.reduce((s, li) => s + li.total, 0)
-      : 0
+  // Forecast cost = the FULL budget. Prefer the accepted estimate's line-item total: the Gantt is a
+  // scheduling tool that's often only partially built, so summing its entries understates cost and
+  // inflates GP (a Gantt with just Preliminaries once showed 98% GP on a 28% job). Fall back to the
+  // Gantt sum only when there's no accepted estimate to budget from.
+  const estimateCost = acceptedEstimate
+    ? acceptedEstimate.lineItems.reduce((s, li) => s + li.total, 0)
+    : 0
+  const forecastCost = estimateCost > 0
+    ? estimateCost
+    : ganttEntries.reduce((s, g) => s + g.budgetedCost, 0)
   const forecastGP = forecastRevenue > 0 && forecastCost > 0
     ? ((forecastRevenue - forecastCost) / forecastRevenue) * 100
     : null
