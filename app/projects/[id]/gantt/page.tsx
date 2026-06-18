@@ -1762,6 +1762,7 @@ export default function GanttPage() {
         const eqUsed = otherSegs.reduce((s, sg) => s + (sg.equipmentPct ?? 100 / segCount), 0)
         return (
           <SegmentPopover
+            key={`${popover.subtaskId ?? 'main'}-${popover.segId}`}
             seg={seg}
             labourBudget={labBudget}
             materialsBudget={matBudget}
