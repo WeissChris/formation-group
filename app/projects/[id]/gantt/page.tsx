@@ -24,6 +24,7 @@ import {
 } from '@/lib/utils'
 import { readLineItemRevenue, getEstimateContract, lineContractValue, addLineCost, emptyCostBreakdown, STD_LABOUR_RATE, type CostBreakdown } from '@/lib/estimateCalculations'
 import { normalizedPcts, rebalancedPcts, datedPeriodCount } from '@/lib/ganttAllocation'
+import { labourWorkingDays } from '@/lib/ganttSchedule'
 import type { Project, Estimate, GanttEntry, GanttSegment, GanttSubtask, WeeklyRevenue } from '@/types'
 import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react'
 
@@ -31,6 +32,7 @@ import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react
 const CELL_W_WEEKS = 48
 const CELL_W_DAYS = 24
 const WEEK_COUNT = 52
+const DAYS_VIEW_WEEKS = 26   // Days view renders this many weeks of working-day columns (was 12 — too short for multi-month jobs)
 const COL_CATEGORY = 200
 const COL_CREW = 64
 const COL_BUDGET = 124
@@ -101,7 +103,7 @@ function getWorkingDays(fridays: Date[]): Date[] {
   const monday = new Date(firstFri)
   monday.setDate(monday.getDate() - 4) // Friday - 4 = Monday
   const days: Date[] = []
-  const totalWeeks = Math.min(12, fridays.length)
+  const totalWeeks = Math.min(DAYS_VIEW_WEEKS, fridays.length)
   for (let w = 0; w < totalWeeks; w++) {
     for (let d = 0; d < 5; d++) {
       const day = new Date(monday)
@@ -148,20 +150,8 @@ function addDays(isoDate: string, days: number): string {
   return toISODate(d)
 }
 
-// Working days (Mon–Fri) in an inclusive ISO date range — the spine of the labour-hours model
-// (working days × crew × 8h). A bar is the days the crew is on that scope, so its length sets the hours.
-function workingDaysBetween(startIso: string, endIso: string): number {
-  if (!startIso || !endIso) return 0
-  const d = new Date(`${startIso}T00:00:00`)
-  const end = new Date(`${endIso}T00:00:00`)
-  let count = 0
-  while (d <= end) {
-    const dow = d.getDay()
-    if (dow !== 0 && dow !== 6) count++
-    d.setDate(d.getDate() + 1)
-  }
-  return count
-}
+// Labour hours fall out of a bar's length: labourWorkingDays × crew × 8. labourWorkingDays lives in
+// lib/ganttSchedule (a Weeks-view bar means 5 working days per week, not the Fri→Fri calendar count).
 
 function extractCategories(estimate: Estimate): CategorySummary[] {
   // Each posting's budgeted revenue = its lines' contract value (line revenue + project markup on each
@@ -227,7 +217,7 @@ function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, c
   const hasLabour = labourBudget > 0
   const hasMaterials = materialsBudget > 0
   const hasEquipment = equipmentBudget > 0
-  const workDays = workingDaysBetween(seg.startDate, seg.endDate)
+  const workDays = labourWorkingDays(seg.startDate, seg.endDate)
   const labourHours = hasLabour ? workDays * crew * 8 : 0
   const labourCost = labourHours * STD_LABOUR_RATE
   const matCost = (parseFloat(matPct) || 0) / 100 * materialsBudget
@@ -526,7 +516,7 @@ export default function GanttPage() {
       // Labour only applies to scopes that carry a labour budget — otherwise the bar would conjure
       // phantom labour cost (e.g. Preliminaries, which is equipment/sub only). An undrawn period
       // (no dates) carries no cost yet, so it can't over-allocate or dilute the revenue split.
-      const labourHours = labourBudget > 0 && hasDates ? workingDaysBetween(s.startDate, s.endDate) * crew * 8 : 0
+      const labourHours = labourBudget > 0 && hasDates ? labourWorkingDays(s.startDate, s.endDate) * crew * 8 : 0
       const matPct = matPcts[i]
       const eqPct = eqPcts[i]
       const cost = hasDates ? labourHours * STD_LABOUR_RATE + (matPct / 100) * materialsBudget + (eqPct / 100) * equipmentBudget : 0
@@ -981,13 +971,13 @@ export default function GanttPage() {
       const existing = entries.find(e => e.category === cat.category)
       if (existing && existing.segments.length > 0) return existing  // keep hand-drawn work
       // Size the bar from the category's LABOUR budget so a freshly seeded scope reconciles to the
-      // estimate (scheduled labour hours ≈ budget) instead of every category getting the same length and
-      // over-stating labour 2x+. A weeks-view bar of W columns spans 5W-4 working days, so invert that to
-      // pick W from the budget's working days. Scopes with no labour keep the placeholder width (their
-      // cost is materials/equipment %, independent of bar length).
+      // estimate (scheduled labour hours ≈ budget) instead of every category getting the same length. A
+      // weeks-view bar of W weeks now counts 5W labour days (labourWorkingDays), so W = budget days ÷ 5.
+      // Sub-week scopes land on the 1-week minimum here — refine those in Days view. Scopes with no labour
+      // keep the placeholder width (their cost is materials/equipment %, independent of bar length).
       const labourBudget = cat.cost.labour ?? 0
       const targetDays = labourBudget > 0 ? labourBudget / (STD_LABOUR_RATE * crew * 8) : 0
-      const weeks = labourBudget > 0 ? Math.max(1, Math.round((targetDays + 4) / 5)) : DEFAULT_WEEKS
+      const weeks = labourBudget > 0 ? Math.max(1, Math.round(targetDays / 5)) : DEFAULT_WEEKS
       const sIdx = Math.min(cursor, lastIdx)
       const eIdx = Math.min(sIdx + weeks - 1, lastIdx)
       cursor = eIdx + 1   // next category follows this one
@@ -1085,7 +1075,7 @@ export default function GanttPage() {
     }
   } else {
     // For days view, group by week (5 days each)
-    const displayWeeks = Math.min(12, fridays.length)
+    const displayWeeks = Math.min(DAYS_VIEW_WEEKS, fridays.length)
     for (let w = 0; w < displayWeeks; w++) {
       const fri = fridays[w]
       const m = `${SHORT_MONTH_NAMES[fri.getMonth()]} ${fri.getDate()}`
@@ -1496,7 +1486,7 @@ export default function GanttPage() {
                 // schedule reconciles immediately. Material/equipment read each period's resolved % —
                 // recalcEntry has already filled any unset period from the remaining budget on load.
                 const labHrsAlloc = (cat.cost.labour ?? 0) > 0
-                  ? Math.round(segs.reduce((s, sg) => s + workingDaysBetween(sg.startDate, sg.endDate) * crewSize * 8, 0))
+                  ? Math.round(segs.reduce((s, sg) => s + labourWorkingDays(sg.startDate, sg.endDate) * crewSize * 8, 0))
                   : 0
                 const matBudgetCat = (cat.cost.material ?? 0) + (cat.cost.subcontractor ?? 0)
                 const eqBudgetCat = cat.cost.equipment ?? 0
