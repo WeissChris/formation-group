@@ -8,6 +8,7 @@ import { formatCurrency, SHORT_MONTH_NAMES, generateId, toISODate } from '@/lib/
 import type { Project, GanttEntry } from '@/types'
 import EntityBadge from '@/components/EntityBadge'
 import { scheduleStatus, healthColour, healthBg, getForecastCompletion } from '@/lib/projectHealth'
+import { isLiveProject } from '@/lib/stageConfig'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -103,7 +104,7 @@ export default function ProgrammePage() {
   const foremanOptions = ['all', ...Array.from(new Set(projects.map(p => p.foreman).filter(Boolean)))]
 
   const filtered = projects.filter(p => {
-    if (filterStatus === 'active' && p.status !== 'active') return false
+    if (filterStatus === 'active' && !isLiveProject(p)) return false
     if (filterEntity !== 'all' && p.entity !== filterEntity) return false
     if (filterForeman !== 'all' && p.foreman !== filterForeman) return false
     return true

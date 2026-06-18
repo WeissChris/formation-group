@@ -10,6 +10,7 @@ import { getEstimateTotals } from '@/lib/estimateCalculations'
 import type { Project, WeeklyRevenue, GanttEntry, WeeklyActual } from '@/types'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { calcProjectHealth, scheduleStatus } from '@/lib/projectHealth'
+import { isLiveProject } from '@/lib/stageConfig'
 import { getLiveJobs, triggerXeroSync, triggerManualSnapshot, type LiveJobRow as LiveJobApiRow } from '@/lib/xero'
 import { computeLiveJobRow, computePortfolioTotals, type LiveJobRow } from '@/lib/liveJobs'
 import { LiveJobsTable } from '@/components/LiveJobsTable'
@@ -80,7 +81,7 @@ export default function DashboardPage() {
     setRevenue(loadWeeklyRevenue())
     setAllDesignProjects(loadDesignProjects())
     setAllEstimates(loadEstimates())
-    const activeFormation = projs.filter(p => p.status === 'active' && p.entity === 'formation')
+    const activeFormation = projs.filter(p => isLiveProject(p) && p.entity === 'formation')
     setAllActuals(activeFormation.flatMap(p => loadWeeklyActuals(p.id)))
     setAllGantt(activeFormation.flatMap(p => loadGanttEntries(p.id)))
     setLoaded(true)
@@ -156,7 +157,7 @@ export default function DashboardPage() {
   )
 
   const now = new Date()
-  const activeProjects = projects.filter(p => p.status === 'active')
+  const activeProjects = projects.filter(isLiveProject)
   const formationProjects = activeProjects.filter(p => p.entity === 'formation')
   const lumeProjects     = activeProjects.filter(p => p.entity === 'lume')
   const activeDesignProjects = allDesignProjects.filter(p =>
@@ -500,7 +501,7 @@ export default function DashboardPage() {
   })
 
   // Schedule slippage flags — from baseline programme
-  projects.filter(p => p.baseline?.plannedCompletion && p.status === 'active').forEach(p => {
+  projects.filter(p => p.baseline?.plannedCompletion && isLiveProject(p)).forEach(p => {
     const { status, daysSlippage } = scheduleStatus(p)
     if (status !== 'green' && daysSlippage !== null) {
       attentionItems.push({
@@ -514,7 +515,7 @@ export default function DashboardPage() {
   })
 
   // Baseline health flags — cost increase, schedule slippage, revenue behind plan
-  const activeProjectsWithBaseline = projects.filter(p => p.baseline && p.status === 'active')
+  const activeProjectsWithBaseline = projects.filter(p => p.baseline && isLiveProject(p))
   activeProjectsWithBaseline.forEach(p => {
     const pGantt = allGantt.filter(g => g.projectId === p.id)
     const pActuals = allActuals.filter(a => a.projectId === p.id)

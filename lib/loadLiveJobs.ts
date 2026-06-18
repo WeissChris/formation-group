@@ -3,6 +3,7 @@
 // without duplicating the join.
 
 import { loadProjects, loadEstimates, loadProgressClaims } from './storage'
+import { isLiveProject } from './stageConfig'
 import { getLiveJobs } from './xero'
 import { computeLiveJobRow, computePortfolioTotals, type LiveJobRow, type PortfolioTotals } from './liveJobs'
 import type { Project } from '@/types'
@@ -17,7 +18,7 @@ export interface LoadedLiveJobs {
 
 export async function loadLiveJobs(): Promise<LoadedLiveJobs> {
   const projects = loadProjects()
-  const active = projects.filter(p => p.status === 'active')
+  const active = projects.filter(isLiveProject)
   const allEstimates = loadEstimates()
   const { items, configured } = await getLiveJobs()
   const costMap = new Map(items.map(it => [it.project_id, it]))

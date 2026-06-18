@@ -1,4 +1,4 @@
-import type { ProjectStage } from '@/types'
+import type { Project, ProjectStage } from '@/types'
 
 export const STAGE_LABELS: Record<ProjectStage, string> = {
   design: 'Design',
@@ -82,4 +82,16 @@ export function defaultStageForStatus(status: string): ProjectStage {
   if (status === 'active') return 'active'
   if (status === 'complete' || status === 'invoiced') return 'completion'
   return 'estimating'
+}
+
+// Stages where a job is committed and in-flight — past the design/estimating pipeline, not yet a closed
+// record. The "active jobs" surfaces (dashboard, programme, reports, live-jobs table) key off this rather
+// than the coarse `status` field, which lags: a job can be on site at stage 'active' while status is
+// still 'planning'. A finished job (status complete/invoiced) drops off regardless of stage.
+export const LIVE_STAGES: ProjectStage[] = ['contracted', 'pre_start', 'active', 'completion', 'handover']
+
+export function isLiveProject(p: Pick<Project, 'stage' | 'status'>): boolean {
+  if (p.status === 'complete' || p.status === 'invoiced') return false
+  if (p.stage) return LIVE_STAGES.includes(p.stage)
+  return p.status === 'active'   // legacy projects with no stage set
 }

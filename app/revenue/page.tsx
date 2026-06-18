@@ -8,6 +8,7 @@ import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getRevenue, upsertRevenue, deleteWeeklyRevenueAsync } from '@/lib/storageAsync'
 import { getProposalPhases, phasesTotal } from '@/lib/proposalPhases'
 import { getEstimateTotals } from '@/lib/estimateCalculations'
+import { isLiveProject } from '@/lib/stageConfig'
 import {
   formatCurrency, getFridaysInMonth, getFinancialYear,
   generateId, snapToFriday, toISODate, formatDayMonth,
@@ -333,7 +334,7 @@ export default function RevenuePage() {
     // Lume GP% — revenue-weighted average across accepted lume_quotes when available;
     // otherwise the LUME_DEFAULT_GP constant. Track which source was used so the caption is honest.
     const allLoadedProjects = loadProjects()
-    const lumeProjects = allLoadedProjects.filter(p => p.entity === 'lume' && p.status === 'active')
+    const lumeProjects = allLoadedProjects.filter(p => p.entity === 'lume' && isLiveProject(p))
     let calcLumeGP: number | null = null
     let calcLumeGPIsFallback = false
     if (lumeProjects.length > 0) {
