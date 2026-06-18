@@ -216,8 +216,12 @@ function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, m
   const clampEq = (v: number) => Math.max(0, Math.min(eqAvailable, v))
 
   const [label, setLabel] = useState(seg.label ?? '')
-  const [matPct, setMatPct] = useState(seg.materialsPct != null ? String(clampMat(Math.round(seg.materialsPct))) : '')
-  const [eqPct, setEqPct] = useState(seg.equipmentPct != null ? String(clampEq(Math.round(seg.equipmentPct))) : '')
+  const [matPct, setMatPct] = useState(seg.materialsPct != null ? String(Math.round(seg.materialsPct)) : '')
+  const [eqPct, setEqPct] = useState(seg.equipmentPct != null ? String(Math.round(seg.equipmentPct)) : '')
+
+  // Remaining unallocated budget across all periods — live as you type (this period + the others ≤ 100%).
+  const matLeft = Math.max(0, Math.round(100 - materialsUsedElsewhere - (parseFloat(matPct) || 0)))
+  const eqLeft = Math.max(0, Math.round(100 - equipmentUsedElsewhere - (parseFloat(eqPct) || 0)))
 
   // Only show the cost types this scope actually carries. Labour is read off the bar (working days ×
   // crew × 8h) — but only when the scope has a labour budget (else no phantom labour). Materials/
@@ -269,7 +273,7 @@ function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, m
                 <input type="number" min={0} max={matAvailable} value={matPct}
                   onChange={e => setMatPct(e.target.value === '' ? '' : String(clampMat(parseFloat(e.target.value) || 0)))} placeholder="0"
                   className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
-                <p className="text-[9px] text-fg-muted/50 mt-0.5">{matAvailable}% left</p>
+                <p className="text-[9px] text-fg-muted/50 mt-0.5">{matLeft}% left</p>
               </div>
             )}
             {hasEquipment && (
@@ -278,7 +282,7 @@ function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, m
                 <input type="number" min={0} max={eqAvailable} value={eqPct}
                   onChange={e => setEqPct(e.target.value === '' ? '' : String(clampEq(parseFloat(e.target.value) || 0)))} placeholder="0"
                   className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
-                <p className="text-[9px] text-fg-muted/50 mt-0.5">{eqAvailable}% left</p>
+                <p className="text-[9px] text-fg-muted/50 mt-0.5">{eqLeft}% left</p>
               </div>
             )}
           </div>
@@ -568,6 +572,18 @@ export default function GanttPage() {
       return [...prev, recalculated]
     })
   }
+
+  // One-time on load: re-derive every loaded scope's allocation so the display + reconciliation are
+  // right immediately (labour from bars, materials/equipment capped to ≤100% total). Cleans up any
+  // saved over-allocation before the popover reads it. Idempotent for already-granular gantts; not
+  // persisted until the user saves.
+  const didInitialRecalc = useRef(false)
+  useEffect(() => {
+    if (didInitialRecalc.current || !estimate || entries.length === 0) return
+    didInitialRecalc.current = true
+    setEntries(prev => prev.map(e => recalcEntry(e)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimate, entries.length])
 
   const rebalanceEntry = (entry: GanttEntry): GanttEntry => {
     const n = entry.segments.length
