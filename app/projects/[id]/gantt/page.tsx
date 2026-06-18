@@ -147,6 +147,21 @@ function addDays(isoDate: string, days: number): string {
   return toISODate(d)
 }
 
+// Working days (Mon–Fri) in an inclusive ISO date range — the spine of the labour-hours model
+// (working days × crew × 8h). A bar is the days the crew is on that scope, so its length sets the hours.
+function workingDaysBetween(startIso: string, endIso: string): number {
+  if (!startIso || !endIso) return 0
+  const d = new Date(`${startIso}T00:00:00`)
+  const end = new Date(`${endIso}T00:00:00`)
+  let count = 0
+  while (d <= end) {
+    const dow = d.getDay()
+    if (dow !== 0 && dow !== 6) count++
+    d.setDate(d.getDate() + 1)
+  }
+  return count
+}
+
 function extractCategories(estimate: Estimate): CategorySummary[] {
   // Each posting's budgeted revenue = its lines' contract value (line revenue + project markup on each
   // line's own cost), so the Gantt's budgeted revenue sums to the ex-GST contract, matching the baseline.
@@ -181,23 +196,34 @@ function loadMilestones(projectId: string): Milestone[] {
 
 interface SegEditProps {
   seg: GanttSegment
+  materialsBudget: number
+  equipmentBudget: number
+  crew: number
   onUpdate: (seg: GanttSegment) => void
   onDelete: () => void
   onClose: () => void
   anchorRef: React.RefObject<HTMLDivElement | null>
 }
 
-function SegmentPopover({ seg, onUpdate, onDelete, onClose, anchorRef }: SegEditProps) {
+function SegmentPopover({ seg, materialsBudget, equipmentBudget, crew, onUpdate, onDelete, onClose, anchorRef }: SegEditProps) {
   const [label, setLabel] = useState(seg.label ?? '')
-  const [rev, setRev] = useState(String(Math.round(seg.revenueAllocation)))
-  const [cost, setCost] = useState(String(Math.round(seg.costAllocation)))
+  const [matPct, setMatPct] = useState(seg.materialsPct != null ? String(Math.round(seg.materialsPct)) : '')
+  const [eqPct, setEqPct] = useState(seg.equipmentPct != null ? String(Math.round(seg.equipmentPct)) : '')
+
+  // Labour is read straight off the bar: working days × crew × 8h. Materials/equipment are % of budget.
+  const workDays = workingDaysBetween(seg.startDate, seg.endDate)
+  const labourHours = workDays * crew * 8
+  const labourCost = labourHours * STD_LABOUR_RATE
+  const matCost = (parseFloat(matPct) || 0) / 100 * materialsBudget
+  const eqCost = (parseFloat(eqPct) || 0) / 100 * equipmentBudget
+  const periodCost = labourCost + matCost + eqCost
 
   const apply = () => {
     onUpdate({
       ...seg,
       label: label || undefined,
-      revenueAllocation: parseFloat(rev) || seg.revenueAllocation,
-      costAllocation: parseFloat(cost) || seg.costAllocation,
+      materialsPct: parseFloat(matPct) || 0,
+      equipmentPct: parseFloat(eqPct) || 0,
     })
     onClose()
   }
@@ -208,30 +234,37 @@ function SegmentPopover({ seg, onUpdate, onDelete, onClose, anchorRef }: SegEdit
 
   return (
     <div
-      className="fixed z-50 bg-fg-bg border border-fg-border shadow-xl p-4 w-64"
+      className="fixed z-50 bg-fg-bg border border-fg-border shadow-xl p-4 w-72"
       style={{ top, left }}
     >
       <div className="flex items-center justify-between mb-3">
-        <span className="text-[10px] font-light tracking-architectural uppercase text-fg-muted">Edit Segment</span>
+        <span className="text-[10px] font-light tracking-architectural uppercase text-fg-muted">Work period allocation</span>
         <button onClick={onClose}><X className="w-3 h-3 text-fg-muted" /></button>
       </div>
       <div className="space-y-3">
         <div>
           <label className="text-2xs font-light text-fg-muted block mb-1">Label (optional)</label>
-          <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Base prep"
+          <input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Slab prep"
             className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading" />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="text-2xs font-light text-fg-muted block mb-1">Revenue $</label>
-            <input type="number" value={rev} onChange={e => setRev(e.target.value)}
+            <label className="text-2xs font-light text-fg-muted block mb-1">Materials %</label>
+            <input type="number" value={matPct} onChange={e => setMatPct(e.target.value)} placeholder="0"
               className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
           </div>
           <div>
-            <label className="text-2xs font-light text-fg-muted block mb-1">Cost $</label>
-            <input type="number" value={cost} onChange={e => setCost(e.target.value)}
+            <label className="text-2xs font-light text-fg-muted block mb-1">Equipment %</label>
+            <input type="number" value={eqPct} onChange={e => setEqPct(e.target.value)} placeholder="0"
               className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
           </div>
+        </div>
+        {/* Derived from the bar length + crew + the %s */}
+        <div className="text-[10px] text-fg-muted space-y-0.5 border-t border-fg-border/50 pt-2">
+          <div className="flex justify-between"><span>Labour · {workDays}d × {crew} crew</span><span className="tabular-nums text-fg-heading">{labourHours}h · {formatCurrency(labourCost)}</span></div>
+          <div className="flex justify-between"><span>Materials</span><span className="tabular-nums">{formatCurrency(matCost)}</span></div>
+          <div className="flex justify-between"><span>Equipment</span><span className="tabular-nums">{formatCurrency(eqCost)}</span></div>
+          <div className="flex justify-between font-medium text-fg-heading pt-0.5"><span>Period cost</span><span className="tabular-nums">{formatCurrency(periodCost)}</span></div>
         </div>
         <div className="flex justify-between items-center pt-1">
           <button onClick={onDelete} className="text-[10px] text-red-400/60 hover:text-red-400 uppercase tracking-wide">Remove</button>
@@ -438,12 +471,59 @@ export default function GanttPage() {
     }
   }
 
+  // Project-wide crew size (2/3/4): a crew of N works N × 8 labour hours/day, so a bar of D working
+  // days consumes D × crew × 8 hours. Persisted on the project (syncs cross-device).
+  const crewSize = project?.crewSize ?? 3
+
+  // Re-derive each segment's allocation from its per-period inputs: labour from the bar (working days
+  // × crew × 8h), materials + equipment from their % of the category budget. Revenue follows progress
+  // (cost-weighted), so the periods' revenue sums to the category revenue. costAllocation/
+  // revenueAllocation — what the footer + forecast read — stay in step with the inputs.
+  const recalcEntry = (entry: GanttEntry, crew: number = crewSize): GanttEntry => {
+    const n = entry.segments.length
+    if (n === 0) return entry
+    const cat = categories.find(c => c.category === entry.category)
+    const materialsBudget = (cat?.cost.material ?? 0) + (cat?.cost.subcontractor ?? 0)
+    const equipmentBudget = cat?.cost.equipment ?? 0
+    const catRevenue = cat?.budgetedRevenue ?? entry.budgetedRevenue
+    const derived = entry.segments.map(s => {
+      const labourHours = workingDaysBetween(s.startDate, s.endDate) * crew * 8
+      const matPct = s.materialsPct ?? 100 / n   // default to an even split for legacy/new segments
+      const eqPct = s.equipmentPct ?? 100 / n
+      const cost = labourHours * STD_LABOUR_RATE + (matPct / 100) * materialsBudget + (eqPct / 100) * equipmentBudget
+      return { labourHours, matPct, eqPct, cost }
+    })
+    const totalCost = derived.reduce((sum, d) => sum + d.cost, 0)
+    return {
+      ...entry,
+      segments: entry.segments.map((s, i) => ({
+        ...s,
+        materialsPct: derived[i].matPct,
+        equipmentPct: derived[i].eqPct,
+        labourHours: derived[i].labourHours,
+        costAllocation: derived[i].cost,
+        revenueAllocation: totalCost > 0 ? catRevenue * (derived[i].cost / totalCost) : 0,
+      })),
+    }
+  }
+
+  const setCrew = (n: number) => {
+    if (!project) return
+    const updatedProject = { ...project, crewSize: n }
+    setProject(updatedProject)
+    void upsertProject(updatedProject)
+    // Labour hours depend on crew → re-derive every category's segments with the new crew.
+    hasUnsavedChangesRef.current = true
+    setEntries(prev => prev.map(e => recalcEntry(e, n)))
+  }
+
   const updateEntry = (updated: GanttEntry) => {
     hasUnsavedChangesRef.current = true   // a user edit — mark dirty so flush persists it on leave
+    const recalculated = recalcEntry(updated)
     setEntries(prev => {
-      const idx = prev.findIndex(e => e.category === updated.category)
-      if (idx >= 0) { const next = [...prev]; next[idx] = updated; return next }
-      return [...prev, updated]
+      const idx = prev.findIndex(e => e.category === recalculated.category)
+      if (idx >= 0) { const next = [...prev]; next[idx] = recalculated; return next }
+      return [...prev, recalculated]
     })
   }
 
@@ -792,16 +872,6 @@ export default function GanttPage() {
     setTimeout(() => setSuccessMsg(''), 3000)
   }
 
-  // Project-wide crew size (2/3/4) for the labour-hours model: a crew of N works N × 8 labour hours/day,
-  // so a bar of D working days consumes D × crew × 8 hours. Persisted on the project (syncs cross-device).
-  const crewSize = project?.crewSize ?? 3
-  const crewHoursPerDay = crewSize * 8
-  const setCrew = (n: number) => {
-    if (!project) return
-    const updated = { ...project, crewSize: n }
-    setProject(updated)
-    void upsertProject(updated)
-  }
 
   // Flush unsaved edits to localStorage + Supabase on navigate-away / tab close / unmount. Without
   // this, every edit lives only in React state until the manual Save button — so leaving the page
@@ -1338,11 +1408,18 @@ export default function GanttPage() {
                   budgetedCost: cat.budgetedCost, segments: [], subtasks: [],
                 }
                 const segs = entry.segments
-                const revAllocated = segs.reduce((s, sg) => s + sg.revenueAllocation, 0)
-                const revMismatch = segs.length > 0 && Math.abs(revAllocated - cat.budgetedRevenue) > 1
                 const subtasks = entry.subtasks ?? []
                 const isCollapsed = collapsedCategories.has(cat.category)
                 const hasSubtasks = subtasks.length > 0
+                // Allocation reconciliation vs budget: labour HOURS scheduled (bar × crew) and the
+                // material/equipment % spread, so the foreman sees over/under at a glance.
+                const labHrsAlloc = Math.round(segs.reduce((s, sg) => s + (sg.labourHours ?? 0), 0))
+                const labHrsBudget = Math.round((cat.cost.labour ?? 0) / STD_LABOUR_RATE)
+                const matBudgetCat = (cat.cost.material ?? 0) + (cat.cost.subcontractor ?? 0)
+                const eqBudgetCat = cat.cost.equipment ?? 0
+                const matAlloc = Math.round(segs.reduce((s, sg) => s + (sg.materialsPct ?? 0), 0))
+                const eqAlloc = Math.round(segs.reduce((s, sg) => s + (sg.equipmentPct ?? 0), 0))
+                const scheduled = segs.some(sg => sg.startDate)
 
                 return (
                   <>
@@ -1361,9 +1438,17 @@ export default function GanttPage() {
                           )}
                           <div className="flex flex-col min-w-0">
                             <span className="truncate">{cat.category}</span>
-                            {segs.length > 1 && (
-                              <span className={`text-[10px] font-light ${revMismatch ? 'text-amber-600/70' : 'text-fg-muted/60'}`}>
-                                {segs.length} segments{revMismatch ? ' ⚠ alloc mismatch' : ''}
+                            {scheduled && (
+                              <span className="text-[10px] font-light tabular-nums flex flex-wrap gap-x-1.5 leading-tight">
+                                {labHrsBudget > 0 && (
+                                  <span title="Labour hours scheduled vs budget"
+                                    className={labHrsAlloc > labHrsBudget ? 'text-amber-600' : labHrsAlloc < labHrsBudget ? 'text-fg-muted/50' : 'text-green-600/80'}>
+                                    {labHrsAlloc}/{labHrsBudget}h
+                                  </span>
+                                )}
+                                {matBudgetCat > 0 && <span title="Materials allocated" className={matAlloc !== 100 ? 'text-amber-600' : 'text-fg-muted/50'}>M {matAlloc}%</span>}
+                                {eqBudgetCat > 0 && <span title="Equipment allocated" className={eqAlloc !== 100 ? 'text-amber-600' : 'text-fg-muted/50'}>E {eqAlloc}%</span>}
+                                {segs.length > 1 && <span className="text-fg-muted/40">· {segs.length} periods</span>}
                               </span>
                             )}
                           </div>
@@ -1600,9 +1685,15 @@ export default function GanttPage() {
           seg = entry?.segments.find(s => s.id === popover.segId)
         }
         if (!seg) return null
+        const cat = categories.find(c => c.category === popover.category)
+        const matBudget = (cat?.cost.material ?? 0) + (cat?.cost.subcontractor ?? 0)
+        const eqBudget = cat?.cost.equipment ?? 0
         return (
           <SegmentPopover
             seg={seg}
+            materialsBudget={matBudget}
+            equipmentBudget={eqBudget}
+            crew={crewSize}
             anchorRef={popoverAnchorRef}
             onUpdate={updated => handleSegmentUpdate(popover.category, updated, popover.subtaskId)}
             onDelete={() => handleSegmentDelete(popover.category, popover.segId, popover.subtaskId)}

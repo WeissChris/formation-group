@@ -320,8 +320,14 @@ export interface GanttSegment {
   endDate: string            // ISO date (Friday in weeks view)
   weekCount: number
   label?: string             // e.g. "Base prep", "Lay pavers", "Grout"
-  revenueAllocation: number  // portion of category budgetedRevenue for this segment
-  costAllocation: number     // portion of category budgetedCost for this segment
+  revenueAllocation: number  // portion of category budgetedRevenue for this segment (DERIVED — see below)
+  costAllocation: number     // portion of category budgetedCost for this segment (DERIVED — see below)
+  // Per-period resource allocation (Gantt). Labour is derived from the bar (working days × crew × 8h);
+  // materials + equipment are entered as a % of the category budget. costAllocation/revenueAllocation are
+  // then derived from these (revenue follows progress = cost-weighted) — those remain what the forecast reads.
+  materialsPct?: number      // % of the category's material + subcontractor budget allocated to this period
+  equipmentPct?: number      // % of the category's equipment budget allocated to this period
+  labourHours?: number       // derived: working days in the bar × crew × 8
   // Actuals (filled in as work progresses)
   actualCost?: number
   actualRevenue?: number
