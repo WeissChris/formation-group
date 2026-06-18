@@ -199,6 +199,8 @@ interface SegEditProps {
   labourBudget: number
   materialsBudget: number
   equipmentBudget: number
+  materialsUsedElsewhere: number   // sum of materials % on the OTHER periods (so this one can't over-allocate)
+  equipmentUsedElsewhere: number
   crew: number
   onUpdate: (seg: GanttSegment) => void
   onDelete: () => void
@@ -206,10 +208,16 @@ interface SegEditProps {
   anchorRef: React.RefObject<HTMLDivElement | null>
 }
 
-function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, crew, onUpdate, onDelete, onClose, anchorRef }: SegEditProps) {
+function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, materialsUsedElsewhere, equipmentUsedElsewhere, crew, onUpdate, onDelete, onClose, anchorRef }: SegEditProps) {
+  // This period can allocate at most what the OTHER periods leave — so the total can't exceed 100%.
+  const matAvailable = Math.max(0, Math.round(100 - materialsUsedElsewhere))
+  const eqAvailable = Math.max(0, Math.round(100 - equipmentUsedElsewhere))
+  const clampMat = (v: number) => Math.max(0, Math.min(matAvailable, v))
+  const clampEq = (v: number) => Math.max(0, Math.min(eqAvailable, v))
+
   const [label, setLabel] = useState(seg.label ?? '')
-  const [matPct, setMatPct] = useState(seg.materialsPct != null ? String(Math.round(seg.materialsPct)) : '')
-  const [eqPct, setEqPct] = useState(seg.equipmentPct != null ? String(Math.round(seg.equipmentPct)) : '')
+  const [matPct, setMatPct] = useState(seg.materialsPct != null ? String(clampMat(Math.round(seg.materialsPct))) : '')
+  const [eqPct, setEqPct] = useState(seg.equipmentPct != null ? String(clampEq(Math.round(seg.equipmentPct))) : '')
 
   // Only show the cost types this scope actually carries. Labour is read off the bar (working days ×
   // crew × 8h) — but only when the scope has a labour budget (else no phantom labour). Materials/
@@ -228,8 +236,8 @@ function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, c
     onUpdate({
       ...seg,
       label: label || undefined,
-      materialsPct: parseFloat(matPct) || 0,
-      equipmentPct: parseFloat(eqPct) || 0,
+      materialsPct: clampMat(parseFloat(matPct) || 0),
+      equipmentPct: clampEq(parseFloat(eqPct) || 0),
     })
     onClose()
   }
@@ -258,15 +266,19 @@ function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, c
             {hasMaterials && (
               <div>
                 <label className="text-2xs font-light text-fg-muted block mb-1">Materials %</label>
-                <input type="number" value={matPct} onChange={e => setMatPct(e.target.value)} placeholder="0"
+                <input type="number" min={0} max={matAvailable} value={matPct}
+                  onChange={e => setMatPct(e.target.value === '' ? '' : String(clampMat(parseFloat(e.target.value) || 0)))} placeholder="0"
                   className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
+                <p className="text-[9px] text-fg-muted/50 mt-0.5">{matAvailable}% left</p>
               </div>
             )}
             {hasEquipment && (
               <div>
                 <label className="text-2xs font-light text-fg-muted block mb-1">Equipment %</label>
-                <input type="number" value={eqPct} onChange={e => setEqPct(e.target.value)} placeholder="0"
+                <input type="number" min={0} max={eqAvailable} value={eqPct}
+                  onChange={e => setEqPct(e.target.value === '' ? '' : String(clampEq(parseFloat(e.target.value) || 0)))} placeholder="0"
                   className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
+                <p className="text-[9px] text-fg-muted/50 mt-0.5">{eqAvailable}% left</p>
               </div>
             )}
           </div>
@@ -499,15 +511,18 @@ export default function GanttPage() {
     const materialsBudget = (cat?.cost.material ?? 0) + (cat?.cost.subcontractor ?? 0)
     const equipmentBudget = cat?.cost.equipment ?? 0
     const catRevenue = cat?.budgetedRevenue ?? entry.budgetedRevenue
-    const clampPct = (v: number) => Math.max(0, Math.min(100, v))
+    // Cap the CUMULATIVE material/equipment allocation at 100% — you can't allocate more than the
+    // budget exists. Earlier periods take priority; later ones are capped to what's left, so a saved
+    // over-allocation (or any path that set >100% total) is corrected on the next recompute.
+    let matRemaining = 100, eqRemaining = 100
     const derived = entry.segments.map(s => {
       const hasDates = !!(s.startDate && s.endDate)
       // Labour only applies to scopes that carry a labour budget — otherwise the bar would conjure
       // phantom labour cost (e.g. Preliminaries, which is equipment/sub only). An undrawn period
       // (no dates) carries no cost yet, so it can't over-allocate or dilute the revenue split.
       const labourHours = labourBudget > 0 && hasDates ? workingDaysBetween(s.startDate, s.endDate) * crew * 8 : 0
-      const matPct = clampPct(s.materialsPct ?? 100 / n)   // default to an even split for legacy/new
-      const eqPct = clampPct(s.equipmentPct ?? 100 / n)
+      const matPct = Math.max(0, Math.min(s.materialsPct ?? 100 / n, matRemaining)); matRemaining -= matPct
+      const eqPct = Math.max(0, Math.min(s.equipmentPct ?? 100 / n, eqRemaining)); eqRemaining -= eqPct
       const cost = hasDates ? labourHours * STD_LABOUR_RATE + (matPct / 100) * materialsBudget + (eqPct / 100) * equipmentBudget : 0
       return { hasDates, labourHours, matPct, eqPct, cost }
     })
@@ -1720,12 +1735,23 @@ export default function GanttPage() {
         const labBudget = cat?.cost.labour ?? 0
         const matBudget = (cat?.cost.material ?? 0) + (cat?.cost.subcontractor ?? 0)
         const eqBudget = cat?.cost.equipment ?? 0
+        // How much of the material/equipment budget the OTHER periods already use, so this popover can
+        // cap its inputs to the remaining headroom (total ≤ 100%).
+        const groupSegs = popover.subtaskId
+          ? (entry?.subtasks?.find(st => st.id === popover.subtaskId)?.segments ?? [])
+          : (entry?.segments ?? [])
+        const otherSegs = groupSegs.filter(s => s.id !== popover.segId)
+        const segCount = groupSegs.length || 1
+        const matUsed = otherSegs.reduce((s, sg) => s + (sg.materialsPct ?? 100 / segCount), 0)
+        const eqUsed = otherSegs.reduce((s, sg) => s + (sg.equipmentPct ?? 100 / segCount), 0)
         return (
           <SegmentPopover
             seg={seg}
             labourBudget={labBudget}
             materialsBudget={matBudget}
             equipmentBudget={eqBudget}
+            materialsUsedElsewhere={matUsed}
+            equipmentUsedElsewhere={eqUsed}
             crew={crewSize}
             anchorRef={popoverAnchorRef}
             onUpdate={updated => handleSegmentUpdate(popover.category, updated, popover.subtaskId)}
