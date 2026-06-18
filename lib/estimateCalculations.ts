@@ -10,7 +10,7 @@ import { TARGET_MARGINS } from './itemLibrary'
  * the persisted value so aggregations cannot silently drift from what's saved.
  */
 export function calculateLineItemRevenue(item: EstimateLineItem): number {
-  return item.total * (1 + item.markupPercent / 100)
+  return (item.total || 0) * (1 + (item.markupPercent || 0) / 100)
 }
 
 /**
@@ -92,7 +92,7 @@ export function getMarginSummary(estimate: Estimate): CategoryMargin[] {
 
   return categories.map(category => {
     const items = active.filter(i => i.category === category)
-    const totalCost = items.reduce((s, i) => s + i.total, 0)
+    const totalCost = items.reduce((s, i) => s + (i.total || 0), 0)
     const totalRevenue = itemsContractValue(items, contract)
     const marginPercent = totalRevenue > 0 ? (totalRevenue - totalCost) / totalRevenue : 0
     const markupPercent = totalCost > 0 ? (totalRevenue - totalCost) / totalCost : 0
@@ -189,7 +189,7 @@ export function itemsContractValue(items: EstimateLineItem[], contract: Estimate
 
 export function getEstimateTotals(estimate: Estimate) {
   const active = activeLineItems(estimate)
-  const totalCost = active.reduce((s, i) => s + i.total, 0)
+  const totalCost = active.reduce((s, i) => s + (i.total || 0), 0)
   const lineRevenue = active.reduce((s, i) => s + readLineItemRevenue(i), 0)
   const contract = getEstimateContract(estimate)
   const totalRevenue = contract.exGst   // ex-GST contract incl project markups + rounding
@@ -197,8 +197,8 @@ export function getEstimateTotals(estimate: Estimate) {
   const totalIncGst = totalRevenue + gst
   const overallMargin = totalRevenue > 0 ? (totalRevenue - totalCost) / totalRevenue : 0
 
-  const formationCost = active.filter(i => i.crewType === 'Formation').reduce((s, i) => s + i.total, 0)
-  const subCost = active.filter(i => i.crewType === 'Subcontractor').reduce((s, i) => s + i.total, 0)
+  const formationCost = active.filter(i => i.crewType === 'Formation').reduce((s, i) => s + (i.total || 0), 0)
+  const subCost = active.filter(i => i.crewType === 'Subcontractor').reduce((s, i) => s + (i.total || 0), 0)
   // Crew revenue = each crew's lines' contract value (line revenue + project markup on each line's own
   // cost), so the Margin Checker's Formation/Sub split reflects the real contract. No project markups →
   // contract value == line revenue.

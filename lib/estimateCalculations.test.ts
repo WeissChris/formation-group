@@ -215,4 +215,20 @@ describe('getEstimateTotals', () => {
     const e = estimate([line({ total: 100, revenue: 0 })])
     expect(getEstimateTotals(e).overallMargin).toBe(0)
   })
+
+  it('does not cascade NaN when a line item has a missing total (blank row / legacy import)', () => {
+    const bad = { total: undefined, revenue: undefined } as unknown as Partial<EstimateLineItem>
+    const e = estimate([
+      line({ id: 'a', total: 1000, revenue: 1400 }),
+      line({ id: 'b', ...bad }),                       // corrupt: no total, no revenue
+      line({ id: 'c', total: 500, revenue: 700, crewType: 'Subcontractor' }),
+    ])
+    const totals = getEstimateTotals(e)
+    expect(totals.totalCost).toBe(1500)                // the missing total counts as 0
+    for (const v of [totals.totalCost, totals.totalRevenue, totals.overallMargin, totals.formationCost, totals.subCost, totals.formationMargin, totals.subMargin]) {
+      expect(Number.isNaN(v)).toBe(false)
+    }
+    // getMarginSummary must also survive the bad row
+    expect(getMarginSummary(e).every(s => !Number.isNaN(s.totalCost) && !Number.isNaN(s.marginPercent))).toBe(true)
+  })
 })
