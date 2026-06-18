@@ -238,27 +238,27 @@ export default function DashboardPage() {
     const pActuals = allActuals.filter(a => a.projectId === p.id)
     const pGantt = allGantt.filter(g => g.projectId === p.id)
     const actualCost = pActuals.reduce((s, a) => s + a.supplyCost + a.labourCost, 0)
-    const budgetCost = pGantt.reduce((s, g) => {
+    // Budget cost = the FULL budget. Prefer the accepted base estimate's line-item total: the Gantt is a
+    // scheduling tool that's often only partly built, so summing its segments understates cost and
+    // inflates GP (a Preliminaries-only Gantt reads 98% GP on a 28% job). Fall back to the Gantt cost
+    // only when there's no accepted estimate to budget from.
+    const acceptedEstimate = allEstimates.find(e => e.projectId === p.id && e.status === 'accepted' && !e.parentEstimateId)
+    const estimateCost = acceptedEstimate
+      ? (acceptedEstimate.lineItems || []).reduce((ls, li) => ls + (li.total || 0), 0)
+      : 0
+    const ganttCost = pGantt.reduce((s, g) => {
       const segTotal = g.segments.reduce((ss, seg) => ss + (seg.costAllocation || 0), 0)
       // Fallback: if segments have no costAllocation, use budgetedCost from the GanttEntry
       return s + (segTotal > 0 ? segTotal : g.budgetedCost)
     }, 0)
+    const budgetCost = estimateCost > 0 ? estimateCost : ganttCost
     // NB: A "currentGP" used to live here computed as (contractValue - actualCost) / contractValue.
     // That math was structurally wrong — it compares cost-to-date against the full contract, not
     // against what's been invoiced so far. Removed because the value was never rendered anywhere.
     // If a dashboard tile ever wants current GP, base it on totalInvoiced (see Position tab).
     const forecastGP = p.contractValue > 0 && budgetCost > 0
       ? ((p.contractValue - budgetCost) / p.contractValue) * 100
-      : (() => {
-          // Fallback: use estimate line item totals as budget cost proxy. Read from the
-          // hoisted `allEstimates` state — no per-render localStorage parse.
-          const projectEstimates = allEstimates.filter(e => e.projectId === p.id)
-          const estimateCost = projectEstimates.reduce((s, e) =>
-            s + (e.lineItems || []).reduce((ls, li) => ls + (li.total || 0), 0), 0)
-          return p.contractValue > 0 && estimateCost > 0
-            ? ((p.contractValue - estimateCost) / p.contractValue) * 100
-            : null
-        })()
+      : null
     return { project: p, forecastGP }
   })
 
