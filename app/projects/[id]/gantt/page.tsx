@@ -515,18 +515,28 @@ export default function GanttPage() {
     const materialsBudget = (cat?.cost.material ?? 0) + (cat?.cost.subcontractor ?? 0)
     const equipmentBudget = cat?.cost.equipment ?? 0
     const catRevenue = cat?.budgetedRevenue ?? entry.budgetedRevenue
-    // Cap the CUMULATIVE material/equipment allocation at 100% — you can't allocate more than the
-    // budget exists. Earlier periods take priority; later ones are capped to what's left, so a saved
-    // over-allocation (or any path that set >100% total) is corrected on the next recompute.
-    let matRemaining = 100, eqRemaining = 100
+    // Resolve each period's material/equipment % independently. Periods the foreman has set keep their
+    // own value; periods still unset share only the REMAINING budget (not 100/n each, which would
+    // over-allocate the moment one period is set). If the explicit values already total more than 100%
+    // (legacy data), scale them down proportionally so the category lands exactly on its budget. This
+    // is deterministic and order-independent — editing one period never silently shifts another.
+    const planPct = (key: 'materialsPct' | 'equipmentPct') => {
+      const explicitTotal = entry.segments.reduce((sum, s) => sum + (s[key] ?? 0), 0)
+      const scale = explicitTotal > 100 ? 100 / explicitTotal : 1
+      const unsetCount = entry.segments.filter(s => s[key] == null).length
+      const fallback = unsetCount > 0 ? Math.max(0, 100 - explicitTotal * scale) / unsetCount : 0
+      return (s: GanttSegment) => s[key] != null ? Math.max(0, Math.min(100, (s[key] as number) * scale)) : fallback
+    }
+    const matPctOf = planPct('materialsPct')
+    const eqPctOf = planPct('equipmentPct')
     const derived = entry.segments.map(s => {
       const hasDates = !!(s.startDate && s.endDate)
       // Labour only applies to scopes that carry a labour budget — otherwise the bar would conjure
       // phantom labour cost (e.g. Preliminaries, which is equipment/sub only). An undrawn period
       // (no dates) carries no cost yet, so it can't over-allocate or dilute the revenue split.
       const labourHours = labourBudget > 0 && hasDates ? workingDaysBetween(s.startDate, s.endDate) * crew * 8 : 0
-      const matPct = Math.max(0, Math.min(s.materialsPct ?? 100 / n, matRemaining)); matRemaining -= matPct
-      const eqPct = Math.max(0, Math.min(s.equipmentPct ?? 100 / n, eqRemaining)); eqRemaining -= eqPct
+      const matPct = matPctOf(s)
+      const eqPct = eqPctOf(s)
       const cost = hasDates ? labourHours * STD_LABOUR_RATE + (matPct / 100) * materialsBudget + (eqPct / 100) * equipmentBudget : 0
       return { hasDates, labourHours, matPct, eqPct, cost }
     })
@@ -1473,14 +1483,15 @@ export default function GanttPage() {
                 const labHrsBudget = Math.round((cat.cost.labour ?? 0) / STD_LABOUR_RATE)
                 // Compute the allocation status LIVE off the bars + crew (don't depend on stored
                 // labourHours, which is only set once a scope is edited) so a freshly seeded/loaded
-                // schedule reconciles immediately. Material/equipment default to an even split.
+                // schedule reconciles immediately. Material/equipment read each period's resolved % —
+                // recalcEntry has already filled any unset period from the remaining budget on load.
                 const labHrsAlloc = (cat.cost.labour ?? 0) > 0
                   ? Math.round(segs.reduce((s, sg) => s + workingDaysBetween(sg.startDate, sg.endDate) * crewSize * 8, 0))
                   : 0
                 const matBudgetCat = (cat.cost.material ?? 0) + (cat.cost.subcontractor ?? 0)
                 const eqBudgetCat = cat.cost.equipment ?? 0
-                const matAlloc = Math.round(segs.reduce((s, sg) => s + (sg.materialsPct ?? (segs.length ? 100 / segs.length : 0)), 0))
-                const eqAlloc = Math.round(segs.reduce((s, sg) => s + (sg.equipmentPct ?? (segs.length ? 100 / segs.length : 0)), 0))
+                const matAlloc = Math.round(segs.reduce((s, sg) => s + (sg.materialsPct ?? 0), 0))
+                const eqAlloc = Math.round(segs.reduce((s, sg) => s + (sg.equipmentPct ?? 0), 0))
                 const scheduled = segs.some(sg => sg.startDate)
 
                 return (
@@ -1757,9 +1768,10 @@ export default function GanttPage() {
           ? (entry?.subtasks?.find(st => st.id === popover.subtaskId)?.segments ?? [])
           : (entry?.segments ?? [])
         const otherSegs = groupSegs.filter(s => s.id !== popover.segId)
-        const segCount = groupSegs.length || 1
-        const matUsed = otherSegs.reduce((s, sg) => s + (sg.materialsPct ?? 100 / segCount), 0)
-        const eqUsed = otherSegs.reduce((s, sg) => s + (sg.equipmentPct ?? 100 / segCount), 0)
+        // Sum the OTHER periods' resolved % (recalcEntry has filled any unset period on load), so this
+        // popover's headroom and "% left" are exactly 100 − the rest, never inflated by a 100/n default.
+        const matUsed = otherSegs.reduce((s, sg) => s + (sg.materialsPct ?? 0), 0)
+        const eqUsed = otherSegs.reduce((s, sg) => s + (sg.equipmentPct ?? 0), 0)
         return (
           <SegmentPopover
             key={`${popover.subtaskId ?? 'main'}-${popover.segId}`}
