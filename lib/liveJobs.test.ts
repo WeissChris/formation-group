@@ -196,6 +196,20 @@ describe('computeLiveJobRow — cost & GP', () => {
     expect(row.hasLiveCostData).toBe(false)
     expect(row.status).toBe('watch') // unmapped → neutral "watch" state
   })
+
+  it('falls back to the accepted-estimate budget when there is no Xero cost (not 0 cost / 100% GP)', () => {
+    const est = estimate({ lineItems: [lineItem({ total: 60_000 })] })
+    const row = computeLiveJobRow({
+      project: project({ contractValue: 100_000 }),
+      acceptedEstimates: [est],
+      progressClaims: [],
+      costToDate: null,
+      forecastFinalCost: null,
+    })
+    expect(row.forecastFinalCost).toBe(60_000)   // estimate budget, not 0
+    expect(row.hasLiveCostData).toBe(false)
+    expect(row.forecastGpPct).not.toBe(100)
+  })
 })
 
 describe('computeLiveJobRow — status (per-project target)', () => {

@@ -79,7 +79,12 @@ export function computeLiveJobRow(inputs: LiveJobInputs): LiveJobRow {
 
   // Cost — Xero-derived. NULL → 0 with hasLiveCostData=false signal.
   const cost = costToDate ?? 0
-  const forecastCost = forecastFinalCost ?? cost
+  // Forecast final cost: prefer the Xero forecast, then Xero cost-to-date, then the accepted-estimate
+  // budget. The old `?? cost` bottomed out at 0 for any job with no Xero feed yet, which read as a
+  // 100% GP. The estimate budget keeps the forecast margin sensible until live cost data arrives.
+  const estimateCost = acceptedEstimates.reduce(
+    (s, e) => s + (e.lineItems || []).reduce((ls, li) => ls + (li.total || 0), 0), 0)
+  const forecastCost = forecastFinalCost ?? (costToDate ?? estimateCost)
   const hasLiveCostData = costToDate !== null
 
   // GP
