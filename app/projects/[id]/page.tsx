@@ -371,7 +371,6 @@ function ProjectFinancialPosition({
   // a single missing field cascades NaN through currentGP and silently disables alerts.
   const manualInvoiced = revenueEntries.reduce((sum, r) => sum + (r.actualInvoiced ?? 0), 0)
   const totalInvoiced = claimsInvoiced > 0 ? claimsInvoiced : manualInvoiced
-  const plannedRevenue = revenueEntries.reduce((sum, r) => sum + r.plannedRevenue, 0)
 
   // Effective contract value — revised (incl. approved variations) where available, original otherwise.
   // budgetCost includes variation line items, so the forecast must use the same revenue basis or GP drifts.
@@ -385,8 +384,12 @@ function ProjectFinancialPosition({
     ? ((effectiveContract - budgetCost) / effectiveContract) * 100
     : 0
 
-  // Forecast cost from gantt
-  const forecastCost = ganttEntries.reduce((sum, g) => sum + g.budgetedCost, 0)
+  // Forecast final cost = the FULL budget. The Gantt is a scheduling tool that's often only partly built,
+  // so summing its entries undercounts the job (a Preliminaries-only Gantt read $6.8k of a $238k budget)
+  // and inflated the Baseline-vs-Forecast GP% to ~98%. Prefer the accepted-estimate budget; fall back to
+  // the Gantt sum only when there's no estimate to budget from.
+  const ganttCost = ganttEntries.reduce((sum, g) => sum + g.budgetedCost, 0)
+  const forecastCost = budgetCost > 0 ? budgetCost : ganttCost
 
   // Progress claims
   const totalClaimed = progressClaims.reduce((sum, c) => sum + c.subtotalEx, 0)
@@ -641,7 +644,7 @@ function ProjectFinancialPosition({
           <tbody className="divide-y divide-fg-border/50">
             <tr>
               <td className="py-2 text-fg-muted">Revenue</td>
-              <td className="py-2 text-right text-fg-heading">{formatCurrency(plannedRevenue)}</td>
+              <td className="py-2 text-right text-fg-heading">{formatCurrency(effectiveContract)}</td>
               <td className="py-2 text-right text-fg-heading">{formatCurrency(totalInvoiced)}</td>
               <td className="py-2 text-right text-fg-heading">{formatCurrency(effectiveContract)}</td>
             </tr>
@@ -653,7 +656,7 @@ function ProjectFinancialPosition({
             </tr>
             <tr>
               <td className="py-2 text-fg-muted">GP</td>
-              <td className="py-2 text-right text-fg-heading">{formatCurrency((plannedRevenue || effectiveContract) - budgetCost)}</td>
+              <td className="py-2 text-right text-fg-heading">{formatCurrency(effectiveContract - budgetCost)}</td>
               <td className="py-2 text-right text-fg-heading">{formatCurrency(totalInvoiced - actualCost)}</td>
               <td className="py-2 text-right text-fg-heading">{formatCurrency(effectiveContract - (forecastCost || budgetCost))}</td>
             </tr>
