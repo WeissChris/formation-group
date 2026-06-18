@@ -8,7 +8,7 @@
 // Andrew's `Live_Jobs_Tracker__Andrew_.xlsx` Summary sheet.
 
 import type { Project, Estimate, ProgressClaim } from '@/types'
-import { getEstimateContract } from './estimateCalculations'
+import { getEstimateContract, variationContractValue } from './estimateCalculations'
 import { getTargetMarginPct } from './projectHealth'
 
 export interface LiveJobRow {
@@ -63,10 +63,7 @@ export function computeLiveJobRow(inputs: LiveJobInputs): LiveJobRow {
   const baseEstimates = acceptedEstimates.filter(e => !e.parentEstimateId)
   const variationEstimates = acceptedEstimates.filter(e => !!e.parentEstimateId)
   const baseContract = baseEstimates.reduce((s, e) => s + getEstimateContract(e).exGst, 0)
-  const variationsTotal = variationEstimates.reduce(
-    (s, e) => s + (e.variationAmount || getEstimateContract(e).exGst),
-    0,
-  )
+  const variationsTotal = variationEstimates.reduce((s, e) => s + variationContractValue(e), 0)
   const revisedContract = baseContract + variationsTotal
   const forecastRevenue = revisedContract > 0 ? revisedContract : (project.contractValue || 0)
 

@@ -7,7 +7,7 @@ import { loadProjects, loadEstimatesByProject, loadProgressClaims, saveProject }
 import { getProjects } from '@/lib/storageAsync'
 import { getProjectCosts, getProjectCostPeriods, type ProjectCostRow } from '@/lib/xero'
 import { computeLiveJobRow, type LiveJobRow } from '@/lib/liveJobs'
-import { getMarginSummary, getEstimateTotals, activeLineItems, costBreakdown } from '@/lib/estimateCalculations'
+import { getMarginSummary, getEstimateTotals, activeLineItems, costBreakdown, variationContractValue } from '@/lib/estimateCalculations'
 import { CostCurve } from '@/components/CostCurve'
 import { formatCurrency } from '@/lib/utils'
 import type { Project, Estimate, CategoryMargin } from '@/types'
@@ -75,7 +75,7 @@ export default function ProjectReportPage() {
   // Per-variation revenue / cost / GP so variations are tracked like the estimate's own line items.
   const variationRows = variations.map(v => {
     const t = getEstimateTotals(v)
-    const revenue = v.variationAmount || t.totalRevenue
+    const revenue = variationContractValue(v)
     return {
       id: v.id,
       name: v.name || `Variation ${v.variationNumber ?? ''}`,

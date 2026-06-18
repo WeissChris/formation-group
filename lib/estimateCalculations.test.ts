@@ -4,6 +4,8 @@ import {
   readLineItemRevenue,
   getMarginSummary,
   getEstimateTotals,
+  getEstimateContract,
+  variationContractValue,
 } from './estimateCalculations'
 import type { Estimate, EstimateLineItem } from '@/types'
 
@@ -230,5 +232,16 @@ describe('getEstimateTotals', () => {
     }
     // getMarginSummary must also survive the bad row
     expect(getMarginSummary(e).every(s => !Number.isNaN(s.totalCost) && !Number.isNaN(s.marginPercent))).toBe(true)
+  })
+})
+
+describe('variationContractValue', () => {
+  it('uses the manual variationAmount when set', () => {
+    const v = estimate([line({ total: 1000, revenue: 1400 })], { parentEstimateId: 'base', variationAmount: 5000 })
+    expect(variationContractValue(v)).toBe(5000)   // NOT the $1,400 line-item value
+  })
+  it('falls back to the line-item contract value when no variationAmount', () => {
+    const v = estimate([line({ total: 1000, revenue: 1400 })], { parentEstimateId: 'base' })
+    expect(variationContractValue(v)).toBe(getEstimateContract(v).exGst)
   })
 })

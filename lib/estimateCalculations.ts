@@ -182,6 +182,17 @@ export function lineContractValue(item: EstimateLineItem, contract: EstimateCont
   return contract.markedUp > 0 ? raw * (contract.exGst / contract.markedUp) : raw
 }
 
+/**
+ * A variation estimate's contract delta in dollars: the manual override (`variationAmount`) when set,
+ * otherwise its line-item contract value. SINGLE source of truth — every surface that needs a variation's
+ * $ value (the claim builder, the dashboard's secured revenue, the project Position/Costs tabs, live jobs,
+ * the report) must use this, so a variation with BOTH a manual amount and line items can't be counted one
+ * way in invoicing and another in reporting.
+ */
+export function variationContractValue(variation: Estimate): number {
+  return variation.variationAmount || getEstimateContract(variation).exGst
+}
+
 /** Contract value (sum of lineContractValue) for a set of line items — a category, crew split, etc. */
 export function itemsContractValue(items: EstimateLineItem[], contract: EstimateContract): number {
   return items.reduce((s, i) => s + lineContractValue(i, contract), 0)

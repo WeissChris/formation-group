@@ -13,7 +13,7 @@ import {
 } from '@/lib/storage'
 import { getProjects, reconcileVariations, upsertProject, deleteProjectAsync, upsertSubcontractor, deleteSubcontractorAsync } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
-import { getEstimateTotals } from '@/lib/estimateCalculations'
+import { getEstimateTotals, variationContractValue } from '@/lib/estimateCalculations'
 import type { Project, Estimate, WeeklyRevenue, GanttEntry, WeeklyActual, ProgressClaim, ProgressPaymentStage, SubcontractorPackage, SubcontractorClaim } from '@/types'
 import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, PROGRESSION_WARNINGS, buildChecklist, defaultStageForStatus } from '@/lib/stageConfig'
 import type { ProjectScope } from '@/types'
@@ -350,7 +350,7 @@ function ProjectFinancialPosition({
   // lines — the same basis as the project report and the dashboard Live Jobs row. Summing bare
   // li.revenue understated the contract (and forecast GP) by the project markups + rounding.
   const originalContract = acceptedEstimates.reduce((sum, e) => sum + getEstimateTotals(e).totalRevenue, 0)
-  const variationsTotal = variationEstimates.reduce((sum, e) => sum + (e.variationAmount || getEstimateTotals(e).totalRevenue), 0)
+  const variationsTotal = variationEstimates.reduce((sum, e) => sum + variationContractValue(e), 0)
   const revisedContract = originalContract + variationsTotal
 
   // Budget cost from estimates (active lines, matching the revenue basis above)
@@ -963,7 +963,7 @@ export default function ProjectDetailPage() {
   // Revised contract = original contract + accepted (non-archived) variations — matches
   // computeLiveJobRow so the Overview agrees with the Position tab + dashboard.
   const acceptedVariations = estimates.filter(e => !!e.parentEstimateId && e.status === 'accepted' && !e.archived)
-  const variationsTotal = acceptedVariations.reduce((s, v) => s + (v.variationAmount || getEstimateTotals(v).totalRevenue), 0)
+  const variationsTotal = acceptedVariations.reduce((s, v) => s + variationContractValue(v), 0)
   const revisedContract = (project.contractValue || 0) + variationsTotal
 
   // Build estimate tree (parent → variations)
@@ -1437,10 +1437,7 @@ export default function ProjectDetailPage() {
           const baseContract = acceptedBase.reduce(
             (s, e) => s + getEstimateTotals(e).totalRevenue, 0,
           )
-          const variationsTotal = acceptedVariations.reduce(
-            (s, e) => s + (e.variationAmount || getEstimateTotals(e).totalRevenue),
-            0,
-          )
+          const variationsTotal = acceptedVariations.reduce((s, e) => s + variationContractValue(e), 0)
           const revisedContract = baseContract + variationsTotal
           const effectiveContract = revisedContract > 0 ? revisedContract : (project.contractValue || 0)
           // Flatten all accepted estimate line items so labour-allowance + pace can read them.

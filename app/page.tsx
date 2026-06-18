@@ -6,7 +6,7 @@ import { loadProjects, loadWeeklyRevenue, loadDesignProjects, loadProgressPaymen
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { seedDemoData } from '@/lib/seed'
 import { formatCurrency, getFinancialYear, MONTH_NAMES } from '@/lib/utils'
-import { getEstimateTotals } from '@/lib/estimateCalculations'
+import { getEstimateTotals, variationContractValue } from '@/lib/estimateCalculations'
 import type { Project, WeeklyRevenue, GanttEntry, WeeklyActual } from '@/types'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { calcProjectHealth, scheduleStatus } from '@/lib/projectHealth'
@@ -231,7 +231,7 @@ export default function DashboardPage() {
   // Approved variations across active projects, and the revised contract total (base + variations).
   const variationsTotal = allEstimates
     .filter(e => !!e.parentEstimateId && e.status === 'accepted' && !e.archived && activeProjects.some(p => p.id === e.projectId))
-    .reduce((s, v) => s + (v.variationAmount || getEstimateTotals(v).totalRevenue), 0)
+    .reduce((s, v) => s + variationContractValue(v), 0)
   const securedRevenue = activeProjects.reduce((s, p) => s + (p.contractValue || 0), 0) + variationsTotal
 
   // Per-project GP% for formation projects

@@ -10,7 +10,7 @@ import {
 import { upsertEstimate, upsertProgressClaim, deleteProgressClaimAsync } from '@/lib/storageAsync'
 import { createXeroDraftInvoice } from '@/lib/xero'
 import { formatCurrency, generateId } from '@/lib/utils'
-import { getEstimateTotals, getEstimateContract, readLineItemRevenue, activeLineItems, lineContractValue } from '@/lib/estimateCalculations'
+import { getEstimateTotals, getEstimateContract, readLineItemRevenue, activeLineItems, lineContractValue, variationContractValue } from '@/lib/estimateCalculations'
 import type { ProgressPaymentStage, Estimate, WeeklyActual, ProgressClaim, ProgressClaimLineItem, EntityType } from '@/types'
 import { Plus, X, FileText, Receipt, GitBranch, Eye, Check, ChevronRight, ArrowLeft } from 'lucide-react'
 
@@ -229,7 +229,7 @@ function ProgressClaimBuilder({
 
     // Add variation line items
     for (const v of variationEstimates) {
-      const contractAmount = getEstimateTotals(v).totalRevenue
+      const contractAmount = variationContractValue(v)
       const claimedToDate = existingClaims.reduce((sum, claim) => {
         const li = claim.lineItems.find(l => l.categoryId === v.id && l.type === 'variation')
         return sum + (li?.claimAmount ?? 0)
@@ -347,6 +347,11 @@ function ProgressClaimBuilder({
 
   const categoriesTotal = categoryItems.filter(l => l.claimAmount > 0).reduce((s, l) => s + l.claimAmount, 0)
   const variationsTotal = variationItems.filter(l => l.claimAmount > 0).reduce((s, l) => s + l.claimAmount, 0)
+
+  // Over-claim guard: a line claiming more than its remaining contract bills past the contract. Not
+  // blocked (a final claim is sometimes adjusted up by agreement), but surfaced so it's never silent.
+  const overClaimedLines = lineItems.filter(l => l.claimAmount > l.remaining + 0.01)
+  const overClaimTotal = overClaimedLines.reduce((s, l) => s + (l.claimAmount - l.remaining), 0)
 
   const handleSave = () => {
     const claim: ProgressClaim = {
@@ -672,6 +677,16 @@ function ProgressClaimBuilder({
           />
         </div>
 
+        {/* Over-claim warning — billing past the remaining contract (surfaced, not blocked) */}
+        {overClaimedLines.length > 0 && (
+          <div className="border border-amber-500/40 bg-amber-500/10 px-4 py-3 mb-4 text-xs font-light text-amber-700 flex items-start gap-2">
+            <span aria-hidden>⚠</span>
+            <span>
+              This claim bills <span className="font-medium tabular-nums">{formatCurrency(overClaimTotal)}</span> past the remaining contract on {overClaimedLines.length} line item{overClaimedLines.length === 1 ? '' : 's'}. The total invoiced will exceed the contract value — confirm this is intended before saving.
+            </span>
+          </div>
+        )}
+
         {/* Footer totals */}
         <div className="border border-fg-border p-6 mb-6 bg-fg-card/10">
           <div className="flex flex-col items-end gap-2 text-sm font-light">
@@ -841,9 +856,9 @@ function InvoicesSubTab({
   // Totals
   const baseEstimates = estimates.filter(e => !e.parentEstimateId && e.status === 'accepted')
   const variationEstimates = estimates.filter(e => !!e.parentEstimateId && (e.status === 'accepted' || e.status === 'variation'))
-  const totalContract = [...baseEstimates, ...variationEstimates].reduce(
-    (s, e) => s + getEstimateTotals(e).totalRevenue, 0
-  )
+  const totalContract =
+    baseEstimates.reduce((s, e) => s + getEstimateTotals(e).totalRevenue, 0) +
+    variationEstimates.reduce((s, e) => s + variationContractValue(e), 0)
   const totalClaimed = claims.reduce((s, c) => s + c.subtotalEx, 0)
   const totalRemaining = totalContract - totalClaimed
 
@@ -1070,7 +1085,7 @@ function VariationsSubTab({
   }
 
   const netVariations = variations.reduce((sum, v) => {
-    if (v.status === 'accepted') return sum + getEstimateTotals(v).totalRevenue
+    if (v.status === 'accepted') return sum + variationContractValue(v)
     return sum
   }, 0)
 
