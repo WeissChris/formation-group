@@ -235,6 +235,9 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, equip
   // Live per-period breakdown — reads the post-balance sibling state, so as this period changes the
   // others visibly redistribute and the total stays on 100%.
   const datedSibs = siblingSegs.filter(s => s.startDate && s.endDate)
+  // With a single scheduled period there's nowhere to push the balance, so the % is locked at 100% —
+  // editing it would just snap back. The foreman splits the scope first to allocate across periods.
+  const onlyPeriod = datedSibs.length <= 1
   const matTotal = Math.round(datedSibs.reduce((s, x) => s + (x.materialsPct || 0), 0))
   const eqTotal = Math.round(datedSibs.reduce((s, x) => s + (x.equipmentPct || 0), 0))
   const totalClass = (t: number) => t === 100 ? 'text-green-600/70' : 'text-amber-600'
@@ -265,20 +268,27 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, equip
             {hasMaterials && (
               <div>
                 <label className="text-2xs font-light text-fg-muted block mb-1">Materials %</label>
-                <input type="number" min={0} max={100} value={matPct}
+                <input type="number" min={0} max={100} value={onlyPeriod ? '100' : matPct} disabled={onlyPeriod}
                   onChange={e => { const v = e.target.value === '' ? '' : String(clampPct(parseFloat(e.target.value) || 0)); setMatPct(v); pushUpdate({ matPct: v }) }} placeholder="0"
-                  className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
+                  className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums disabled:opacity-40 disabled:cursor-not-allowed" />
               </div>
             )}
             {hasEquipment && (
               <div>
                 <label className="text-2xs font-light text-fg-muted block mb-1">Equipment %</label>
-                <input type="number" min={0} max={100} value={eqPct}
+                <input type="number" min={0} max={100} value={onlyPeriod ? '100' : eqPct} disabled={onlyPeriod}
                   onChange={e => { const v = e.target.value === '' ? '' : String(clampPct(parseFloat(e.target.value) || 0)); setEqPct(v); pushUpdate({ eqPct: v }) }} placeholder="0"
-                  className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
+                  className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums disabled:opacity-40 disabled:cursor-not-allowed" />
               </div>
             )}
           </div>
+        )}
+        {/* Single period holds the whole budget — nowhere to split a partial % to, so guide them to split */}
+        {onlyPeriod && (hasMaterials || hasEquipment) && (
+          <p className="text-[9px] font-light text-amber-600/80 leading-snug">
+            Only one period, so it holds 100% of the budget. To put e.g. 80% here and the rest later, add a
+            second period with the ＋ in the Start / Duration column, then set the split.
+          </p>
         )}
         {/* Live breakdown across all periods — auto-balances to 100% as you type */}
         {datedSibs.length > 1 && (hasMaterials || hasEquipment) && (
