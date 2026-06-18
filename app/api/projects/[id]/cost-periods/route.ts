@@ -44,8 +44,15 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     amount_ex_gst: Number(r.amount_ex_gst) || 0,
   }))
 
+  // Freshest pull stamp across all rows — NOT data[0], which is the OLDEST period (rows are ordered by
+  // period_end), so it would report a sync from weeks ago.
+  const lastPulledAt = (data || []).reduce<string | null>((max, r) => {
+    const p = r.pulled_at as string | undefined
+    return p && (!max || p > max) ? p : max
+  }, null)
+
   return NextResponse.json({
     periods,
-    last_pulled_at: (data && data[0]?.pulled_at) ?? null,
+    last_pulled_at: lastPulledAt,
   })
 }

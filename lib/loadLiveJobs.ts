@@ -27,12 +27,16 @@ export async function loadLiveJobs(): Promise<LoadedLiveJobs> {
     const acceptedEstimates = allEstimates.filter(e => e.projectId === project.id && e.status === 'accepted')
     const claims = loadProgressClaims(project.id)
     const apiRow = costMap.get(project.id) ?? null
+    // A project mapped to Xero but with NO costs pulled yet comes back as cost_to_date 0 / pulled_at null.
+    // That's "no live data", not a real $0 — treat it as null so the forecast falls back to the estimate
+    // budget instead of reading $0 cost = 100% GP. last_pulled_at is the "real cost data exists" signal.
+    const hasLiveCost = !!(apiRow?.mapped && apiRow.last_pulled_at)
     return computeLiveJobRow({
       project,
       acceptedEstimates,
       progressClaims: claims,
-      costToDate: apiRow?.mapped ? apiRow.cost_to_date : null,
-      forecastFinalCost: apiRow?.mapped ? apiRow.forecast_final_cost : null,
+      costToDate: hasLiveCost ? apiRow!.cost_to_date : null,
+      forecastFinalCost: hasLiveCost ? apiRow!.forecast_final_cost : null,
     })
   })
 
