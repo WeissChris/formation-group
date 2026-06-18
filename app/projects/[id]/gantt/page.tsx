@@ -209,19 +209,22 @@ interface SegEditProps {
 }
 
 function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, materialsUsedElsewhere, equipmentUsedElsewhere, crew, onUpdate, onDelete, onClose, anchorRef }: SegEditProps) {
-  // This period can allocate at most what the OTHER periods leave — so the total can't exceed 100%.
-  const matAvailable = Math.max(0, Math.round(100 - materialsUsedElsewhere))
-  const eqAvailable = Math.max(0, Math.round(100 - equipmentUsedElsewhere))
-  const clampMat = (v: number) => Math.max(0, Math.min(matAvailable, v))
-  const clampEq = (v: number) => Math.max(0, Math.min(eqAvailable, v))
+  // Each period's % is independent — type any 0–100 value and it sticks. We never clamp one box against
+  // the others or silently rescale; the running total is shown live instead, and the category row flags
+  // amber if the periods don't add up to 100%.
+  const clampPct = (v: number) => Math.max(0, Math.min(100, v))
 
   const [label, setLabel] = useState(seg.label ?? '')
   const [matPct, setMatPct] = useState(seg.materialsPct != null ? String(Math.round(seg.materialsPct)) : '')
   const [eqPct, setEqPct] = useState(seg.equipmentPct != null ? String(Math.round(seg.equipmentPct)) : '')
 
-  // Remaining unallocated budget across all periods — live as you type (this period + the others ≤ 100%).
-  const matLeft = Math.max(0, Math.round(100 - materialsUsedElsewhere - (parseFloat(matPct) || 0)))
-  const eqLeft = Math.max(0, Math.round(100 - equipmentUsedElsewhere - (parseFloat(eqPct) || 0)))
+  // Live total allocated across ALL periods (the others + what's in this box). The foreman sees the whole
+  // budget add up, and an over/under hint when it isn't exactly 100%.
+  const matTotal = Math.round(materialsUsedElsewhere + (parseFloat(matPct) || 0))
+  const eqTotal = Math.round(equipmentUsedElsewhere + (parseFloat(eqPct) || 0))
+  const matMsg = matTotal > 100 ? `${matTotal - 100}% over` : matTotal < 100 ? `${100 - matTotal}% left` : 'all allocated'
+  const eqMsg = eqTotal > 100 ? `${eqTotal - 100}% over` : eqTotal < 100 ? `${100 - eqTotal}% left` : 'all allocated'
+  const totalClass = (t: number) => t > 100 ? 'text-amber-600' : t === 100 ? 'text-green-600/70' : 'text-fg-muted/50'
 
   // Only show the cost types this scope actually carries. Labour is read off the bar (working days ×
   // crew × 8h) — but only when the scope has a labour budget (else no phantom labour). Materials/
@@ -240,8 +243,8 @@ function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, m
     onUpdate({
       ...seg,
       label: label || undefined,
-      materialsPct: clampMat(parseFloat(matPct) || 0),
-      equipmentPct: clampEq(parseFloat(eqPct) || 0),
+      materialsPct: clampPct(parseFloat(matPct) || 0),
+      equipmentPct: clampPct(parseFloat(eqPct) || 0),
     })
     onClose()
   }
@@ -270,19 +273,19 @@ function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, m
             {hasMaterials && (
               <div>
                 <label className="text-2xs font-light text-fg-muted block mb-1">Materials %</label>
-                <input type="number" min={0} max={matAvailable} value={matPct}
-                  onChange={e => setMatPct(e.target.value === '' ? '' : String(clampMat(parseFloat(e.target.value) || 0)))} placeholder="0"
+                <input type="number" min={0} max={100} value={matPct}
+                  onChange={e => setMatPct(e.target.value === '' ? '' : String(clampPct(parseFloat(e.target.value) || 0)))} placeholder="0"
                   className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
-                <p className="text-[9px] text-fg-muted/50 mt-0.5">{matLeft}% left</p>
+                <p className={`text-[9px] mt-0.5 ${totalClass(matTotal)}`}>{matTotal}% used · {matMsg}</p>
               </div>
             )}
             {hasEquipment && (
               <div>
                 <label className="text-2xs font-light text-fg-muted block mb-1">Equipment %</label>
-                <input type="number" min={0} max={eqAvailable} value={eqPct}
-                  onChange={e => setEqPct(e.target.value === '' ? '' : String(clampEq(parseFloat(e.target.value) || 0)))} placeholder="0"
+                <input type="number" min={0} max={100} value={eqPct}
+                  onChange={e => setEqPct(e.target.value === '' ? '' : String(clampPct(parseFloat(e.target.value) || 0)))} placeholder="0"
                   className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
-                <p className="text-[9px] text-fg-muted/50 mt-0.5">{eqLeft}% left</p>
+                <p className={`text-[9px] mt-0.5 ${totalClass(eqTotal)}`}>{eqTotal}% used · {eqMsg}</p>
               </div>
             )}
           </div>
@@ -515,17 +518,21 @@ export default function GanttPage() {
     const materialsBudget = (cat?.cost.material ?? 0) + (cat?.cost.subcontractor ?? 0)
     const equipmentBudget = cat?.cost.equipment ?? 0
     const catRevenue = cat?.budgetedRevenue ?? entry.budgetedRevenue
-    // Resolve each period's material/equipment % independently. Periods the foreman has set keep their
-    // own value; periods still unset share only the REMAINING budget (not 100/n each, which would
-    // over-allocate the moment one period is set). If the explicit values already total more than 100%
-    // (legacy data), scale them down proportionally so the category lands exactly on its budget. This
-    // is deterministic and order-independent — editing one period never silently shifts another.
+    // Resolve each period's material/equipment % independently. A period the foreman has set keeps its
+    // OWN value exactly (just clamped 0–100) — we never rescale one period to compensate for another, so
+    // editing one box never shifts the others. Only DATED periods take part: an undated placeholder gets
+    // 0 (it carries no cost until scheduled). Unset dated periods share whatever the set periods leave,
+    // so a fresh schedule lands on 100% without any box pre-claiming budget. If the set values total over
+    // 100%, the row flags amber rather than silently capping — the foreman dials it back himself.
     const planPct = (key: 'materialsPct' | 'equipmentPct') => {
-      const explicitTotal = entry.segments.reduce((sum, s) => sum + (s[key] ?? 0), 0)
-      const scale = explicitTotal > 100 ? 100 / explicitTotal : 1
-      const unsetCount = entry.segments.filter(s => s[key] == null).length
-      const fallback = unsetCount > 0 ? Math.max(0, 100 - explicitTotal * scale) / unsetCount : 0
-      return (s: GanttSegment) => s[key] != null ? Math.max(0, Math.min(100, (s[key] as number) * scale)) : fallback
+      const dated = entry.segments.filter(s => !!(s.startDate && s.endDate))
+      const setTotal = dated.reduce((sum, s) => sum + (s[key] ?? 0), 0)
+      const unsetDated = dated.filter(s => s[key] == null).length
+      const fallback = unsetDated > 0 ? Math.max(0, 100 - setTotal) / unsetDated : 0
+      return (s: GanttSegment) => {
+        if (!(s.startDate && s.endDate)) return 0
+        return s[key] != null ? Math.max(0, Math.min(100, s[key] as number)) : fallback
+      }
     }
     const matPctOf = planPct('materialsPct')
     const eqPctOf = planPct('equipmentPct')
