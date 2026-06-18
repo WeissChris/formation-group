@@ -23,6 +23,7 @@ import {
   SHORT_MONTH_NAMES,
 } from '@/lib/utils'
 import { readLineItemRevenue, getEstimateContract, lineContractValue, addLineCost, emptyCostBreakdown, STD_LABOUR_RATE, type CostBreakdown } from '@/lib/estimateCalculations'
+import { normalizedPcts, rebalancedPcts, datedPeriodCount } from '@/lib/ganttAllocation'
 import type { Project, Estimate, GanttEntry, GanttSegment, GanttSubtask, WeeklyRevenue } from '@/types'
 import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react'
 
@@ -199,8 +200,6 @@ interface SegEditProps {
   labourBudget: number
   materialsBudget: number
   equipmentBudget: number
-  materialsUsedElsewhere: number   // sum of materials % on the OTHER periods (so this one can't over-allocate)
-  equipmentUsedElsewhere: number
   crew: number
   onUpdate: (seg: GanttSegment) => void
   onDelete: () => void
@@ -208,23 +207,19 @@ interface SegEditProps {
   anchorRef: React.RefObject<HTMLDivElement | null>
 }
 
-function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, materialsUsedElsewhere, equipmentUsedElsewhere, crew, onUpdate, onDelete, onClose, anchorRef }: SegEditProps) {
-  // Each period's % is independent — type any 0–100 value and it sticks. We never clamp one box against
-  // the others or silently rescale; the running total is shown live instead, and the category row flags
-  // amber if the periods don't add up to 100%.
+function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, crew, onUpdate, onDelete, onClose, anchorRef }: SegEditProps) {
+  // The foreman types this period's material/equipment % (0–100). Applying auto-balances the OTHER dated
+  // periods to fill the remainder, so each resource always sums to exactly 100% across the scope — "put
+  // 75% here, the balance fills the rest". No need to track the others; the parent handles the balance.
   const clampPct = (v: number) => Math.max(0, Math.min(100, v))
 
   const [label, setLabel] = useState(seg.label ?? '')
   const [matPct, setMatPct] = useState(seg.materialsPct != null ? String(Math.round(seg.materialsPct)) : '')
   const [eqPct, setEqPct] = useState(seg.equipmentPct != null ? String(Math.round(seg.equipmentPct)) : '')
 
-  // Live total allocated across ALL periods (the others + what's in this box). The foreman sees the whole
-  // budget add up, and an over/under hint when it isn't exactly 100%.
-  const matTotal = Math.round(materialsUsedElsewhere + (parseFloat(matPct) || 0))
-  const eqTotal = Math.round(equipmentUsedElsewhere + (parseFloat(eqPct) || 0))
-  const matMsg = matTotal > 100 ? `${matTotal - 100}% over` : matTotal < 100 ? `${100 - matTotal}% left` : 'all allocated'
-  const eqMsg = eqTotal > 100 ? `${eqTotal - 100}% over` : eqTotal < 100 ? `${100 - eqTotal}% left` : 'all allocated'
-  const totalClass = (t: number) => t > 100 ? 'text-amber-600' : t === 100 ? 'text-green-600/70' : 'text-fg-muted/50'
+  // How much the OTHER periods will auto-fill once this one is applied.
+  const matRest = Math.max(0, 100 - Math.round(parseFloat(matPct) || 0))
+  const eqRest = Math.max(0, 100 - Math.round(parseFloat(eqPct) || 0))
 
   // Only show the cost types this scope actually carries. Labour is read off the bar (working days ×
   // crew × 8h) — but only when the scope has a labour budget (else no phantom labour). Materials/
@@ -276,7 +271,7 @@ function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, m
                 <input type="number" min={0} max={100} value={matPct}
                   onChange={e => setMatPct(e.target.value === '' ? '' : String(clampPct(parseFloat(e.target.value) || 0)))} placeholder="0"
                   className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
-                <p className={`text-[9px] mt-0.5 ${totalClass(matTotal)}`}>{matTotal}% used · {matMsg}</p>
+                <p className="text-[9px] text-fg-muted/50 mt-0.5">rest fills {matRest}%</p>
               </div>
             )}
             {hasEquipment && (
@@ -285,7 +280,7 @@ function SegmentPopover({ seg, labourBudget, materialsBudget, equipmentBudget, m
                 <input type="number" min={0} max={100} value={eqPct}
                   onChange={e => setEqPct(e.target.value === '' ? '' : String(clampPct(parseFloat(e.target.value) || 0)))} placeholder="0"
                   className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
-                <p className={`text-[9px] mt-0.5 ${totalClass(eqTotal)}`}>{eqTotal}% used · {eqMsg}</p>
+                <p className="text-[9px] text-fg-muted/50 mt-0.5">rest fills {eqRest}%</p>
               </div>
             )}
           </div>
@@ -517,33 +512,23 @@ export default function GanttPage() {
     const labourBudget = cat?.cost.labour ?? 0
     const materialsBudget = (cat?.cost.material ?? 0) + (cat?.cost.subcontractor ?? 0)
     const equipmentBudget = cat?.cost.equipment ?? 0
+    // Refresh the scope's budget from the CURRENT estimate so a re-priced estimate flows through. The
+    // saved snapshot otherwise goes stale (the 209 forecast-vs-estimate drift).
     const catRevenue = cat?.budgetedRevenue ?? entry.budgetedRevenue
-    // Resolve each period's material/equipment % independently. A period the foreman has set keeps its
-    // OWN value exactly (just clamped 0–100) — we never rescale one period to compensate for another, so
-    // editing one box never shifts the others. Only DATED periods take part: an undated placeholder gets
-    // 0 (it carries no cost until scheduled). Unset dated periods share whatever the set periods leave,
-    // so a fresh schedule lands on 100% without any box pre-claiming budget. If the set values total over
-    // 100%, the row flags amber rather than silently capping — the foreman dials it back himself.
-    const planPct = (key: 'materialsPct' | 'equipmentPct') => {
-      const dated = entry.segments.filter(s => !!(s.startDate && s.endDate))
-      const setTotal = dated.reduce((sum, s) => sum + (s[key] ?? 0), 0)
-      const unsetDated = dated.filter(s => s[key] == null).length
-      const fallback = unsetDated > 0 ? Math.max(0, 100 - setTotal) / unsetDated : 0
-      return (s: GanttSegment) => {
-        if (!(s.startDate && s.endDate)) return 0
-        return s[key] != null ? Math.max(0, Math.min(100, s[key] as number)) : fallback
-      }
-    }
-    const matPctOf = planPct('materialsPct')
-    const eqPctOf = planPct('equipmentPct')
-    const derived = entry.segments.map(s => {
+    const catCost = cat?.cost.total ?? entry.budgetedCost
+    // Per-period material/equipment % are ALWAYS normalised so the dated periods sum to exactly 100% —
+    // the full budget is allocated, never 95% (cost silently lost) nor 110% (cost invented). Undated
+    // placeholder periods get 0. Editing a period auto-balances the rest (see handleSegmentUpdate).
+    const matPcts = normalizedPcts(entry.segments, 'materialsPct')
+    const eqPcts = normalizedPcts(entry.segments, 'equipmentPct')
+    const derived = entry.segments.map((s, i) => {
       const hasDates = !!(s.startDate && s.endDate)
       // Labour only applies to scopes that carry a labour budget — otherwise the bar would conjure
       // phantom labour cost (e.g. Preliminaries, which is equipment/sub only). An undrawn period
       // (no dates) carries no cost yet, so it can't over-allocate or dilute the revenue split.
       const labourHours = labourBudget > 0 && hasDates ? workingDaysBetween(s.startDate, s.endDate) * crew * 8 : 0
-      const matPct = matPctOf(s)
-      const eqPct = eqPctOf(s)
+      const matPct = matPcts[i]
+      const eqPct = eqPcts[i]
       const cost = hasDates ? labourHours * STD_LABOUR_RATE + (matPct / 100) * materialsBudget + (eqPct / 100) * equipmentBudget : 0
       return { hasDates, labourHours, matPct, eqPct, cost }
     })
@@ -551,6 +536,8 @@ export default function GanttPage() {
     const datedCount = derived.filter(d => d.hasDates).length
     return {
       ...entry,
+      budgetedRevenue: catRevenue,
+      budgetedCost: catCost,
       segments: entry.segments.map((s, i) => ({
         ...s,
         materialsPct: derived[i].matPct,
@@ -799,7 +786,14 @@ export default function GanttPage() {
       )
       updateEntry({ ...entry, subtasks: updatedSubtasks })
     } else {
-      updateEntry({ ...entry, segments: entry.segments.map(s => s.id === updated.id ? updated : s) })
+      // Replace the edited period, then AUTO-BALANCE: pin this period's material/equipment % to what the
+      // foreman set and scale the other dated periods to fill the rest, so each resource always sums to
+      // exactly 100% (the "put 75% here, the balance later" model). recalcEntry then derives cost/revenue.
+      const replaced = entry.segments.map(s => s.id === updated.id ? updated : s)
+      const matPcts = rebalancedPcts(replaced, updated.id, 'materialsPct', updated.materialsPct ?? 0)
+      const eqPcts = rebalancedPcts(replaced, updated.id, 'equipmentPct', updated.equipmentPct ?? 0)
+      const balanced = replaced.map((s, i) => ({ ...s, materialsPct: matPcts[i], equipmentPct: eqPcts[i] }))
+      updateEntry({ ...entry, segments: balanced })
     }
   }
 
@@ -1537,7 +1531,7 @@ export default function GanttPage() {
                                 )}
                                 {matBudgetCat > 0 && <span title="Materials allocated" className={matAlloc !== 100 ? 'text-amber-600' : 'text-fg-muted/50'}>M {matAlloc}%</span>}
                                 {eqBudgetCat > 0 && <span title="Equipment allocated" className={eqAlloc !== 100 ? 'text-amber-600' : 'text-fg-muted/50'}>E {eqAlloc}%</span>}
-                                {segs.length > 1 && <span className="text-fg-muted/40">· {segs.length} periods</span>}
+                                {datedPeriodCount(segs) > 1 && <span className="text-fg-muted/40">· {datedPeriodCount(segs)} periods</span>}
                               </span>
                             )}
                           </div>
@@ -1778,16 +1772,6 @@ export default function GanttPage() {
         const labBudget = cat?.cost.labour ?? 0
         const matBudget = (cat?.cost.material ?? 0) + (cat?.cost.subcontractor ?? 0)
         const eqBudget = cat?.cost.equipment ?? 0
-        // How much of the material/equipment budget the OTHER periods already use, so this popover can
-        // cap its inputs to the remaining headroom (total ≤ 100%).
-        const groupSegs = popover.subtaskId
-          ? (entry?.subtasks?.find(st => st.id === popover.subtaskId)?.segments ?? [])
-          : (entry?.segments ?? [])
-        const otherSegs = groupSegs.filter(s => s.id !== popover.segId)
-        // Sum the OTHER periods' resolved % (recalcEntry has filled any unset period on load), so this
-        // popover's headroom and "% left" are exactly 100 − the rest, never inflated by a 100/n default.
-        const matUsed = otherSegs.reduce((s, sg) => s + (sg.materialsPct ?? 0), 0)
-        const eqUsed = otherSegs.reduce((s, sg) => s + (sg.equipmentPct ?? 0), 0)
         return (
           <SegmentPopover
             key={`${popover.subtaskId ?? 'main'}-${popover.segId}`}
@@ -1795,8 +1779,6 @@ export default function GanttPage() {
             labourBudget={labBudget}
             materialsBudget={matBudget}
             equipmentBudget={eqBudget}
-            materialsUsedElsewhere={matUsed}
-            equipmentUsedElsewhere={eqUsed}
             crew={crewSize}
             anchorRef={popoverAnchorRef}
             onUpdate={updated => handleSegmentUpdate(popover.category, updated, popover.subtaskId)}
