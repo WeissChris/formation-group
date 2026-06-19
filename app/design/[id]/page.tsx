@@ -25,6 +25,11 @@ export default function ProposalDetailPage() {
   const [contentBlocks, setContentBlocks] = useState<ProposalContentBlock[]>([])
   const [blocksSaved, setBlocksSaved] = useState(false)
   const [editing, setEditing] = useState(false)
+  // Which read-only text field was clicked, so toggling into edit mode lands focus straight in it.
+  // The single Edit button is at the top of a long form; clicking a field's text anywhere on the page
+  // now drops you into editing THAT box (otherwise the lower fields look un-editable until you scroll
+  // up and hit Edit).
+  const [focusField, setFocusField] = useState<'intro' | 'email' | 'program' | null>(null)
   const [sending, setSending] = useState(false)
   const [sentMsg, setSentMsg] = useState('')
 
@@ -215,7 +220,7 @@ export default function ProposalDetailPage() {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setEditing(e => !e)}
+            onClick={() => { setEditing(e => !e); setFocusField(null) }}
             className="flex items-center gap-1.5 border border-fg-border text-fg-muted px-3 py-1.5 text-xs hover:text-fg-heading transition-colors"
           >
             <Pencil className="w-3 h-3" /> {editing ? 'Cancel' : 'Edit'}
@@ -528,6 +533,7 @@ export default function ProposalDetailPage() {
               <textarea
                 defaultValue={proposal.introText ?? ''}
                 rows={5}
+                autoFocus={focusField === 'intro'}
                 onBlur={(e) => {
                   const updated: DesignProposal = { ...proposal, introText: e.target.value || undefined, updatedAt: new Date().toISOString() }
                   saveProposal(updated)
@@ -538,7 +544,8 @@ export default function ProposalDetailPage() {
                 placeholder="Thank you for the opportunity to meet on site and discuss your project..."
               />
             ) : (
-              <p className="text-sm font-light text-fg-heading leading-relaxed whitespace-pre-line">
+              <p onClick={() => { setEditing(true); setFocusField('intro') }} title="Click to edit"
+                className="text-sm font-light text-fg-heading leading-relaxed whitespace-pre-line cursor-text hover:bg-fg-card/20 -mx-1 px-1 rounded-sm transition-colors">
                 {proposal.introText || <span className="text-fg-muted/40 italic">Default intro text will be used</span>}
               </p>
             )}
@@ -552,6 +559,7 @@ export default function ProposalDetailPage() {
               <textarea
                 defaultValue={proposal.emailMessage ?? ''}
                 rows={4}
+                autoFocus={focusField === 'email'}
                 onBlur={(e) => {
                   const updated: DesignProposal = { ...proposal, emailMessage: e.target.value || undefined, updatedAt: new Date().toISOString() }
                   saveProposal(updated)
@@ -562,7 +570,8 @@ export default function ProposalDetailPage() {
                 placeholder="Thank you for the opportunity to discuss your project. Your proposal is ready to view online…"
               />
             ) : (
-              <p className="text-sm font-light text-fg-heading leading-relaxed whitespace-pre-line">
+              <p onClick={() => { setEditing(true); setFocusField('email') }} title="Click to edit"
+                className="text-sm font-light text-fg-heading leading-relaxed whitespace-pre-line cursor-text hover:bg-fg-card/20 -mx-1 px-1 rounded-sm transition-colors">
                 {proposal.emailMessage || <span className="text-fg-muted/40 italic">Default email message will be used</span>}
               </p>
             )}
@@ -576,6 +585,7 @@ export default function ProposalDetailPage() {
               <textarea
                 defaultValue={proposal.programText ?? DEFAULT_PROGRAM_TEXT}
                 rows={6}
+                autoFocus={focusField === 'program'}
                 onBlur={(e) => {
                   const updated: DesignProposal = { ...proposal, programText: e.target.value || undefined, updatedAt: new Date().toISOString() }
                   saveProposal(updated)
@@ -585,7 +595,8 @@ export default function ProposalDetailPage() {
                 className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-none placeholder-fg-muted/40 leading-relaxed"
               />
             ) : (
-              <p className="text-sm font-light text-fg-heading leading-relaxed whitespace-pre-line">
+              <p onClick={() => { setEditing(true); setFocusField('program') }} title="Click to edit"
+                className="text-sm font-light text-fg-heading leading-relaxed whitespace-pre-line cursor-text hover:bg-fg-card/20 -mx-1 px-1 rounded-sm transition-colors">
                 {proposal.programText || DEFAULT_PROGRAM_TEXT}
               </p>
             )}
