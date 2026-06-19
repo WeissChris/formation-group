@@ -721,13 +721,21 @@ export default function GanttPage() {
 
       const offset = colIdx - moving.anchorColIdx
 
-      // Calculate new dates by shifting
+      // Calculate new dates by shifting. Clamp the OFFSET (not each end on its own) so the bar keeps its
+      // length when dragged against either edge of the window — clamping ends independently let one end
+      // hit the boundary while the other kept moving, squashing the bar. Off-window bars (start/end past
+      // the rendered range, idx -1) fall back to the per-end clamp.
       const origStartIdx = colIndexForDate(moving.originalStart)
       const origEndIdx = colIndexForDate(moving.originalEnd)
-      const newStartIdx = Math.max(0, Math.min(colCount - 1, origStartIdx + offset))
-      const newEndIdx = Math.max(0, Math.min(colCount - 1, origEndIdx + offset))
-      const newStart = dateForColIdx(newStartIdx)
-      const newEnd = dateForColIdx(newEndIdx)
+      let newStart: string, newEnd: string
+      if (origStartIdx >= 0 && origEndIdx >= 0) {
+        const clampedOffset = Math.max(-origStartIdx, Math.min(colCount - 1 - origEndIdx, offset))
+        newStart = dateForColIdx(origStartIdx + clampedOffset)
+        newEnd = dateForColIdx(origEndIdx + clampedOffset)
+      } else {
+        newStart = dateForColIdx(Math.max(0, Math.min(colCount - 1, origStartIdx + offset)))
+        newEnd = dateForColIdx(Math.max(0, Math.min(colCount - 1, origEndIdx + offset)))
+      }
       // A move preserves the bar's length, so keep its weekCount (forecast spread) unchanged.
 
       if (moving.subtaskId) {
