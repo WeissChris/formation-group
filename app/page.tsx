@@ -13,6 +13,7 @@ import { calcProjectHealth, scheduleStatus } from '@/lib/projectHealth'
 import { isLiveProject } from '@/lib/stageConfig'
 import { getLiveJobs, triggerXeroSync, triggerManualSnapshot, type LiveJobRow as LiveJobApiRow } from '@/lib/xero'
 import { computeLiveJobRow, computePortfolioTotals, type LiveJobRow } from '@/lib/liveJobs'
+import { computeOutstandingInvoices } from '@/lib/outstandingInvoices'
 import { LiveJobsTable } from '@/components/LiveJobsTable'
 
 function toTitleCase(str: string): string {
@@ -299,22 +300,14 @@ export default function DashboardPage() {
     }
   }
 
-  // Outstanding invoices — union of both invoicing models so the KPI reflects whichever model the project uses.
-  // Stage-based projects write to fg_payment_stages via the schedule UI; progress-claim projects write to
-  // fg_progress_claims via the Operations tab. A project uses one model or the other, not both.
+  // Outstanding invoices — resolved per project to a SINGLE invoicing model so a project that
+  // carried both an invoiced stage and a sent progress claim (a data-entry slip — the app doesn't
+  // stop you creating both) can't be billed twice. See lib/outstandingInvoices.
   const allStages = projects.flatMap(p => loadProgressPaymentStages(p.id))
-  const invoicedUnpaidStages = allStages.filter(s => s.status === 'invoiced' && (s.paidToDate ?? 0) === 0)
-  const stagesOutstanding = invoicedUnpaidStages.reduce((sum, s) => sum + (s.invoicedAmount ?? s.quotedAmount), 0)
-  const stageProjectIds = invoicedUnpaidStages.map(s => s.projectId)
-
   const allClaims = loadProgressClaims()
-  // "Sent" claims are issued but not yet paid; "paid" closes the loop. Drafts and pending are not yet billed.
-  const outstandingClaims = allClaims.filter(c => c.status === 'sent')
-  const claimsOutstanding = outstandingClaims.reduce((sum, c) => sum + c.subtotalEx, 0)
-  const claimProjectIds = outstandingClaims.map(c => c.projectId)
-
-  const outstandingInvoicesTotal = stagesOutstanding + claimsOutstanding
-  const outstandingInvoicesProjects = new Set([...stageProjectIds, ...claimProjectIds]).size
+  const outstanding = computeOutstandingInvoices(projects, allStages, allClaims)
+  const outstandingInvoicesTotal = outstanding.total
+  const outstandingInvoicesProjects = outstanding.projectCount
 
   // Projects without forecast (active formation projects with no gantt entries)
   const projectsMissingForecast = formationProjects.filter(p => {
