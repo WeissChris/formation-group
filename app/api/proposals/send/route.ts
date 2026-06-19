@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sendProposalEmail, isValidEmail } from '@/lib/email'
+import { rateLimit, clientIp } from '@/lib/rateLimit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,6 +29,10 @@ export async function POST(request: NextRequest) {
   if (!isSameOrigin(request)) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
+  // Cap email sends per IP — the same-origin gate is spoofable by a non-browser client, so this stops
+  // it being turned into a spam/cost cannon. 20 / 10 min easily covers real use.
+  const rl = rateLimit(`send:${clientIp(request)}`, 20, 10 * 60_000)
+  if (!rl.allowed) return NextResponse.json({ ok: false, error: 'rate_limited' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfterSeconds) } })
 
   const body = await request.json().catch(() => null)
   const clientEmail = typeof body?.clientEmail === 'string' ? body.clientEmail.trim() : ''
