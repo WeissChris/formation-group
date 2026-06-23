@@ -223,6 +223,7 @@ interface SegEditProps {
   siblingSegs: GanttSegment[]   // all periods of this scope (post-balance) for the live breakdown
   labourBudget: number
   materialsBudget: number
+  subBudget: number
   equipmentBudget: number
   crew: number
   onUpdate: (seg: GanttSegment) => void
@@ -231,7 +232,7 @@ interface SegEditProps {
   anchorRef: React.RefObject<HTMLDivElement | null>
 }
 
-function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, equipmentBudget, onUpdate, onDelete, onClose, anchorRef }: SegEditProps) {
+function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBudget, equipmentBudget, onUpdate, onDelete, onClose, anchorRef }: SegEditProps) {
   // The foreman types this period's material/equipment % (0–100) and it updates LIVE: the other dated
   // periods auto-balance to fill the remainder so each resource always sums to 100%, and the totals/costs
   // recompute as you type — no Apply step. The breakdown below shows every period's share moving.
@@ -240,29 +241,33 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, equip
   const [label, setLabel] = useState(seg.label ?? '')
   const [labPct, setLabPct] = useState(seg.labourPct != null ? String(Math.round(seg.labourPct)) : '')
   const [matPct, setMatPct] = useState(seg.materialsPct != null ? String(Math.round(seg.materialsPct)) : '')
+  const [subPct, setSubPct] = useState(seg.subPct != null ? String(Math.round(seg.subPct)) : '')
   const [eqPct, setEqPct] = useState(seg.equipmentPct != null ? String(Math.round(seg.equipmentPct)) : '')
 
   // Push the current state up immediately so the parent auto-balances + recomputes. The just-changed
   // field is passed as an override (its useState hasn't committed yet on this keystroke).
-  const pushUpdate = (next: { label?: string; labPct?: string; matPct?: string; eqPct?: string } = {}) => {
+  const pushUpdate = (next: { label?: string; labPct?: string; matPct?: string; subPct?: string; eqPct?: string } = {}) => {
     onUpdate({
       ...seg,
       label: ((next.label ?? label) || undefined),
       labourPct: clampPct(parseFloat(next.labPct ?? labPct) || 0),
       materialsPct: clampPct(parseFloat(next.matPct ?? matPct) || 0),
+      subPct: clampPct(parseFloat(next.subPct ?? subPct) || 0),
       equipmentPct: clampPct(parseFloat(next.eqPct ?? eqPct) || 0),
     })
   }
 
-  // Only show the cost types this scope actually carries. Labour, materials and equipment are each a
-  // manual % of their own budget for this period.
+  // Only show the cost types this scope actually carries. Labour, material, subcontractor and equipment
+  // are each a manual % of their own budget for this period.
   const hasLabour = labourBudget > 0
   const hasMaterials = materialsBudget > 0
+  const hasSub = subBudget > 0
   const hasEquipment = equipmentBudget > 0
   const labCost = (parseFloat(labPct) || 0) / 100 * labourBudget
   const matCost = (parseFloat(matPct) || 0) / 100 * materialsBudget
+  const subCost = (parseFloat(subPct) || 0) / 100 * subBudget
   const eqCost = (parseFloat(eqPct) || 0) / 100 * equipmentBudget
-  const periodCost = labCost + matCost + eqCost
+  const periodCost = labCost + matCost + subCost + eqCost
 
   // Live per-period breakdown — reads the post-balance sibling state, so as this period changes the
   // others visibly redistribute and the total stays on 100%.
@@ -272,9 +277,10 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, equip
   const onlyPeriod = datedSibs.length <= 1
   const labTotal = Math.round(datedSibs.reduce((s, x) => s + (x.labourPct || 0), 0))
   const matTotal = Math.round(datedSibs.reduce((s, x) => s + (x.materialsPct || 0), 0))
+  const subTotal = Math.round(datedSibs.reduce((s, x) => s + (x.subPct || 0), 0))
   const eqTotal = Math.round(datedSibs.reduce((s, x) => s + (x.equipmentPct || 0), 0))
   const totalClass = (t: number) => t === 100 ? 'text-green-600/70' : 'text-amber-600'
-  const splitLine = (key: 'labourPct' | 'materialsPct' | 'equipmentPct') =>
+  const splitLine = (key: 'labourPct' | 'materialsPct' | 'subPct' | 'equipmentPct') =>
     datedSibs.map((s, i) => `${i + 1}: ${Math.round(s[key] || 0)}%`).join('  ')
 
   const { top, left } = popoverPosition(anchorRef.current?.getBoundingClientRect(), 288)
@@ -294,7 +300,7 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, equip
           <input value={label} onChange={e => setLabel(e.target.value)} onBlur={() => pushUpdate()} placeholder="e.g. Slab prep"
             className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading" />
         </div>
-        {(hasLabour || hasMaterials || hasEquipment) && (
+        {(hasLabour || hasMaterials || hasSub || hasEquipment) && (
           <div className="grid grid-cols-2 gap-2">
             {hasLabour && (
               <div>
@@ -312,6 +318,14 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, equip
                   className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums disabled:opacity-40 disabled:cursor-not-allowed" />
               </div>
             )}
+            {hasSub && (
+              <div>
+                <label className="text-2xs font-light text-fg-muted block mb-1">Sub %</label>
+                <input type="number" min={0} max={100} value={onlyPeriod ? '100' : subPct} disabled={onlyPeriod}
+                  onChange={e => { const v = e.target.value === '' ? '' : String(clampPct(parseFloat(e.target.value) || 0)); setSubPct(v); pushUpdate({ subPct: v }) }} placeholder="0"
+                  className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums disabled:opacity-40 disabled:cursor-not-allowed" />
+              </div>
+            )}
             {hasEquipment && (
               <div>
                 <label className="text-2xs font-light text-fg-muted block mb-1">Equipment %</label>
@@ -323,17 +337,18 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, equip
           </div>
         )}
         {/* Single period holds the whole budget — nowhere to split a partial % to, so guide them to split */}
-        {onlyPeriod && (hasLabour || hasMaterials || hasEquipment) && (
+        {onlyPeriod && (hasLabour || hasMaterials || hasSub || hasEquipment) && (
           <p className="text-[9px] font-light text-amber-600/80 leading-snug">
             Only one period, so it holds 100% of the budget. To put e.g. 80% here and the rest later, add a
             second period with the ＋ in the Start / Duration column, then set the split.
           </p>
         )}
         {/* Live breakdown across all periods — auto-balances to 100% as you type */}
-        {datedSibs.length > 1 && (hasLabour || hasMaterials || hasEquipment) && (
+        {datedSibs.length > 1 && (hasLabour || hasMaterials || hasSub || hasEquipment) && (
           <div className="text-[9px] font-light text-fg-muted space-y-0.5 border-t border-fg-border/40 pt-2">
             {hasLabour && <div className="flex justify-between gap-2"><span className="tabular-nums">Lab {splitLine('labourPct')}</span><span className={`tabular-nums ${totalClass(labTotal)}`}>={labTotal}%</span></div>}
             {hasMaterials && <div className="flex justify-between gap-2"><span className="tabular-nums">Mat {splitLine('materialsPct')}</span><span className={`tabular-nums ${totalClass(matTotal)}`}>={matTotal}%</span></div>}
+            {hasSub && <div className="flex justify-between gap-2"><span className="tabular-nums">Sub {splitLine('subPct')}</span><span className={`tabular-nums ${totalClass(subTotal)}`}>={subTotal}%</span></div>}
             {hasEquipment && <div className="flex justify-between gap-2"><span className="tabular-nums">Eq {splitLine('equipmentPct')}</span><span className={`tabular-nums ${totalClass(eqTotal)}`}>={eqTotal}%</span></div>}
           </div>
         )}
@@ -341,6 +356,7 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, equip
         <div className="text-[10px] text-fg-muted space-y-0.5 border-t border-fg-border/50 pt-2">
           {hasLabour && <div className="flex justify-between"><span>Labour</span><span className="tabular-nums text-fg-heading">{Math.round(labCost / STD_LABOUR_RATE)}h · {formatCurrency(labCost)}</span></div>}
           {hasMaterials && <div className="flex justify-between"><span>Materials</span><span className="tabular-nums">{formatCurrency(matCost)}</span></div>}
+          {hasSub && <div className="flex justify-between"><span>Subcontractor</span><span className="tabular-nums">{formatCurrency(subCost)}</span></div>}
           {hasEquipment && <div className="flex justify-between"><span>Equipment</span><span className="tabular-nums">{formatCurrency(eqCost)}</span></div>}
           <div className="flex justify-between font-medium text-fg-heading pt-0.5"><span>Period cost</span><span className="tabular-nums">{formatCurrency(periodCost)}</span></div>
         </div>
@@ -560,17 +576,22 @@ export default function GanttPage() {
     if (n === 0) return entry
     const cat = categories.find(c => c.category === entry.category)
     const labourBudget = cat?.cost.labour ?? 0
-    const materialsBudget = (cat?.cost.material ?? 0) + (cat?.cost.subcontractor ?? 0)
+    const materialBudget = cat?.cost.material ?? 0
+    const subBudget = cat?.cost.subcontractor ?? 0
     const equipmentBudget = cat?.cost.equipment ?? 0
     // Refresh the scope's budget from the CURRENT estimate so a re-priced estimate flows through. The
     // saved snapshot otherwise goes stale (the 209 forecast-vs-estimate drift).
     const catRevenue = cat?.budgetedRevenue ?? entry.budgetedRevenue
     const catCost = cat?.cost.total ?? entry.budgetedCost
-    // Per-period material/equipment % are ALWAYS normalised so the dated periods sum to exactly 100% —
-    // the full budget is allocated, never 95% (cost silently lost) nor 110% (cost invented). Undated
+    // Each cost type's per-period % is ALWAYS normalised so the dated periods sum to exactly 100% — the
+    // full budget is allocated, never 95% (cost silently lost) nor 110% (cost invented). Undated
     // placeholder periods get 0. Editing a period auto-balances the rest (see handleSegmentUpdate).
     const matPcts = normalizedPcts(entry.segments, 'materialsPct')
     const eqPcts = normalizedPcts(entry.segments, 'equipmentPct')
+    // Subcontractor is its own % of the sub budget. Legacy segments (no subPct) are seeded from the
+    // material % so the old material+sub combined split is preserved, then become independently editable.
+    const subSeed = subBudget > 0 && entry.segments.every(s => s.subPct == null)
+    const subPcts = subSeed ? matPcts.slice() : normalizedPcts(entry.segments, 'subPct')
     // Labour is a manual % of the labour budget (auto-balanced to 100% across periods, same as materials)
     // — more flexible than bar×crew×hours and it always allocates the full budget. Legacy segments with
     // no labourPct are seeded from their bar-length share so an existing schedule's labour split is
@@ -583,9 +604,10 @@ export default function GanttPage() {
       const labPct = hasDates ? labPcts[i] : 0
       const labourCost = (labPct / 100) * labourBudget
       const matPct = matPcts[i]
+      const subPct = subPcts[i]
       const eqPct = eqPcts[i]
-      const cost = hasDates ? labourCost + (matPct / 100) * materialsBudget + (eqPct / 100) * equipmentBudget : 0
-      return { hasDates, labPct, labourHours: Math.round(labourCost / STD_LABOUR_RATE), matPct, eqPct, cost }
+      const cost = hasDates ? labourCost + (matPct / 100) * materialBudget + (subPct / 100) * subBudget + (eqPct / 100) * equipmentBudget : 0
+      return { hasDates, labPct, labourHours: Math.round(labourCost / STD_LABOUR_RATE), matPct, subPct, eqPct, cost }
     })
     const totalCost = derived.reduce((sum, d) => sum + d.cost, 0)
     const datedCount = derived.filter(d => d.hasDates).length
@@ -596,6 +618,7 @@ export default function GanttPage() {
       segments: entry.segments.map((s, i) => ({
         ...s,
         materialsPct: derived[i].matPct,
+        subPct: derived[i].subPct,
         equipmentPct: derived[i].eqPct,
         labourPct: derived[i].labPct,
         labourHours: derived[i].labourHours,
@@ -856,8 +879,9 @@ export default function GanttPage() {
       const replaced = entry.segments.map(s => s.id === updated.id ? updated : s)
       const labPcts = rebalancedPcts(replaced, updated.id, 'labourPct', updated.labourPct ?? 0)
       const matPcts = rebalancedPcts(replaced, updated.id, 'materialsPct', updated.materialsPct ?? 0)
+      const subPcts = rebalancedPcts(replaced, updated.id, 'subPct', updated.subPct ?? 0)
       const eqPcts = rebalancedPcts(replaced, updated.id, 'equipmentPct', updated.equipmentPct ?? 0)
-      const balanced = replaced.map((s, i) => ({ ...s, labourPct: labPcts[i], materialsPct: matPcts[i], equipmentPct: eqPcts[i] }))
+      const balanced = replaced.map((s, i) => ({ ...s, labourPct: labPcts[i], materialsPct: matPcts[i], subPct: subPcts[i], equipmentPct: eqPcts[i] }))
       updateEntry({ ...entry, segments: balanced })
     }
   }
@@ -1616,9 +1640,11 @@ export default function GanttPage() {
                 // allocated (amber when not). Labour is now a % like the others, not bar-derived hours.
                 const labBudgetCat = cat.cost.labour ?? 0
                 const labAlloc = Math.round(segs.reduce((s, sg) => s + (sg.labourPct ?? 0), 0))
-                const matBudgetCat = (cat.cost.material ?? 0) + (cat.cost.subcontractor ?? 0)
+                const matBudgetCat = cat.cost.material ?? 0
+                const subBudgetCat = cat.cost.subcontractor ?? 0
                 const eqBudgetCat = cat.cost.equipment ?? 0
                 const matAlloc = Math.round(segs.reduce((s, sg) => s + (sg.materialsPct ?? 0), 0))
+                const subAlloc = Math.round(segs.reduce((s, sg) => s + (sg.subPct ?? 0), 0))
                 const eqAlloc = Math.round(segs.reduce((s, sg) => s + (sg.equipmentPct ?? 0), 0))
                 const scheduled = segs.some(sg => sg.startDate)
 
@@ -1643,6 +1669,7 @@ export default function GanttPage() {
                               <span className="text-[10px] font-light tabular-nums flex flex-wrap gap-x-1.5 leading-tight">
                                 {labBudgetCat > 0 && <span title="Labour allocated across periods" className={labAlloc !== 100 ? 'text-amber-600' : 'text-fg-muted/50'}>L {labAlloc}%</span>}
                                 {matBudgetCat > 0 && <span title="Materials allocated" className={matAlloc !== 100 ? 'text-amber-600' : 'text-fg-muted/50'}>M {matAlloc}%</span>}
+                                {subBudgetCat > 0 && <span title="Subcontractor allocated" className={subAlloc !== 100 ? 'text-amber-600' : 'text-fg-muted/50'}>S {subAlloc}%</span>}
                                 {eqBudgetCat > 0 && <span title="Equipment allocated" className={eqAlloc !== 100 ? 'text-amber-600' : 'text-fg-muted/50'}>E {eqAlloc}%</span>}
                                 {datedPeriodCount(segs) > 1 && <span className="text-fg-muted/40">· {datedPeriodCount(segs)} periods</span>}
                               </span>
@@ -1880,7 +1907,8 @@ export default function GanttPage() {
         if (!seg) return null
         const cat = categories.find(c => c.category === popover.category)
         const labBudget = cat?.cost.labour ?? 0
-        const matBudget = (cat?.cost.material ?? 0) + (cat?.cost.subcontractor ?? 0)
+        const matBudget = cat?.cost.material ?? 0
+        const subBudget = cat?.cost.subcontractor ?? 0
         const eqBudget = cat?.cost.equipment ?? 0
         // The scope's full period set (post-balance) so the popover's live breakdown shows every period.
         const siblingSegs = popover.subtaskId
@@ -1893,6 +1921,7 @@ export default function GanttPage() {
             siblingSegs={siblingSegs}
             labourBudget={labBudget}
             materialsBudget={matBudget}
+            subBudget={subBudget}
             equipmentBudget={eqBudget}
             crew={crewSize}
             anchorRef={popoverAnchorRef}

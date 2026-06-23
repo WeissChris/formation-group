@@ -322,10 +322,12 @@ export interface GanttSegment {
   label?: string             // e.g. "Base prep", "Lay pavers", "Grout"
   revenueAllocation: number  // portion of category budgetedRevenue for this segment (DERIVED — see below)
   costAllocation: number     // portion of category budgetedCost for this segment (DERIVED — see below)
-  // Per-period resource allocation (Gantt). Labour is derived from the bar (working days × crew × 8h);
-  // materials + equipment are entered as a % of the category budget. costAllocation/revenueAllocation are
-  // then derived from these (revenue follows progress = cost-weighted) — those remain what the forecast reads.
-  materialsPct?: number      // % of the category's material + subcontractor budget allocated to this period
+  // Per-period resource allocation (Gantt). Labour, material, subcontractor and equipment are each a
+  // manual % of their own budget for this period. costAllocation/revenueAllocation are then derived from
+  // these (revenue follows progress = cost-weighted) — those remain what the forecast reads.
+  materialsPct?: number      // % of the category's MATERIAL budget allocated to this period
+  subPct?: number            // % of the category's SUBCONTRACTOR budget (seeded from materialsPct on first
+                             // load so the legacy material+sub combined split is preserved, then editable)
   equipmentPct?: number      // % of the category's equipment budget allocated to this period
   labourPct?: number         // % of the category's LABOUR budget for this period (manual, auto-balanced
                              // to 100% across periods). Seeded from the bar-length share on first load so
