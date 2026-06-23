@@ -196,6 +196,27 @@ function barLabourShares(segments: GanttSegment[], crew: number): number[] {
 // Labour hours fall out of a bar's length: labourWorkingDays × crew × 8. labourWorkingDays lives in
 // lib/ganttSchedule (a Weeks-view bar means 5 working days per week, not the Fri→Fri calendar count).
 
+// Planned revenue + cost per week (keyed by the week's Friday ISO) for a set of gantt entries. A segment
+// contributes revenueAllocation/weekCount to every week it overlaps (Mon–Fri of that week), so it works
+// in both weeks and days view and against a baseline snapshot. Used for the fortnightly cycle totals.
+function plannedByWeek(entries: GanttEntry[], fridays: Date[]): Map<string, { rev: number; cost: number }> {
+  const map = new Map<string, { rev: number; cost: number }>()
+  for (const f of fridays) {
+    const friIso = toISODate(f)
+    const mon = new Date(f); mon.setDate(mon.getDate() - 4)
+    const monIso = toISODate(mon)
+    let rev = 0, cost = 0
+    for (const e of entries) for (const seg of e.segments) {
+      if (seg.startDate && seg.endDate && seg.weekCount > 0 && seg.startDate <= friIso && seg.endDate >= monIso) {
+        rev += seg.revenueAllocation / seg.weekCount
+        cost += seg.costAllocation / seg.weekCount
+      }
+    }
+    map.set(friIso, { rev, cost })
+  }
+  return map
+}
+
 function extractCategories(estimate: Estimate): CategorySummary[] {
   // Each posting's budgeted revenue = its lines' contract value (line revenue + project markup on each
   // line's own cost), so the Gantt's budgeted revenue sums to the ex-GST contract, matching the baseline.
@@ -1442,6 +1463,25 @@ export default function GanttPage() {
     .reduce((s, c) => s + (c.subtotalEx || 0), 0)
   const pctComplete = projTotals.revenue > 0 ? Math.round((invoicedToDate / projTotals.revenue) * 100) : 0
 
+  // ── Fortnightly invoicing cycle (Andrew) ──────────────────────────────────
+  // The current cycle = the two weeks from this week's boundary (this week is a fortnight boundary by the
+  // same alignment as the bold gridlines). Totals come from the forecast; variance compares this cycle's
+  // planned revenue to the same cycle in the baseline snapshot.
+  const planned = plannedByWeek(entries, fridays)
+  const fortFridays = [fridays[LOOKBACK_WEEKS], fridays[LOOKBACK_WEEKS + 1]].filter(Boolean).map(toISODate)
+  const fortRev = fortFridays.reduce((s, iso) => s + (planned.get(iso)?.rev ?? 0), 0)
+  const fortCost = fortFridays.reduce((s, iso) => s + (planned.get(iso)?.cost ?? 0), 0)
+  const planBaseline = baseline ? plannedByWeek(baseline.entries, fridays) : null
+  const fortBaseRev = planBaseline ? fortFridays.reduce((s, iso) => s + (planBaseline.get(iso)?.rev ?? 0), 0) : null
+  const fortVar = fortBaseRev !== null ? fortRev - fortBaseRev : null
+  const fortLabel = (() => {
+    const a = fridays[LOOKBACK_WEEKS]; const b = fridays[LOOKBACK_WEEKS + 1] ?? a
+    if (!a) return ''
+    const mon = new Date(a); mon.setDate(mon.getDate() - 4)
+    const opt: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }
+    return `${mon.toLocaleDateString(undefined, opt)} – ${b.toLocaleDateString(undefined, opt)}`
+  })()
+
   const fixedColsWidth = COL_CATEGORY + COL_CREW + COL_BUDGET + COL_SCHED
   const tableWidth = fixedColsWidth + columns.length * CELL_W
 
@@ -1795,6 +1835,29 @@ export default function GanttPage() {
               <span className="text-fg-heading tabular-nums">{pctComplete}%</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Fortnightly invoicing cycle — totals for the current cycle + variance vs baseline + a prompt to
+          claim/update. The prompt is in-app (whoever opens the page); an emailed prompt to the Foreman/
+          Director would need recipient config + per-send approval and isn't auto-sent. */}
+      {estimate && categories.length > 0 && (fortRev > 0 || fortCost > 0) && (
+        <div className="mb-3 px-3 py-2 border border-fg-border/70 bg-fg-bg/30 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs font-light">
+          <span className="text-[10px] uppercase tracking-architectural text-fg-heading">Invoicing fortnight</span>
+          <span className="text-fg-muted">{fortLabel}</span>
+          {showRevenue && (
+            <span className="text-fg-muted">Revenue <span className="text-fg-heading tabular-nums">{formatCurrency(fortRev)}</span></span>
+          )}
+          <span className="text-fg-muted">{showRevenue ? 'Cost' : 'Budget'} <span className="text-fg-heading tabular-nums">{formatCurrency(fortCost)}</span></span>
+          {showRevenue && (
+            <span className="text-fg-muted">Net <span className={`tabular-nums ${fortRev - fortCost >= 0 ? 'text-green-600' : 'text-amber-600'}`}>{formatCurrency(fortRev - fortCost)}</span></span>
+          )}
+          {showRevenue && fortVar !== null && Math.abs(fortVar) >= 1 && (
+            <span className={fortVar >= 0 ? 'text-green-600' : 'text-amber-600'} title="This fortnight's planned revenue vs the same fortnight in the baseline snapshot">
+              {fortVar >= 0 ? '▲' : '▼'} {formatCurrency(Math.abs(fortVar))} vs baseline
+            </span>
+          )}
+          <span className="text-fg-muted/60 ml-auto">Raise this cycle&apos;s progress claim and update the schedule</span>
         </div>
       )}
 
