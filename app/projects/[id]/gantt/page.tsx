@@ -51,6 +51,15 @@ const DAY_LABELS = ['M', 'T', 'W', 'T', 'F']
 const MILESTONE_PRESETS = ['Practical Completion', 'Pool Dig', 'Steel Complete', 'Handover', 'Concrete Pour']
 const MILESTONE_COLOURS = ['#8A8580', '#C8A870', '#7A9E87', '#A07080', '#6A8CA0']
 
+// Labour productivity target per crew size (Andrew): the revenue a crew of N should generate per week,
+// and the labour cost budget that supports it. Budget = N × $2,720/wk (40h × $68 standard rate). Crew-2
+// and crew-3 are Andrew's figures; crew-4 is extrapolated (adjust if needed).
+const CREW_LABOUR_TARGET: Record<number, { revenue: number; budget: number }> = {
+  2: { revenue: 9500, budget: 5440 },
+  3: { revenue: 14000, budget: 8160 },
+  4: { revenue: 18500, budget: 10880 },
+}
+
 // Compact currency for the dense cash-flow strip — "$192k", "$8.9k", "$420". Full figures like
 // $192,452 overflow the narrow forecast columns and become unreadable; this keeps the strip glanceable.
 function fmtK(n: number): string {
@@ -1361,6 +1370,12 @@ export default function GanttPage() {
               <option value={3}>3 · 24h/day</option>
               <option value={4}>4 · 32h/day</option>
             </select>
+            {CREW_LABOUR_TARGET[crewSize] && (
+              <span className="text-[10px] font-light text-fg-muted/70 border-l border-fg-border pl-1.5 ml-0.5 whitespace-nowrap"
+                title={`A crew of ${crewSize} should turn over ${formatCurrency(CREW_LABOUR_TARGET[crewSize].revenue)} of revenue per week on ${formatCurrency(CREW_LABOUR_TARGET[crewSize].budget)} of labour cost`}>
+                target <span className="text-fg-heading tabular-nums">{fmtK(CREW_LABOUR_TARGET[crewSize].revenue)}</span>/wk
+              </span>
+            )}
           </div>
 
           {/* Add Milestone */}
@@ -1554,6 +1569,23 @@ export default function GanttPage() {
                 const subtasks = entry.subtasks ?? []
                 const isCollapsed = collapsedCategories.has(cat.category)
                 const hasSubtasks = subtasks.length > 0
+                // When collapsed, show the category's own bars PLUS a rollup bar spanning all its
+                // subtasks' dates, so a condensed row still reads the full timeframe (Andrew). The rollup
+                // carries the category budget so its colour/tooltip reflect the category, and its id isn't
+                // a real segment so clicks/drags on it are no-ops.
+                const collapsedRollup: GanttSegment[] = (() => {
+                  if (!isCollapsed || !hasSubtasks) return segs
+                  const dated = subtasks.flatMap(st => st.segments).filter(s => s.startDate && s.endDate)
+                  if (dated.length === 0) return segs
+                  const start = dated.map(s => s.startDate).sort()[0]
+                  const end = dated.map(s => s.endDate).sort().slice(-1)[0]
+                  const rollup: GanttSegment = {
+                    id: `${entry.id}-rollup`, startDate: start, endDate: end, weekCount: Math.max(1, weeksBetween(start, end)),
+                    grain: 'weeks', label: `${subtasks.length} subtasks`,
+                    revenueAllocation: entry.budgetedRevenue, costAllocation: entry.budgetedCost,
+                  }
+                  return [...segs, rollup]
+                })()
                 // Allocation reconciliation vs budget: labour HOURS scheduled (bar × crew) and the
                 // material/equipment % spread, so the foreman sees over/under at a glance.
                 const labHrsBudget = Math.round((cat.cost.labour ?? 0) / STD_LABOUR_RATE)
@@ -1660,8 +1692,8 @@ export default function GanttPage() {
                           </button>
                         </div>
                       </td>
-                      {/* Segment cells */}
-                      {renderSegmentCells(entry, segs, cat.category, cat.crewType)}
+                      {/* Segment cells — collapsed rows roll the subtask span into a summary bar */}
+                      {renderSegmentCells(entry, collapsedRollup, cat.category, cat.crewType)}
                     </tr>
 
                     {/* ── Subtask rows ── */}
