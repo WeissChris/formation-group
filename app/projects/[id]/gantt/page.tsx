@@ -26,6 +26,7 @@ import {
 import { readLineItemRevenue, getEstimateContract, lineContractValue, addLineCost, emptyCostBreakdown, STD_LABOUR_RATE, type CostBreakdown } from '@/lib/estimateCalculations'
 import { normalizedPcts, rebalancedPcts, datedPeriodCount } from '@/lib/ganttAllocation'
 import { labourWorkingDays } from '@/lib/ganttSchedule'
+import { mapSubtaskTree, findSubtaskInTree, removeSubtaskFromTree, addChildSubtask, flattenSubtasks } from '@/lib/ganttSubtasks'
 import type { Project, Estimate, GanttEntry, GanttSegment, GanttSubtask, WeeklyRevenue } from '@/types'
 import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react'
 
@@ -215,45 +216,6 @@ function plannedByWeek(entries: GanttEntry[], fridays: Date[]): Map<string, { re
     map.set(friIso, { rev, cost })
   }
   return map
-}
-
-// ── Subtask tree helpers ──────────────────────────────────────────────────────
-// A subtask can nest child subtasks. Every subtask id is unique within an entry, so the schedule handlers
-// keep targeting by a single subtaskId — these walk the whole tree to find / update / remove / add, so a
-// flat list (depth-1 tree) behaves exactly as before.
-function mapSubtaskTree(subtasks: GanttSubtask[], id: string, updater: (st: GanttSubtask) => GanttSubtask): GanttSubtask[] {
-  return subtasks.map(st => {
-    if (st.id === id) return updater(st)
-    if (st.subtasks?.length) return { ...st, subtasks: mapSubtaskTree(st.subtasks, id, updater) }
-    return st
-  })
-}
-function findSubtaskInTree(subtasks: GanttSubtask[], id: string): GanttSubtask | undefined {
-  for (const st of subtasks) {
-    if (st.id === id) return st
-    const found = st.subtasks?.length ? findSubtaskInTree(st.subtasks, id) : undefined
-    if (found) return found
-  }
-  return undefined
-}
-function removeSubtaskFromTree(subtasks: GanttSubtask[], id: string): GanttSubtask[] {
-  return subtasks.filter(st => st.id !== id).map(st => st.subtasks?.length ? { ...st, subtasks: removeSubtaskFromTree(st.subtasks, id) } : st)
-}
-function addChildSubtask(subtasks: GanttSubtask[], parentId: string, child: GanttSubtask): GanttSubtask[] {
-  return subtasks.map(st => {
-    if (st.id === parentId) return { ...st, subtasks: [...(st.subtasks ?? []), child] }
-    if (st.subtasks?.length) return { ...st, subtasks: addChildSubtask(st.subtasks, parentId, child) }
-    return st
-  })
-}
-// Pre-order flatten with depth, for indented rendering + "is anything scheduled" checks across the tree.
-function flattenSubtasks(subtasks: GanttSubtask[], depth = 0): { st: GanttSubtask; depth: number }[] {
-  const out: { st: GanttSubtask; depth: number }[] = []
-  for (const st of subtasks) {
-    out.push({ st, depth })
-    if (st.subtasks?.length) out.push(...flattenSubtasks(st.subtasks, depth + 1))
-  }
-  return out
 }
 
 function extractCategories(estimate: Estimate): CategorySummary[] {
