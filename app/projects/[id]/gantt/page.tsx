@@ -447,6 +447,7 @@ export default function GanttPage() {
 
   const [project, setProject] = useState<Project | null>(null)
   const [estimate, setEstimate] = useState<Estimate | null>(null)
+  const [variations, setVariations] = useState<Estimate[]>([])   // accepted variations, scheduled alongside the base
   const [entries, setEntries] = useState<GanttEntry[]>([])
   const [successMsg, setSuccessMsg] = useState('')
   const [timeView, setTimeView] = useState<TimeView>('weeks')
@@ -541,7 +542,10 @@ export default function GanttPage() {
       if (!p) { router.push('/projects'); return }
       setProject(p)
       const ests = loadEstimatesByProject(id)
-      setEstimate(ests.find(e => e.status === 'accepted') ?? ests[0] ?? null)
+      const base = ests.find(e => e.status === 'accepted' && !e.parentEstimateId) ?? ests.find(e => !e.parentEstimateId) ?? ests[0] ?? null
+      setEstimate(base)
+      // Accepted variations get scheduled into the programme too (Andrew: import variations).
+      setVariations(ests.filter(e => !!e.parentEstimateId && e.status === 'accepted' && !e.archived))
       const localEntries = loadGanttEntries(id)
       setEntries(localEntries)
       const localMilestones = loadMilestones(id)
@@ -578,7 +582,11 @@ export default function GanttPage() {
     return () => { cancelled = true }
   }, [id, router])
 
-  const rawCategories: CategorySummary[] = estimate ? extractCategories(estimate) : []
+  const rawCategories: CategorySummary[] = [
+    ...(estimate ? extractCategories(estimate) : []),
+    // Accepted variations are scheduled as their own categories, prefixed so they read as variation work.
+    ...variations.flatMap(v => extractCategories(v).map(c => ({ ...c, category: `VMO-${v.variationNumber ?? '?'} · ${c.category}` }))),
+  ]
   // Custom category order (Andrew: drag/reorder). Persisted per project; categories not in the saved
   // order fall back to their estimate order at the end.
   const categories: CategorySummary[] = [...rawCategories].sort((a, b) => {
