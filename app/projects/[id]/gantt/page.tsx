@@ -1618,17 +1618,16 @@ export default function GanttPage() {
                           {cat.crewType === 'Formation' ? 'Form' : 'Sub'}
                         </span>
                       </td>
-                      {/* Budget */}
-                      <td className="border-r border-fg-border px-2 py-2 text-right text-[11px] font-light text-fg-muted tabular-nums align-middle" style={{ width: COL_BUDGET }}>
+                      {/* Budget — revenue + an inline, compact cost split (was 4 stacked lines; that drove
+                          the row height). Single-letter type tags with tooltips keep it to ~1 line. */}
+                      <td className="border-r border-fg-border px-2 py-1.5 text-right text-[11px] font-light text-fg-muted tabular-nums align-middle" style={{ width: COL_BUDGET }}>
                         <div className="text-fg-heading">{formatCurrency(cat.budgetedRevenue)}</div>
-                        <div className="mt-0.5 space-y-px">
+                        <div className="mt-px flex flex-wrap justify-end gap-x-1.5 gap-y-0 text-[9px] leading-tight">
                           {COST_TYPE_KEYS.map(k => cat.cost[k] > 0 ? (
-                            <div key={k} className="flex items-center justify-end gap-1 text-[9px] leading-tight">
-                              <span style={{ color: COST_TYPE_META[k].colour }}>{COST_TYPE_META[k].label}</span>
-                              <span className="text-fg-muted/60 tabular-nums">
-                                {formatCurrency(cat.cost[k])}{k === 'labour' ? ` · ${Math.round(cat.cost[k] / STD_LABOUR_RATE)}h` : ''}
-                              </span>
-                            </div>
+                            <span key={k} className="whitespace-nowrap" title={`${COST_TYPE_META[k].label}: ${formatCurrency(cat.cost[k])}${k === 'labour' ? ` · ${Math.round(cat.cost[k] / STD_LABOUR_RATE)}h` : ''}`}>
+                              <span style={{ color: COST_TYPE_META[k].colour }}>{COST_TYPE_META[k].label[0]}</span>
+                              <span className="text-fg-muted/60"> {fmtK(cat.cost[k])}</span>
+                            </span>
                           ) : null)}
                         </div>
                       </td>
