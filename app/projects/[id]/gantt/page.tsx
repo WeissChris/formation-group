@@ -217,6 +217,45 @@ function plannedByWeek(entries: GanttEntry[], fridays: Date[]): Map<string, { re
   return map
 }
 
+// ── Subtask tree helpers ──────────────────────────────────────────────────────
+// A subtask can nest child subtasks. Every subtask id is unique within an entry, so the schedule handlers
+// keep targeting by a single subtaskId — these walk the whole tree to find / update / remove / add, so a
+// flat list (depth-1 tree) behaves exactly as before.
+function mapSubtaskTree(subtasks: GanttSubtask[], id: string, updater: (st: GanttSubtask) => GanttSubtask): GanttSubtask[] {
+  return subtasks.map(st => {
+    if (st.id === id) return updater(st)
+    if (st.subtasks?.length) return { ...st, subtasks: mapSubtaskTree(st.subtasks, id, updater) }
+    return st
+  })
+}
+function findSubtaskInTree(subtasks: GanttSubtask[], id: string): GanttSubtask | undefined {
+  for (const st of subtasks) {
+    if (st.id === id) return st
+    const found = st.subtasks?.length ? findSubtaskInTree(st.subtasks, id) : undefined
+    if (found) return found
+  }
+  return undefined
+}
+function removeSubtaskFromTree(subtasks: GanttSubtask[], id: string): GanttSubtask[] {
+  return subtasks.filter(st => st.id !== id).map(st => st.subtasks?.length ? { ...st, subtasks: removeSubtaskFromTree(st.subtasks, id) } : st)
+}
+function addChildSubtask(subtasks: GanttSubtask[], parentId: string, child: GanttSubtask): GanttSubtask[] {
+  return subtasks.map(st => {
+    if (st.id === parentId) return { ...st, subtasks: [...(st.subtasks ?? []), child] }
+    if (st.subtasks?.length) return { ...st, subtasks: addChildSubtask(st.subtasks, parentId, child) }
+    return st
+  })
+}
+// Pre-order flatten with depth, for indented rendering + "is anything scheduled" checks across the tree.
+function flattenSubtasks(subtasks: GanttSubtask[], depth = 0): { st: GanttSubtask; depth: number }[] {
+  const out: { st: GanttSubtask; depth: number }[] = []
+  for (const st of subtasks) {
+    out.push({ st, depth })
+    if (st.subtasks?.length) out.push(...flattenSubtasks(st.subtasks, depth + 1))
+  }
+  return out
+}
+
 function extractCategories(estimate: Estimate): CategorySummary[] {
   // Each posting's budgeted revenue = its lines' contract value (line revenue + project markup on each
   // line's own cost), so the Gantt's budgeted revenue sums to the ex-GST contract, matching the baseline.
@@ -819,7 +858,7 @@ export default function GanttPage() {
     const iso = dateForColIdx(colIdx)
 
     const segsNow = subtaskId
-      ? (entry.subtasks?.find(s => s.id === subtaskId)?.segments ?? [])
+      ? (findSubtaskInTree(entry.subtasks ?? [], subtaskId)?.segments ?? [])
       : entry.segments
 
     // Clicking inside an existing (dated) bar starts a move, not a new draw — handled by the bar itself.
@@ -837,7 +876,7 @@ export default function GanttPage() {
         : [{ id: drawId, startDate: iso, endDate: iso, weekCount: 1, grain: timeView, revenueAllocation: rev, costAllocation: cost }]
 
     if (subtaskId) {
-      const subtasks = (entry.subtasks ?? []).map(st => st.id === subtaskId ? { ...st, segments: nextSegs(0, 0) } : st)
+      const subtasks = mapSubtaskTree(entry.subtasks ?? [], subtaskId, st => ({ ...st, segments: nextSegs(0, 0) }))
       updateEntry({ ...entry, subtasks })
     } else {
       updateEntry({ ...entry, segments: nextSegs(entry.budgetedRevenue, entry.budgetedCost) })
@@ -861,15 +900,12 @@ export default function GanttPage() {
         : Math.max(1, Math.ceil((daysBetweenIso(startIso, endIso) + 1) / 7)) // forecast still spreads weekly in days view
 
       if (subtaskId) {
-        const updatedSubtasks = (entry.subtasks ?? []).map(st => {
-          if (st.id !== subtaskId) return st
-          return {
-            ...st,
-            segments: st.segments.map(s =>
-              s.id === drawing.segId ? { ...s, startDate: startIso, endDate: endIso, weekCount: wc, grain: timeView } : s
-            ),
-          }
-        })
+        const updatedSubtasks = mapSubtaskTree(entry.subtasks ?? [], subtaskId, st => ({
+          ...st,
+          segments: st.segments.map(s =>
+            s.id === drawing.segId ? { ...s, startDate: startIso, endDate: endIso, weekCount: wc, grain: timeView } : s
+          ),
+        }))
         updateEntry({ ...entry, subtasks: updatedSubtasks })
       } else {
         const updatedSegs = entry.segments.map(s =>
@@ -904,15 +940,12 @@ export default function GanttPage() {
       // A move preserves the bar's length, so keep its weekCount (forecast spread) unchanged.
 
       if (moving.subtaskId) {
-        const updatedSubtasks = (entry.subtasks ?? []).map(st => {
-          if (st.id !== moving.subtaskId) return st
-          return {
-            ...st,
-            segments: st.segments.map(s =>
-              s.id === moving.segId ? { ...s, startDate: newStart, endDate: newEnd } : s
-            ),
-          }
-        })
+        const updatedSubtasks = mapSubtaskTree(entry.subtasks ?? [], moving.subtaskId, st => ({
+          ...st,
+          segments: st.segments.map(s =>
+            s.id === moving.segId ? { ...s, startDate: newStart, endDate: newEnd } : s
+          ),
+        }))
         updateEntry({ ...entry, subtasks: updatedSubtasks })
       } else {
         const updatedSegs = entry.segments.map(s =>
@@ -928,7 +961,7 @@ export default function GanttPage() {
       if (!entry) return
       const enteredIso = dateForColIdx(colIdx)
       const segList = resizing.subtaskId
-        ? (entry.subtasks?.find(st => st.id === resizing.subtaskId)?.segments ?? [])
+        ? (findSubtaskInTree(entry.subtasks ?? [], resizing.subtaskId)?.segments ?? [])
         : entry.segments
       const seg = segList.find(s => s.id === resizing.segId)
       if (!seg) return
@@ -939,7 +972,7 @@ export default function GanttPage() {
         : Math.max(1, Math.ceil((daysBetweenIso(newStart, newEnd) + 1) / 7))
       const apply = (s: GanttSegment) => s.id === resizing.segId ? { ...s, startDate: newStart, endDate: newEnd, weekCount: wc, grain: timeView } : s
       if (resizing.subtaskId) {
-        const updatedSubtasks = (entry.subtasks ?? []).map(st => st.id === resizing.subtaskId ? { ...st, segments: st.segments.map(apply) } : st)
+        const updatedSubtasks = mapSubtaskTree(entry.subtasks ?? [], resizing.subtaskId, st => ({ ...st, segments: st.segments.map(apply) }))
         updateEntry({ ...entry, subtasks: updatedSubtasks })
       } else {
         updateEntry({ ...entry, segments: entry.segments.map(apply) })
@@ -1004,9 +1037,7 @@ export default function GanttPage() {
     const entry = entries.find(e => e.category === category)
     if (!entry) return
     if (subtaskId) {
-      const updatedSubtasks = (entry.subtasks ?? []).map(st =>
-        st.id !== subtaskId ? st : { ...st, segments: st.segments.map(s => s.id === updated.id ? updated : s) }
-      )
+      const updatedSubtasks = mapSubtaskTree(entry.subtasks ?? [], subtaskId, st => ({ ...st, segments: st.segments.map(s => s.id === updated.id ? updated : s) }))
       updateEntry({ ...entry, subtasks: updatedSubtasks })
     } else {
       // Replace the edited period, then AUTO-BALANCE: pin this period's material/equipment % to what the
@@ -1026,9 +1057,7 @@ export default function GanttPage() {
     const entry = entries.find(e => e.category === category)
     if (!entry) return
     if (subtaskId) {
-      const updatedSubtasks = (entry.subtasks ?? []).map(st =>
-        st.id !== subtaskId ? st : { ...st, segments: st.segments.filter(s => s.id !== segId) }
-      )
+      const updatedSubtasks = mapSubtaskTree(entry.subtasks ?? [], subtaskId, st => ({ ...st, segments: st.segments.filter(s => s.id !== segId) }))
       updateEntry({ ...entry, subtasks: updatedSubtasks })
     } else {
       const pruned = entry.segments.filter(s => s.id !== segId)
@@ -1059,29 +1088,31 @@ export default function GanttPage() {
 
   // ── Subtask management ────────────────────────────────────────────────────
 
-  const handleAddSubtask = (category: string) => {
+  // Add a subtask. With no parent it's a top-level subtask of the category; with parentSubtaskId it nests
+  // as a child of that subtask (Andrew: nested subtasks).
+  const handleAddSubtask = (category: string, parentSubtaskId?: string) => {
     const entry = getEntry(category)
-    const newSubtask: GanttSubtask = {
-      id: generateId(),
-      label: `Sub-task ${(entry.subtasks?.length ?? 0) + 1}`,
-      segments: [],
+    const newSubtask: GanttSubtask = { id: generateId(), label: 'Sub-task', segments: [] }
+    if (parentSubtaskId) {
+      const parent = findSubtaskInTree(entry.subtasks ?? [], parentSubtaskId)
+      newSubtask.label = `Sub-task ${(parent?.subtasks?.length ?? 0) + 1}`
+      updateEntry({ ...entry, subtasks: addChildSubtask(entry.subtasks ?? [], parentSubtaskId, newSubtask) })
+    } else {
+      newSubtask.label = `Sub-task ${(entry.subtasks?.length ?? 0) + 1}`
+      updateEntry({ ...entry, subtasks: [...(entry.subtasks ?? []), newSubtask] })
     }
-    updateEntry({ ...entry, subtasks: [...(entry.subtasks ?? []), newSubtask] })
   }
 
   const handleRenameSubtask = (category: string, subtaskId: string, label: string) => {
     const entry = entries.find(e => e.category === category)
     if (!entry) return
-    const updatedSubtasks = (entry.subtasks ?? []).map(st =>
-      st.id === subtaskId ? { ...st, label } : st
-    )
-    updateEntry({ ...entry, subtasks: updatedSubtasks })
+    updateEntry({ ...entry, subtasks: mapSubtaskTree(entry.subtasks ?? [], subtaskId, st => ({ ...st, label })) })
   }
 
   const handleDeleteSubtask = (category: string, subtaskId: string) => {
     const entry = entries.find(e => e.category === category)
     if (!entry) return
-    updateEntry({ ...entry, subtasks: (entry.subtasks ?? []).filter(st => st.id !== subtaskId) })
+    updateEntry({ ...entry, subtasks: removeSubtaskFromTree(entry.subtasks ?? [], subtaskId) })
   }
 
   const toggleCollapse = (category: string) => {
@@ -1162,7 +1193,7 @@ export default function GanttPage() {
   }, [project, id])
 
   const handleSave = () => {
-    const toSave = entries.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0))
+    const toSave = entries.filter(e => e.segments.length > 0 || flattenSubtasks(e.subtasks ?? []).some(({ st }) => st.segments.length > 0))
     void upsertGanttEntries(id, toSave)   // localStorage (immediate) + Supabase (background)
     const n = syncForecast(entries)       // build the revenue forecast in the same action
     hasUnsavedChangesRef.current = false   // persisted — nothing for flush to re-save
@@ -1193,7 +1224,7 @@ export default function GanttPage() {
   const flushGantt = useCallback(() => {
     if (!hasUnsavedChangesRef.current) return
     hasUnsavedChangesRef.current = false
-    const toSave = latestEntriesRef.current.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0))
+    const toSave = latestEntriesRef.current.filter(e => e.segments.length > 0 || flattenSubtasks(e.subtasks ?? []).some(({ st }) => st.segments.length > 0))
     void upsertGanttEntries(id, toSave)
     syncForecast(latestEntriesRef.current)   // keep the forecast in step on navigate-away too
   }, [id, syncForecast])
@@ -1268,7 +1299,7 @@ export default function GanttPage() {
     // the first click (not only after the scope is touched).
     const seededRecalc = next.map(e => recalcEntry(e))
     setEntries(seededRecalc)
-    void upsertGanttEntries(id, seededRecalc.filter(e => e.segments.length > 0 || (e.subtasks ?? []).some(st => st.segments.length > 0)))
+    void upsertGanttEntries(id, seededRecalc.filter(e => e.segments.length > 0 || flattenSubtasks(e.subtasks ?? []).some(({ st }) => st.segments.length > 0)))
     const fc = syncForecast(seededRecalc)   // seed the revenue forecast alongside the timeline
     hasUnsavedChangesRef.current = false   // persisted — nothing for flush to re-save
     setSuccessMsg(`Seeded ${seededCount} ${seededCount === 1 ? 'category' : 'categories'} + ${fc} forecast week${fc === 1 ? '' : 's'} — adjust each task's start + duration and re-save to update both`)
@@ -1306,7 +1337,7 @@ export default function GanttPage() {
       return segs.map((s, i) => i === 0 ? { ...s, startDate: startIso, endDate: endIso, weekCount, grain: timeView } : s)
     }
     if (subtaskId) {
-      const subtasks = (entry.subtasks ?? []).map(st => st.id === subtaskId ? { ...st, segments: applySeg(st.segments, 0, 0) } : st)
+      const subtasks = mapSubtaskTree(entry.subtasks ?? [], subtaskId, st => ({ ...st, segments: applySeg(st.segments, 0, 0) }))
       updateEntry({ ...entry, subtasks })
     } else {
       updateEntry({ ...entry, segments: applySeg(entry.segments, entry.budgetedRevenue, entry.budgetedCost) })
@@ -1961,7 +1992,7 @@ export default function GanttPage() {
                 // a real segment so clicks/drags on it are no-ops.
                 const collapsedRollup: GanttSegment[] = (() => {
                   if (!isCollapsed || !hasSubtasks) return segs
-                  const dated = subtasks.flatMap(st => st.segments).filter(s => s.startDate && s.endDate)
+                  const dated = flattenSubtasks(subtasks).flatMap(({ st }) => st.segments).filter(s => s.startDate && s.endDate)
                   if (dated.length === 0) return segs
                   const start = dated.map(s => s.startDate).sort()[0]
                   const end = dated.map(s => s.endDate).sort().slice(-1)[0]
@@ -2083,10 +2114,10 @@ export default function GanttPage() {
                       {renderSegmentCells(entry, collapsedRollup, cat.category, cat.crewType)}
                     </tr>
 
-                    {/* ── Subtask rows ── */}
-                    {!isCollapsed && subtasks.map(subtask => (
+                    {/* ── Subtask rows (flattened tree; indent = nesting depth) ── */}
+                    {!isCollapsed && flattenSubtasks(subtasks).map(({ st: subtask, depth }) => (
                       <tr key={subtask.id} className="border-b border-fg-border/20 group/sub" style={{ height: 28 }}>
-                        <td className="border-r border-fg-border bg-fg-bg pl-8 pr-2 py-1.5 text-[11px] font-light text-fg-muted whitespace-nowrap align-middle" style={{ width: COL_CATEGORY, ...stickyL(0) }}>
+                        <td className="border-r border-fg-border bg-fg-bg pr-2 py-1.5 text-[11px] font-light text-fg-muted whitespace-nowrap align-middle" style={{ width: COL_CATEGORY, paddingLeft: 20 + depth * 16, ...stickyL(0) }}>
                           <div className="flex items-center gap-1">
                             <span className="text-fg-muted/40 text-[10px]">└</span>
                             <input
@@ -2094,12 +2125,22 @@ export default function GanttPage() {
                               onChange={e => handleRenameSubtask(cat.category, subtask.id, e.target.value)}
                               className="bg-transparent border-none outline-none text-[11px] font-light text-fg-muted w-full min-w-0 hover:text-fg-heading focus:text-fg-heading"
                             />
-                            <button
-                              onClick={() => handleDeleteSubtask(cat.category, subtask.id)}
-                              className="opacity-0 group-hover/sub:opacity-100 flex-shrink-0 text-fg-muted/40 hover:text-red-400/70 transition-all"
-                            >
-                              <X className="w-2.5 h-2.5" />
-                            </button>
+                            <div className="opacity-0 group-hover/sub:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-all">
+                              <button
+                                onClick={() => handleAddSubtask(cat.category, subtask.id)}
+                                title="Add a nested sub-task"
+                                className="text-fg-muted/40 hover:text-fg-heading"
+                              >
+                                <Plus className="w-2.5 h-2.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSubtask(cat.category, subtask.id)}
+                                title="Delete sub-task"
+                                className="text-fg-muted/40 hover:text-red-400/70"
+                              >
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
                           </div>
                         </td>
                         <td className="border-r border-fg-border bg-fg-bg" style={{ width: COL_CREW, ...stickyL(1) }} />
@@ -2215,7 +2256,7 @@ export default function GanttPage() {
         const entry = entries.find(e => e.category === popover.category)
         let seg: GanttSegment | undefined
         if (popover.subtaskId) {
-          seg = entry?.subtasks?.find(st => st.id === popover.subtaskId)?.segments.find(s => s.id === popover.segId)
+          seg = findSubtaskInTree(entry?.subtasks ?? [], popover.subtaskId)?.segments.find(s => s.id === popover.segId)
         } else {
           seg = entry?.segments.find(s => s.id === popover.segId)
         }
@@ -2227,7 +2268,7 @@ export default function GanttPage() {
         const eqBudget = cat?.cost.equipment ?? 0
         // The scope's full period set (post-balance) so the popover's live breakdown shows every period.
         const siblingSegs = popover.subtaskId
-          ? (entry?.subtasks?.find(st => st.id === popover.subtaskId)?.segments ?? [])
+          ? (findSubtaskInTree(entry?.subtasks ?? [], popover.subtaskId)?.segments ?? [])
           : (entry?.segments ?? [])
         return (
           <SegmentPopover

@@ -347,6 +347,7 @@ export interface GanttSubtask {
   id: string
   label: string
   segments: GanttSegment[]
+  subtasks?: GanttSubtask[]   // nested sub-tasks (purely visual sub-scheduling; carry no budget/forecast)
 }
 
 export interface GanttEntry {
