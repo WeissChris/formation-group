@@ -1408,7 +1408,7 @@ export default function GanttPage() {
                     handleBarClick(e as unknown as React.MouseEvent, category, seg.id, e.currentTarget as HTMLDivElement, subtaskId)
                   }
                 }}
-                title={`Revenue: ${formatCurrency(weeklyRev)}/wk\nCost: ${formatCurrency(weeklyCost)}/wk\nMargin: ${marg}%${seg.label ? `\n${seg.label}` : ''}`}
+                title={`${category}${seg.label ? ` — ${seg.label}` : ''}\nRevenue: ${formatCurrency(weeklyRev)}/wk\nCost: ${formatCurrency(weeklyCost)}/wk\nMargin: ${marg}%`}
               >
                 {showText && (
                   <div className="px-1.5 leading-tight">
