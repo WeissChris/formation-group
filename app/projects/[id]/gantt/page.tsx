@@ -504,6 +504,11 @@ export default function GanttPage() {
   const [categoryOrder, setCategoryOrder] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem(`fg_gantt_order_${id}`) || '[]') } catch { return [] }
   })
+  // Programme baseline — a snapshot of the schedule (set on planning day, before site start) that current
+  // dates are measured against to show slip. Persisted per project.
+  const [baseline, setBaseline] = useState<{ capturedAt: string; entries: GanttEntry[] } | null>(() => {
+    try { const v = localStorage.getItem(`fg_gantt_baseline_${id}`); return v ? JSON.parse(v) : null } catch { return null }
+  })
 
   // Zoom (column width multiplier) + the scroll container, so we can land the initial view on "today".
   const [zoom, setZoom] = useState(1)
@@ -1129,6 +1134,21 @@ export default function GanttPage() {
     setTimeout(() => setSuccessMsg(''), 3000)
   }
 
+  // Capture the current schedule as the baseline (planning-day reference). Re-set it any time (e.g.
+  // fortnightly) to take a fresh snapshot; per-category slip is measured against the latest.
+  const handleSetBaseline = () => {
+    const snap = { capturedAt: new Date().toISOString(), entries: latestEntriesRef.current }
+    setBaseline(snap)
+    try { localStorage.setItem(`fg_gantt_baseline_${id}`, JSON.stringify(snap)) } catch { /* ignore */ }
+    setSuccessMsg('Baseline set — start dates now show slip against this snapshot')
+    setTimeout(() => setSuccessMsg(''), 3000)
+  }
+  // First dated start of a category in the baseline snapshot, for slip comparison.
+  const baselineStartOf = (category: string): string | undefined => {
+    const e = baseline?.entries.find(x => x.category === category)
+    return e?.segments.filter(s => s.startDate && s.endDate).map(s => s.startDate).sort()[0]
+  }
+
 
   // Flush unsaved edits to localStorage + Supabase on navigate-away / tab close / unmount. Without
   // this, every edit lives only in React state until the manual Save button — so leaving the page
@@ -1630,6 +1650,11 @@ export default function GanttPage() {
               Build timeline from estimate
             </button>
           )}
+          <button onClick={handleSetBaseline}
+            title={baseline ? `Baseline set ${new Date(baseline.capturedAt).toLocaleDateString()} — click to re-snapshot` : 'Snapshot the current schedule as the baseline (set on planning day, before site start)'}
+            className="px-4 py-2 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading hover:border-fg-heading transition-colors">
+            {baseline ? `Baseline ${new Date(baseline.capturedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}` : 'Set baseline'}
+          </button>
           <button onClick={handleSave}
             title="Saves the timeline and rebuilds the revenue forecast from it — they stay in sync"
             className="px-4 py-2 bg-fg-dark text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-fg-darker transition-colors">
@@ -1823,6 +1848,10 @@ export default function GanttPage() {
                 const subAlloc = Math.round(segs.reduce((s, sg) => s + (sg.subPct ?? 0), 0))
                 const eqAlloc = Math.round(segs.reduce((s, sg) => s + (sg.equipmentPct ?? 0), 0))
                 const scheduled = segs.some(sg => sg.startDate)
+                // Schedule slip vs baseline: + = started later than planned, − = earlier.
+                const baseStart = baselineStartOf(cat.category)
+                const curStart = segs.filter(sg => sg.startDate && sg.endDate).map(sg => sg.startDate).sort()[0]
+                const slipDays = baseStart && curStart ? daysBetweenIso(baseStart, curStart) : 0
 
                 return (
                   <>
@@ -1848,6 +1877,7 @@ export default function GanttPage() {
                                 {subBudgetCat > 0 && <span title="Subcontractor allocated" className={subAlloc !== 100 ? 'text-amber-600' : 'text-fg-muted/50'}>S {subAlloc}%</span>}
                                 {eqBudgetCat > 0 && <span title="Equipment allocated" className={eqAlloc !== 100 ? 'text-amber-600' : 'text-fg-muted/50'}>E {eqAlloc}%</span>}
                                 {datedPeriodCount(segs) > 1 && <span className="text-fg-muted/40">· {datedPeriodCount(segs)} periods</span>}
+                                {slipDays !== 0 && <span title="Start vs baseline" className={slipDays > 0 ? 'text-amber-600' : 'text-green-600/80'}>{slipDays > 0 ? `+${slipDays}d` : `${slipDays}d`}</span>}
                               </span>
                             )}
                           </div>
