@@ -36,7 +36,7 @@ const DAYS_VIEW_WEEKS = 26   // Days view renders this many weeks of working-day
 const COL_CATEGORY = 200
 const COL_CREW = 64
 const COL_BUDGET = 124
-const COL_SCHED = 196   // Start date + duration (weeks) — foreman scheduling without drawing
+const COL_SCHED = 158   // Start date + duration (weeks) — foreman scheduling without drawing (compact)
 
 // Cost-type palette for the per-task cost split + project totals strip.
 const COST_TYPE_META = {
@@ -150,6 +150,21 @@ function addDays(isoDate: string, days: number): string {
   return toISODate(d)
 }
 
+// Place a position:fixed popover so it never opens off-screen. Coordinates are viewport-relative
+// (fixed positioning ignores scroll — the old code added scrollX/scrollY, which pushed the popover
+// off the bottom whenever the page was scrolled). Clamp horizontally to stay fully on screen, and flip
+// above the anchor if it would spill past the bottom.
+function popoverPosition(rect: DOMRect | undefined, width: number, estHeight = 360): { top: number; left: number } {
+  if (!rect || typeof window === 'undefined') return { top: 100, left: 100 }
+  const margin = 8
+  const left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin))
+  let top = rect.bottom + 4
+  if (top + estHeight > window.innerHeight - margin) {
+    top = Math.max(margin, rect.top - estHeight - 4)
+  }
+  return { top, left }
+}
+
 // Labour hours fall out of a bar's length: labourWorkingDays × crew × 8. labourWorkingDays lives in
 // lib/ganttSchedule (a Weeks-view bar means 5 working days per week, not the Fri→Fri calendar count).
 
@@ -244,9 +259,7 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, equip
   const splitLine = (key: 'materialsPct' | 'equipmentPct') =>
     datedSibs.map((s, i) => `${i + 1}: ${Math.round(s[key] || 0)}%`).join('  ')
 
-  const rect = anchorRef.current?.getBoundingClientRect()
-  const top = rect ? rect.bottom + window.scrollY + 4 : 100
-  const left = rect ? rect.left + window.scrollX : 100
+  const { top, left } = popoverPosition(anchorRef.current?.getBoundingClientRect(), 288)
 
   return (
     <div
@@ -333,9 +346,7 @@ function MilestonePopover({ milestone, onUpdate, onDelete, onClose, anchorRef }:
     onClose()
   }
 
-  const rect = anchorRef.current?.getBoundingClientRect()
-  const top = rect ? rect.bottom + window.scrollY + 4 : 100
-  const left = rect ? rect.left + window.scrollX : 100
+  const { top, left } = popoverPosition(anchorRef.current?.getBoundingClientRect(), 256, 300)
 
   return (
     <div
@@ -1159,14 +1170,27 @@ export default function GanttPage() {
     }
   })()
 
-  // ── Month boundary column indices ──────────────────────────────────────────
+  // ── Month + week boundary column indices ────────────────────────────────────
+  // Month boundaries get the strongest rule; week boundaries (days view only — every Monday) get a
+  // medium rule so weeks read at a glance, per Andrew's "week gridlines in bold". In weeks view every
+  // column IS a week, so the per-column border is strengthened directly instead.
 
   const monthBoundaryIndices = new Set<number>()
+  const weekBoundaryIndices = new Set<number>()
   for (let i = 1; i < columns.length; i++) {
     if (columns[i].getMonth() !== columns[i - 1].getMonth()) {
       monthBoundaryIndices.add(i)
     }
+    if (timeView === 'days' && i % 5 === 0) {
+      weekBoundaryIndices.add(i)
+    }
   }
+  // Border rule for a column's left edge — month wins over week. Used by the body, header and footer
+  // so the vertical rules line up top to bottom.
+  const colBorderLeft = (i: number): string | undefined =>
+    monthBoundaryIndices.has(i) ? '2px solid rgba(255,255,255,0.26)'
+    : weekBoundaryIndices.has(i) ? '2px solid rgba(255,255,255,0.13)'
+    : undefined
 
   if (!project) return (
     <div className="max-w-[1200px] mx-auto px-6 py-12">
@@ -1204,7 +1228,6 @@ export default function GanttPage() {
       const iso = toISODate(col)
       const isCurrentWeek = timeView === 'weeks' ? iso === currentWeekIso : iso === today
       const isTodayCol = i === todayColIdx
-      const isMonthBoundary = monthBoundaryIndices.has(i)
       const activeSegs = segs.filter(s => isSegmentActiveInCol(s, col))
 
       return (
@@ -1215,9 +1238,9 @@ export default function GanttPage() {
             minWidth: CELL_W,
             padding: 0,
             position: 'relative',
-            borderLeft: isMonthBoundary ? '2px solid rgba(255,255,255,0.12)' : undefined,
+            borderLeft: colBorderLeft(i),
           }}
-          className={`border-r border-fg-border/30 cursor-crosshair ${isCurrentWeek && !activeSegs.length ? 'bg-fg-card/20' : ''}`}
+          className={`border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border/25'} cursor-crosshair ${isCurrentWeek && !activeSegs.length ? 'bg-fg-card/20' : ''}`}
           onMouseDown={() => handleCellMouseDown(category, i, subtaskId)}
           onMouseEnter={() => handleCellMouseEnter(category, i, subtaskId)}
         >
@@ -1459,12 +1482,11 @@ export default function GanttPage() {
                 <tr>
                   <th colSpan={4} style={{ width: fixedColsWidth }} className="bg-fg-bg border-b border-r border-fg-border" />
                   {workingDays.map((d, i) => {
-                    const isMonthBoundary = monthBoundaryIndices.has(i)
                     return (
                       <th key={i}
                         style={{
                           width: CELL_W_DAYS, minWidth: CELL_W_DAYS,
-                          borderLeft: isMonthBoundary ? '2px solid rgba(255,255,255,0.12)' : undefined,
+                          borderLeft: colBorderLeft(i),
                         }}
                         className="bg-fg-bg border-b border-r border-fg-border py-1 text-center text-[9px] font-light text-fg-muted/60">
                         {DAY_LABELS[d.getDay() === 0 ? 0 : d.getDay() - 1]}
@@ -1483,13 +1505,12 @@ export default function GanttPage() {
                 {columns.map((col, i) => {
                   const iso = toISODate(col)
                   const isCurrentWeek = timeView === 'weeks' ? iso === currentWeekIso : iso === today
-                  const isMonthBoundary = monthBoundaryIndices.has(i)
                   return (
                     <th key={i} style={{
                       width: CELL_W, minWidth: CELL_W,
-                      borderLeft: isMonthBoundary ? '2px solid rgba(255,255,255,0.12)' : undefined,
+                      borderLeft: colBorderLeft(i),
                     }}
-                      className={`border-b border-r border-fg-border py-1.5 text-center text-[10px] font-light text-fg-muted ${isCurrentWeek ? 'bg-fg-card/60' : 'bg-fg-bg'}`}>
+                      className={`border-b border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border'} py-1.5 text-center text-[10px] font-light text-fg-muted ${isCurrentWeek ? 'bg-fg-card/60' : 'bg-fg-bg'}`}>
                       {timeView === 'weeks' ? formatDayMonth(col) : String(col.getDate())}
                     </th>
                   )
@@ -1527,7 +1548,7 @@ export default function GanttPage() {
                 return (
                   <>
                     {/* ── Category row ── */}
-                    <tr key={cat.category} className="border-b border-fg-border/40 group" style={{ height: 44 }}>
+                    <tr key={cat.category} className="border-b border-fg-border/40 group" style={{ height: 34 }}>
                       {/* Category label */}
                       <td className="border-r border-fg-border px-3 py-2 text-xs font-light text-fg-heading whitespace-nowrap align-middle" style={{ width: COL_CATEGORY }}>
                         <div className="flex items-center gap-1.5">
@@ -1594,7 +1615,7 @@ export default function GanttPage() {
                             value={segs[0]?.startDate ?? ''}
                             onChange={e => setTaskSchedule(cat.category, e.target.value, durationOf(segs) || 1)}
                             title="Start date — the bar places itself"
-                            className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading outline-none focus:border-fg-heading w-[104px]"
+                            className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading outline-none focus:border-fg-heading w-[92px]"
                           />
                           <input
                             type="number"
@@ -1621,7 +1642,7 @@ export default function GanttPage() {
 
                     {/* ── Subtask rows ── */}
                     {!isCollapsed && subtasks.map(subtask => (
-                      <tr key={subtask.id} className="border-b border-fg-border/20 group/sub" style={{ height: 36 }}>
+                      <tr key={subtask.id} className="border-b border-fg-border/20 group/sub" style={{ height: 28 }}>
                         <td className="border-r border-fg-border pl-8 pr-2 py-1.5 text-[11px] font-light text-fg-muted whitespace-nowrap align-middle" style={{ width: COL_CATEGORY }}>
                           <div className="flex items-center gap-1">
                             <span className="text-fg-muted/40 text-[10px]">└</span>
@@ -1648,7 +1669,7 @@ export default function GanttPage() {
                               value={subtask.segments[0]?.startDate ?? ''}
                               onChange={e => setTaskSchedule(cat.category, e.target.value, durationOf(subtask.segments) || 1, subtask.id)}
                               title="Start date"
-                              className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading outline-none focus:border-fg-heading w-[104px]"
+                              className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading outline-none focus:border-fg-heading w-[92px]"
                             />
                             <input
                               type="number"
@@ -1671,13 +1692,12 @@ export default function GanttPage() {
 
               {/* ── Milestones row ── */}
               {milestones.length > 0 && (
-                <tr className="border-t-2 border-fg-border/40" style={{ height: 48 }}>
+                <tr className="border-t-2 border-fg-border/40" style={{ height: 40 }}>
                   <td colSpan={4} className="border-r border-fg-border px-3 py-2 text-[10px] font-light tracking-architectural uppercase text-fg-muted align-middle">
                     Milestones
                   </td>
                   {columns.map((col, i) => {
                     const iso = toISODate(col)
-                    const isMonthBoundary = monthBoundaryIndices.has(i)
                     const isTodayCol = i === todayColIdx
                     // Find milestones that fall in this column
                     const colMilestones = milestones.filter(m => {
@@ -1695,9 +1715,9 @@ export default function GanttPage() {
                       <td key={i}
                         style={{
                           width: CELL_W, minWidth: CELL_W, padding: 0, position: 'relative',
-                          borderLeft: isMonthBoundary ? '2px solid rgba(255,255,255,0.12)' : undefined,
+                          borderLeft: colBorderLeft(i),
                         }}
-                        className="border-r border-fg-border/30"
+                        className={`border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border/25'}`}
                       >
                         {isTodayCol && (
                           <div className="absolute inset-y-0 left-0 w-0.5 bg-red-500/50 z-10 pointer-events-none" />
@@ -1735,11 +1755,10 @@ export default function GanttPage() {
                 {footerRuns.map((run, ri) => {
                   const net = run.rev - run.cost
                   const hasActivity = run.rev > 0 || run.cost > 0
-                  const isMonthBoundary = monthBoundaryIndices.has(run.startIdx)
                   return (
                     <td key={ri} colSpan={run.span} style={{
                       width: run.span * CELL_W,
-                      borderLeft: isMonthBoundary ? '2px solid rgba(255,255,255,0.12)' : undefined,
+                      borderLeft: colBorderLeft(run.startIdx),
                     }} className="border-r border-fg-border/30 px-1 py-1 align-top overflow-hidden">
                       {hasActivity && (
                         <div className="text-center leading-tight whitespace-nowrap">
