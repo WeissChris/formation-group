@@ -27,6 +27,11 @@ describe('labourWorkingDays', () => {
     expect(labourWorkingDays('2026-06-15', '2026-06-17')).toBe(3)    // Mon–Wed
     expect(labourWorkingDays('2026-06-15', '2026-06-19')).toBe(5)    // Mon–Fri (start not Friday)
   })
+  it("grain='days' counts a single day as 1 even on a Friday (Andrew's day-vs-week bug)", () => {
+    expect(labourWorkingDays('2026-06-19', '2026-06-19', 'days')).toBe(1)  // 1-day bar on a Friday → 1 (was 5)
+    expect(labourWorkingDays('2026-06-15', '2026-06-19', 'days')).toBe(5)  // Mon–Fri days bar → 5
+    expect(labourWorkingDays('2026-06-19', '2026-06-19', 'weeks')).toBe(5) // explicit weeks 1-week bar → 5
+  })
   it('is 0 for empty dates', () => {
     expect(labourWorkingDays('', '')).toBe(0)
   })

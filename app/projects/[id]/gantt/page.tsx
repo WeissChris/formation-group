@@ -240,7 +240,7 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, equip
   const hasLabour = labourBudget > 0
   const hasMaterials = materialsBudget > 0
   const hasEquipment = equipmentBudget > 0
-  const workDays = labourWorkingDays(seg.startDate, seg.endDate)
+  const workDays = labourWorkingDays(seg.startDate, seg.endDate, seg.grain)
   const labourHours = hasLabour ? workDays * crew * 8 : 0
   const labourCost = labourHours * STD_LABOUR_RATE
   const matCost = (parseFloat(matPct) || 0) / 100 * materialsBudget
@@ -549,7 +549,7 @@ export default function GanttPage() {
       // Labour only applies to scopes that carry a labour budget — otherwise the bar would conjure
       // phantom labour cost (e.g. Preliminaries, which is equipment/sub only). An undrawn period
       // (no dates) carries no cost yet, so it can't over-allocate or dilute the revenue split.
-      const labourHours = labourBudget > 0 && hasDates ? labourWorkingDays(s.startDate, s.endDate) * crew * 8 : 0
+      const labourHours = labourBudget > 0 && hasDates ? labourWorkingDays(s.startDate, s.endDate, s.grain) * crew * 8 : 0
       const matPct = matPcts[i]
       const eqPct = eqPcts[i]
       const cost = hasDates ? labourHours * STD_LABOUR_RATE + (matPct / 100) * materialsBudget + (eqPct / 100) * equipmentBudget : 0
@@ -679,8 +679,8 @@ export default function GanttPage() {
     const drawId = pendingIdx >= 0 ? segsNow[pendingIdx].id : generateId()
     const nextSegs = (rev: number, cost: number): GanttSegment[] =>
       pendingIdx >= 0
-        ? segsNow.map((s, i) => i === pendingIdx ? { ...s, startDate: iso, endDate: iso, weekCount: 1 } : s)
-        : [{ id: drawId, startDate: iso, endDate: iso, weekCount: 1, revenueAllocation: rev, costAllocation: cost }]
+        ? segsNow.map((s, i) => i === pendingIdx ? { ...s, startDate: iso, endDate: iso, weekCount: 1, grain: timeView } : s)
+        : [{ id: drawId, startDate: iso, endDate: iso, weekCount: 1, grain: timeView, revenueAllocation: rev, costAllocation: cost }]
 
     if (subtaskId) {
       const subtasks = (entry.subtasks ?? []).map(st => st.id === subtaskId ? { ...st, segments: nextSegs(0, 0) } : st)
@@ -712,14 +712,14 @@ export default function GanttPage() {
           return {
             ...st,
             segments: st.segments.map(s =>
-              s.id === drawing.segId ? { ...s, startDate: startIso, endDate: endIso, weekCount: wc } : s
+              s.id === drawing.segId ? { ...s, startDate: startIso, endDate: endIso, weekCount: wc, grain: timeView } : s
             ),
           }
         })
         updateEntry({ ...entry, subtasks: updatedSubtasks })
       } else {
         const updatedSegs = entry.segments.map(s =>
-          s.id === drawing.segId ? { ...s, startDate: startIso, endDate: endIso, weekCount: wc } : s
+          s.id === drawing.segId ? { ...s, startDate: startIso, endDate: endIso, weekCount: wc, grain: timeView } : s
         )
         updateEntry({ ...entry, segments: updatedSegs })
       }
@@ -1028,6 +1028,7 @@ export default function GanttPage() {
         startDate: toISODate(fridays[sIdx]),
         endDate: toISODate(fridays[eIdx]),
         weekCount: eIdx - sIdx + 1,
+        grain: 'weeks',
         revenueAllocation: cat.budgetedRevenue,
         costAllocation: cat.budgetedCost,
       }
@@ -1084,8 +1085,8 @@ export default function GanttPage() {
     // budget allocation (they sub-schedule a category), category segments carry the category budget.
     const applySeg = (segs: GanttSegment[], rev: number, cost: number): GanttSegment[] => {
       if (!startIso) return segs.slice(1)
-      if (segs.length === 0) return [{ id: generateId(), startDate: startIso, endDate: endIso, weekCount, revenueAllocation: rev, costAllocation: cost }]
-      return segs.map((s, i) => i === 0 ? { ...s, startDate: startIso, endDate: endIso, weekCount } : s)
+      if (segs.length === 0) return [{ id: generateId(), startDate: startIso, endDate: endIso, weekCount, grain: timeView, revenueAllocation: rev, costAllocation: cost }]
+      return segs.map((s, i) => i === 0 ? { ...s, startDate: startIso, endDate: endIso, weekCount, grain: timeView } : s)
     }
     if (subtaskId) {
       const subtasks = (entry.subtasks ?? []).map(st => st.id === subtaskId ? { ...st, segments: applySeg(st.segments, 0, 0) } : st)
@@ -1537,7 +1538,7 @@ export default function GanttPage() {
                 // schedule reconciles immediately. Material/equipment read each period's resolved % —
                 // recalcEntry has already filled any unset period from the remaining budget on load.
                 const labHrsAlloc = (cat.cost.labour ?? 0) > 0
-                  ? Math.round(segs.reduce((s, sg) => s + labourWorkingDays(sg.startDate, sg.endDate) * crewSize * 8, 0))
+                  ? Math.round(segs.reduce((s, sg) => s + labourWorkingDays(sg.startDate, sg.endDate, sg.grain) * crewSize * 8, 0))
                   : 0
                 const matBudgetCat = (cat.cost.material ?? 0) + (cat.cost.subcontractor ?? 0)
                 const eqBudgetCat = cat.cost.equipment ?? 0

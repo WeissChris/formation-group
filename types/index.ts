@@ -328,6 +328,11 @@ export interface GanttSegment {
   materialsPct?: number      // % of the category's material + subcontractor budget allocated to this period
   equipmentPct?: number      // % of the category's equipment budget allocated to this period
   labourHours?: number       // derived: working days in the bar × crew × 8
+  // Which view the bar was drawn in, so labour reads the right working-day count. A weeks bar stored
+  // Fri→Fri means whole weeks (5 days/week); a days bar means its actual Mon–Fri days. Without this a
+  // 1-day bar that lands on a Friday is indistinguishable from a 1-week bar and was charged 5 days of
+  // labour. Absent = 'weeks' (legacy bars were drawn in weeks view).
+  grain?: 'days' | 'weeks'
   // Actuals (filled in as work progresses)
   actualCost?: number
   actualRevenue?: number
