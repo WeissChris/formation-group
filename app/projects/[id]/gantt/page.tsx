@@ -92,6 +92,12 @@ interface CategorySummary {
   budgetedRevenue: number
   budgetedCost: number
   cost: CostBreakdown   // cost split by type (labour / material / subcontractor / equipment)
+  rev: CostBreakdown    // REVENUE (contract value) split by the same type buckets — Andrew's "revenue totals for Mat/Lab/Sub"
+}
+
+// Map an estimate line's type to a CostBreakdown bucket key (Material is the default).
+function lineTypeKey(type: string | undefined): 'labour' | 'material' | 'subcontractor' | 'equipment' {
+  return type === 'Labour' ? 'labour' : type === 'Subcontractor' ? 'subcontractor' : type === 'Equipment' ? 'equipment' : 'material'
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -202,11 +208,16 @@ function extractCategories(estimate: Estimate): CategorySummary[] {
     const key = `${item.category}||${sub}`
     const label = sub ? `${item.category} — ${sub}` : item.category
     if (!map[key]) {
-      map[key] = { category: label, crewType: item.crewType, budgetedRevenue: 0, budgetedCost: 0, cost: emptyCostBreakdown() }
+      map[key] = { category: label, crewType: item.crewType, budgetedRevenue: 0, budgetedCost: 0, cost: emptyCostBreakdown(), rev: emptyCostBreakdown() }
     }
-    map[key].budgetedRevenue += lineContractValue(item, contract)
+    const lineRev = lineContractValue(item, contract)
+    map[key].budgetedRevenue += lineRev
     map[key].budgetedCost += item.total
     addLineCost(map[key].cost, item)
+    // Revenue split by the same type bucket as the line's cost, so revenue-by-type sums to the contract.
+    const rk = lineTypeKey(item.type)
+    map[key].rev[rk] += lineRev
+    map[key].rev.total += lineRev
   }
   return Object.values(map)
 }
@@ -1400,8 +1411,18 @@ export default function GanttPage() {
     a.material += c.cost.material
     a.subcontractor += c.cost.subcontractor
     a.equipment += c.cost.equipment
+    // Revenue split by the same type buckets (Andrew: revenue totals for Mat/Lab/Sub).
+    a.revLabour += c.rev?.labour ?? 0
+    a.revMaterial += c.rev?.material ?? 0
+    a.revSubcontractor += c.rev?.subcontractor ?? 0
+    a.revEquipment += c.rev?.equipment ?? 0
     return a
-  }, { revenue: 0, cost: 0, labour: 0, material: 0, subcontractor: 0, equipment: 0 })
+  }, { revenue: 0, cost: 0, labour: 0, material: 0, subcontractor: 0, equipment: 0, revLabour: 0, revMaterial: 0, revSubcontractor: 0, revEquipment: 0 })
+  // Per-type figure for the strip chips — revenue split in normal view, cost split in supervisor (budget) view.
+  const typeFigure = (k: typeof COST_TYPE_KEYS[number]): number => {
+    if (!showRevenue) return projTotals[k]
+    return k === 'labour' ? projTotals.revLabour : k === 'material' ? projTotals.revMaterial : k === 'subcontractor' ? projTotals.revSubcontractor : projTotals.revEquipment
+  }
   const projGP = projTotals.revenue - projTotals.cost
   const projGPpct = projTotals.revenue > 0 ? projGP / projTotals.revenue : 0
 
@@ -1741,11 +1762,12 @@ export default function GanttPage() {
             </div>
           )}
           <div className="h-4 w-px bg-fg-border" />
-          {COST_TYPE_KEYS.map(k => projTotals[k] > 0 ? (
+          <span className="text-[9px] uppercase tracking-wide text-fg-muted/50 self-center" title={showRevenue ? 'Revenue split by type' : 'Budgeted cost split by type'}>{showRevenue ? 'rev' : 'cost'} by type</span>
+          {COST_TYPE_KEYS.map(k => typeFigure(k) > 0 ? (
             <div key={k} className="flex items-baseline gap-1.5">
               <span className="inline-block w-2 h-2 rounded-full self-center" style={{ background: COST_TYPE_META[k].colour }} />
               <span className="text-[10px] uppercase tracking-wide text-fg-muted">{COST_TYPE_META[k].label}</span>
-              <span className="text-fg-heading tabular-nums">{formatCurrency(projTotals[k])}</span>
+              <span className="text-fg-heading tabular-nums">{formatCurrency(typeFigure(k))}</span>
             </div>
           ) : null)}
           {/* Accuracy check — forecast scheduled vs contract; flags unscheduled (under-claim) work */}
