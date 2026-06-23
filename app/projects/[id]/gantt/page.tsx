@@ -1359,6 +1359,7 @@ export default function GanttPage() {
 
   const monthBoundaryIndices = new Set<number>()
   const weekBoundaryIndices = new Set<number>()
+  const fortnightBoundaryIndices = new Set<number>()   // the invoicing cycle — every 2nd week from today
   for (let i = 1; i < columns.length; i++) {
     if (columns[i].getMonth() !== columns[i - 1].getMonth()) {
       monthBoundaryIndices.add(i)
@@ -1366,11 +1367,18 @@ export default function GanttPage() {
     if (timeView === 'days' && i % 5 === 0) {
       weekBoundaryIndices.add(i)
     }
+    // Fortnightly invoicing cycle, aligned so the current week is a boundary (Andrew: identify the
+    // cycle / bold the invoicing cycles). In weeks view every column is a week; in days, every 10 days.
+    const wk = timeView === 'days' ? i / 5 : i
+    if (Number.isInteger(wk) && (wk - LOOKBACK_WEEKS) % 2 === 0) {
+      fortnightBoundaryIndices.add(i)
+    }
   }
-  // Border rule for a column's left edge — month wins over week. Used by the body, header and footer
-  // so the vertical rules line up top to bottom.
+  // Border rule for a column's left edge — month strongest, then the fortnightly invoicing cycle, then
+  // the week. Used by the body, header and footer so the vertical rules line up top to bottom.
   const colBorderLeft = (i: number): string | undefined =>
     monthBoundaryIndices.has(i) ? '2px solid rgba(255,255,255,0.26)'
+    : fortnightBoundaryIndices.has(i) ? '2px solid rgba(255,255,255,0.18)'
     : weekBoundaryIndices.has(i) ? '2px solid rgba(255,255,255,0.13)'
     : undefined
 
