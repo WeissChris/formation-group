@@ -327,7 +327,10 @@ export interface GanttSegment {
   // then derived from these (revenue follows progress = cost-weighted) — those remain what the forecast reads.
   materialsPct?: number      // % of the category's material + subcontractor budget allocated to this period
   equipmentPct?: number      // % of the category's equipment budget allocated to this period
-  labourHours?: number       // derived: working days in the bar × crew × 8
+  labourPct?: number         // % of the category's LABOUR budget for this period (manual, auto-balanced
+                             // to 100% across periods). Seeded from the bar-length share on first load so
+                             // existing schedules are unchanged, then editable — replaces bar×crew×hours.
+  labourHours?: number       // derived (display only): labour cost for this period ÷ standard rate
   // Which view the bar was drawn in, so labour reads the right working-day count. A weeks bar stored
   // Fri→Fri means whole weeks (5 days/week); a days bar means its actual Mon–Fri days. Without this a
   // 1-day bar that lands on a Friday is indistinguishable from a 1-week bar and was charged 5 days of

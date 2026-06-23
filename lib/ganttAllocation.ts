@@ -1,12 +1,12 @@
 import type { GanttSegment } from '@/types'
 
-// ── Per-period material / equipment allocation ────────────────────────────────
-// A scope's material (and equipment) cost is spread across its work periods as a percentage each. The
-// invariant the whole forecast depends on: the DATED periods' percentages always sum to exactly 100%,
-// so the full budget is allocated — never 95% (cost silently lost) nor 110% (cost invented). Undated
-// placeholder periods carry 0% until they're scheduled.
+// ── Per-period labour / material / equipment allocation ───────────────────────
+// A scope's cost (labour, material, equipment) is spread across its work periods as a percentage each.
+// The invariant the whole forecast depends on: the DATED periods' percentages always sum to exactly
+// 100%, so the full budget is allocated — never 95% (cost silently lost) nor 110% (cost invented).
+// Undated placeholder periods carry 0% until they're scheduled.
 
-type AllocKey = 'materialsPct' | 'equipmentPct'
+type AllocKey = 'labourPct' | 'materialsPct' | 'equipmentPct'
 
 const isDated = (s: Pick<GanttSegment, 'startDate' | 'endDate'>): boolean => !!(s.startDate && s.endDate)
 
