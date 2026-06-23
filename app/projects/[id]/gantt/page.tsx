@@ -468,6 +468,14 @@ export default function GanttPage() {
     originalEnd: string
   } | null>(null)
 
+  // Resizing state — dragging a bar's left (start) or right (end) edge to extend/shorten it.
+  const [resizing, setResizing] = useState<{
+    entryId: string
+    subtaskId?: string
+    segId: string
+    edge: 'start' | 'end'
+  } | null>(null)
+
   // Popover state
   const [popover, setPopover] = useState<{ category: string; subtaskId?: string; segId: string } | null>(null)
   const popoverAnchorRef = useRef<HTMLDivElement | null>(null)
@@ -823,11 +831,36 @@ export default function GanttPage() {
         updateEntry({ ...entry, segments: updatedSegs })
       }
     }
+
+    // Handle resizing — drag one edge; the other stays put, the bar can't invert.
+    if (resizing) {
+      const entry = entries.find(e => e.id === resizing.entryId)
+      if (!entry) return
+      const enteredIso = dateForColIdx(colIdx)
+      const segList = resizing.subtaskId
+        ? (entry.subtasks?.find(st => st.id === resizing.subtaskId)?.segments ?? [])
+        : entry.segments
+      const seg = segList.find(s => s.id === resizing.segId)
+      if (!seg) return
+      const newStart = resizing.edge === 'start' ? (enteredIso <= seg.endDate ? enteredIso : seg.endDate) : seg.startDate
+      const newEnd = resizing.edge === 'end' ? (enteredIso >= seg.startDate ? enteredIso : seg.startDate) : seg.endDate
+      const wc = timeView === 'weeks'
+        ? weeksBetween(newStart, newEnd)
+        : Math.max(1, Math.ceil((daysBetweenIso(newStart, newEnd) + 1) / 7))
+      const apply = (s: GanttSegment) => s.id === resizing.segId ? { ...s, startDate: newStart, endDate: newEnd, weekCount: wc, grain: timeView } : s
+      if (resizing.subtaskId) {
+        const updatedSubtasks = (entry.subtasks ?? []).map(st => st.id === resizing.subtaskId ? { ...st, segments: st.segments.map(apply) } : st)
+        updateEntry({ ...entry, subtasks: updatedSubtasks })
+      } else {
+        updateEntry({ ...entry, segments: entry.segments.map(apply) })
+      }
+    }
   }
 
   const handleMouseUp = () => {
     setDrawing(null)
     setMoving(null)
+    setResizing(null)
   }
 
   // ── Bar click / drag ──────────────────────────────────────────────────────
@@ -850,6 +883,19 @@ export default function GanttPage() {
       originalStart: seg.startDate,
       originalEnd: seg.endDate,
     })
+  }
+
+  // Drag a bar's start/end edge to extend or shorten it (Instagantt-style). Stops propagation so it
+  // doesn't also start a whole-bar move.
+  const handleResizeMouseDown = (
+    e: React.MouseEvent,
+    entry: GanttEntry,
+    seg: GanttSegment,
+    edge: 'start' | 'end',
+    subtaskId?: string,
+  ) => {
+    e.stopPropagation()
+    setResizing({ entryId: entry.id, subtaskId, segId: seg.id, edge })
   }
 
   const handleBarClick = (
@@ -1356,6 +1402,15 @@ export default function GanttPage() {
                       {formatCurrency(weeklyCost)} cost
                     </div>
                   </div>
+                )}
+                {/* Resize handles — drag an edge to extend/shorten. onClick-stop so it doesn't open the popover. */}
+                {isStart && (
+                  <div onMouseDown={e => handleResizeMouseDown(e, entry, seg, 'start', subtaskId)} onClick={e => e.stopPropagation()}
+                    title="Drag to change the start" className="absolute inset-y-0 left-0 w-1.5 z-20 cursor-ew-resize hover:bg-white/40" />
+                )}
+                {isEnd && (
+                  <div onMouseDown={e => handleResizeMouseDown(e, entry, seg, 'end', subtaskId)} onClick={e => e.stopPropagation()}
+                    title="Drag to change the end" className="absolute inset-y-0 right-0 w-1.5 z-20 cursor-ew-resize hover:bg-white/40" />
                 )}
               </div>
             )
