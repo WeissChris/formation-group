@@ -509,6 +509,10 @@ export default function GanttPage() {
   const [baseline, setBaseline] = useState<{ capturedAt: string; entries: GanttEntry[] } | null>(() => {
     try { const v = localStorage.getItem(`fg_gantt_baseline_${id}`); return v ? JSON.parse(v) : null } catch { return null }
   })
+  // Supervisor view — hides revenue / GP / margin so a site supervisor sees budget + cost only. A view
+  // toggle (the app has no per-user roles yet), not enforced access control.
+  const [supervisorView, setSupervisorView] = useState(false)
+  const showRevenue = !supervisorView
 
   // Zoom (column width multiplier) + the scroll container, so we can land the initial view on "today".
   const [zoom, setZoom] = useState(1)
@@ -1496,13 +1500,17 @@ export default function GanttPage() {
                     handleBarClick(e as unknown as React.MouseEvent, category, seg.id, e.currentTarget as HTMLDivElement, subtaskId)
                   }
                 }}
-                title={`${category}${seg.label ? ` — ${seg.label}` : ''}\nRevenue: ${formatCurrency(weeklyRev)}/wk\nCost: ${formatCurrency(weeklyCost)}/wk\nMargin: ${marg}%`}
+                title={showRevenue
+                  ? `${category}${seg.label ? ` — ${seg.label}` : ''}\nRevenue: ${formatCurrency(weeklyRev)}/wk\nCost: ${formatCurrency(weeklyCost)}/wk\nMargin: ${marg}%`
+                  : `${category}${seg.label ? ` — ${seg.label}` : ''}\nBudget: ${formatCurrency(weeklyCost)}/wk`}
               >
                 {showText && (
                   <div className="px-1.5 leading-tight">
-                    <div className="text-[9px] text-white/85 font-light whitespace-nowrap truncate">
-                      {formatCurrency(weeklyRev)} rev
-                    </div>
+                    {showRevenue && (
+                      <div className="text-[9px] text-white/85 font-light whitespace-nowrap truncate">
+                        {formatCurrency(weeklyRev)} rev
+                      </div>
+                    )}
                     <div className="text-[9px] text-white/55 font-light whitespace-nowrap truncate">
                       {formatCurrency(weeklyCost)} cost
                     </div>
@@ -1613,6 +1621,13 @@ export default function GanttPage() {
             )}
           </div>
 
+          {/* Supervisor view — budget/cost only, hides revenue + GP + margin */}
+          <button onClick={() => setSupervisorView(v => !v)}
+            title="Supervisor view: hide revenue, GP and margin (budget + cost only)"
+            className={`px-3 py-2 border text-[10px] font-light tracking-wide uppercase transition-colors ${supervisorView ? 'bg-fg-dark text-white/80 border-fg-dark' : 'border-fg-border text-fg-muted hover:text-fg-heading hover:border-fg-heading'}`}>
+            Supervisor
+          </button>
+
           {/* Add Milestone */}
           {addingMilestone ? (
             <div className="flex items-center gap-2 border border-fg-border px-2 py-1.5 bg-fg-bg">
@@ -1708,19 +1723,23 @@ export default function GanttPage() {
 
       {estimate && categories.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mb-3 px-3 py-2.5 border border-fg-border bg-fg-bg/40 text-xs font-light">
+          {showRevenue && (
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-[10px] uppercase tracking-wide text-fg-muted">Revenue</span>
+              <span className="text-fg-heading tabular-nums">{formatCurrency(projTotals.revenue)}</span>
+            </div>
+          )}
           <div className="flex items-baseline gap-1.5">
-            <span className="text-[10px] uppercase tracking-wide text-fg-muted">Revenue</span>
-            <span className="text-fg-heading tabular-nums">{formatCurrency(projTotals.revenue)}</span>
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-[10px] uppercase tracking-wide text-fg-muted">Cost</span>
+            <span className="text-[10px] uppercase tracking-wide text-fg-muted">{showRevenue ? 'Cost' : 'Budget'}</span>
             <span className="text-fg-heading tabular-nums">{formatCurrency(projTotals.cost)}</span>
           </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-[10px] uppercase tracking-wide text-fg-muted">GP</span>
-            <span className="text-fg-heading tabular-nums">{formatCurrency(projGP)}</span>
-            <span className="text-fg-muted/70">({(projGPpct * 100).toFixed(0)}%)</span>
-          </div>
+          {showRevenue && (
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-[10px] uppercase tracking-wide text-fg-muted">GP</span>
+              <span className="text-fg-heading tabular-nums">{formatCurrency(projGP)}</span>
+              <span className="text-fg-muted/70">({(projGPpct * 100).toFixed(0)}%)</span>
+            </div>
+          )}
           <div className="h-4 w-px bg-fg-border" />
           {COST_TYPE_KEYS.map(k => projTotals[k] > 0 ? (
             <div key={k} className="flex items-baseline gap-1.5">
@@ -1730,21 +1749,25 @@ export default function GanttPage() {
             </div>
           ) : null)}
           {/* Accuracy check — forecast scheduled vs contract; flags unscheduled (under-claim) work */}
-          <div className="h-4 w-px bg-fg-border" />
-          <div className="flex items-baseline gap-1.5" title="Total of the scheduled forecast figures vs the contract — anything short is work not yet on the programme">
-            <span className="text-[10px] uppercase tracking-wide text-fg-muted">Scheduled</span>
-            <span className={`tabular-nums ${reconciled ? 'text-green-600' : 'text-amber-600'}`}>
-              {formatCurrency(forecastRevenue)} / {formatCurrency(projTotals.revenue)}
-            </span>
-            <span className={reconciled ? 'text-green-600/80' : 'text-amber-600/80'}>
-              {reconciled ? '✓' : `${scheduledPct}%`}
-            </span>
-            {unscheduledCats.length > 0 && (
-              <span className="text-amber-600/80 text-[10px]">· {unscheduledCats.length} to schedule</span>
-            )}
-          </div>
+          {showRevenue && (
+            <>
+              <div className="h-4 w-px bg-fg-border" />
+              <div className="flex items-baseline gap-1.5" title="Total of the scheduled forecast figures vs the contract — anything short is work not yet on the programme">
+                <span className="text-[10px] uppercase tracking-wide text-fg-muted">Scheduled</span>
+                <span className={`tabular-nums ${reconciled ? 'text-green-600' : 'text-amber-600'}`}>
+                  {formatCurrency(forecastRevenue)} / {formatCurrency(projTotals.revenue)}
+                </span>
+                <span className={reconciled ? 'text-green-600/80' : 'text-amber-600/80'}>
+                  {reconciled ? '✓' : `${scheduledPct}%`}
+                </span>
+                {unscheduledCats.length > 0 && (
+                  <span className="text-amber-600/80 text-[10px]">· {unscheduledCats.length} to schedule</span>
+                )}
+              </div>
+            </>
+          )}
           {/* % complete auto-fed from invoicing */}
-          {invoicedToDate > 0 && (
+          {showRevenue && invoicedToDate > 0 && (
             <div className="flex items-baseline gap-1.5" title={`Invoiced ${formatCurrency(invoicedToDate)} of ${formatCurrency(projTotals.revenue)} contract (sent + paid progress claims)`}>
               <span className="text-[10px] uppercase tracking-wide text-fg-muted">Complete</span>
               <span className="text-fg-heading tabular-nums">{pctComplete}%</span>
@@ -1761,8 +1784,8 @@ export default function GanttPage() {
               {/* Weekly cash flow — above the dates (Andrew), sticky at the top of the grid */}
               <tr style={{ height: H_CASH }}>
                 <th colSpan={4} style={{ width: fixedColsWidth, ...stickyCorner(4, 0) }} className="bg-fg-bg border-b border-r border-fg-border px-3 align-middle text-left">
-                  <div className="text-[10px] font-light tracking-architectural uppercase text-fg-muted">Weekly Cash Flow</div>
-                  <div className="text-[8px] font-light text-fg-muted/50 mt-0.5">revenue · cost · net / wk</div>
+                  <div className="text-[10px] font-light tracking-architectural uppercase text-fg-muted">{showRevenue ? 'Weekly Cash Flow' : 'Weekly Cost'}</div>
+                  <div className="text-[8px] font-light text-fg-muted/50 mt-0.5">{showRevenue ? 'revenue · cost · net / wk' : 'cost / wk'}</div>
                 </th>
                 {footerRuns.map((run, ri) => {
                   const net = run.rev - run.cost
@@ -1772,9 +1795,9 @@ export default function GanttPage() {
                       className="bg-fg-bg border-b border-r border-fg-border/30 px-1 align-middle overflow-hidden font-normal">
                       {hasActivity && (
                         <div className="text-center leading-tight whitespace-nowrap">
-                          <div className="text-[10px] text-fg-heading/80 tabular-nums">{fmtK(run.rev)}</div>
-                          <div className="text-[10px] text-fg-muted/50 tabular-nums">{fmtK(run.cost)}</div>
-                          <div className={`text-[10px] font-medium tabular-nums ${net >= 0 ? 'text-green-600/90' : 'text-amber-600/90'}`}>{net >= 0 ? '+' : ''}{fmtK(net)}</div>
+                          {showRevenue && <div className="text-[10px] text-fg-heading/80 tabular-nums">{fmtK(run.rev)}</div>}
+                          <div className={`text-[10px] tabular-nums ${showRevenue ? 'text-fg-muted/50' : 'text-fg-heading/80'}`}>{fmtK(run.cost)}</div>
+                          {showRevenue && <div className={`text-[10px] font-medium tabular-nums ${net >= 0 ? 'text-green-600/90' : 'text-amber-600/90'}`}>{net >= 0 ? '+' : ''}{fmtK(net)}</div>}
                         </div>
                       )}
                     </th>
@@ -1932,7 +1955,7 @@ export default function GanttPage() {
                       {/* Budget — revenue + an inline, compact cost split (was 4 stacked lines; that drove
                           the row height). Single-letter type tags with tooltips keep it to ~1 line. */}
                       <td className="border-r border-fg-border bg-fg-bg px-2 py-1.5 text-right text-[11px] font-light text-fg-muted tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(2) }}>
-                        <div className="text-fg-heading">{formatCurrency(cat.budgetedRevenue)}</div>
+                        <div className="text-fg-heading" title={showRevenue ? 'Contract revenue' : 'Budgeted cost'}>{formatCurrency(showRevenue ? cat.budgetedRevenue : cat.budgetedCost)}</div>
                         <div className="mt-px flex flex-wrap justify-end gap-x-1.5 gap-y-0 text-[9px] leading-tight">
                           {COST_TYPE_KEYS.map(k => cat.cost[k] > 0 ? (
                             <span key={k} className="whitespace-nowrap" title={`${COST_TYPE_META[k].label}: ${formatCurrency(cat.cost[k])}${k === 'labour' ? ` · ${Math.round(cat.cost[k] / STD_LABOUR_RATE)}h` : ''}`}>
