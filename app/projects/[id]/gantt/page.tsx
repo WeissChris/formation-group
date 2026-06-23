@@ -11,6 +11,7 @@ import {
   deleteGanttGeneratedRevenueByProject,
   loadWeeklyRevenue,
   saveWeeklyRevenue,
+  loadProgressClaims,
 } from '@/lib/storage'
 import { upsertGanttEntries, replaceGanttRevenueRemote, getProjects, upsertProject, upsertGanttMilestones, getAllGanttMilestones, getAllGanttEntries } from '@/lib/storageAsync'
 import { saveProject } from '@/lib/storage'
@@ -1382,6 +1383,12 @@ export default function GanttPage() {
   const scheduledPct = projTotals.revenue > 0 ? Math.round((forecastRevenue / projTotals.revenue) * 100) : 0
   const reconciled = Math.abs(forecastRevenue - projTotals.revenue) < 1
 
+  // % complete auto-fed from invoicing (Andrew): sent/paid progress-claim value ÷ contract.
+  const invoicedToDate = loadProgressClaims(id)
+    .filter(c => c.status === 'sent' || c.status === 'paid')
+    .reduce((s, c) => s + (c.subtotalEx || 0), 0)
+  const pctComplete = projTotals.revenue > 0 ? Math.round((invoicedToDate / projTotals.revenue) * 100) : 0
+
   const fixedColsWidth = COL_CATEGORY + COL_CREW + COL_BUDGET + COL_SCHED
   const tableWidth = fixedColsWidth + columns.length * CELL_W
 
@@ -1683,6 +1690,13 @@ export default function GanttPage() {
               <span className="text-amber-600/80 text-[10px]">· {unscheduledCats.length} to schedule</span>
             )}
           </div>
+          {/* % complete auto-fed from invoicing */}
+          {invoicedToDate > 0 && (
+            <div className="flex items-baseline gap-1.5" title={`Invoiced ${formatCurrency(invoicedToDate)} of ${formatCurrency(projTotals.revenue)} contract (sent + paid progress claims)`}>
+              <span className="text-[10px] uppercase tracking-wide text-fg-muted">Complete</span>
+              <span className="text-fg-heading tabular-nums">{pctComplete}%</span>
+            </div>
+          )}
         </div>
       )}
 
