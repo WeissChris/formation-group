@@ -32,6 +32,8 @@ import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react
 const CELL_W_WEEKS = 48
 const CELL_W_DAYS = 24
 const WEEK_COUNT = 52
+const LOOKBACK_WEEKS = 4      // weeks shown BEFORE today so you can scroll back from "today"
+const ZOOM_LEVELS = [0.6, 0.75, 1, 1.3, 1.6] as const
 const DAYS_VIEW_WEEKS = 26   // Days view renders this many weeks of working-day columns (was 12 — too short for multi-month jobs)
 const COL_CATEGORY = 200
 const COL_CREW = 64
@@ -93,10 +95,11 @@ interface CategorySummary {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-function getNextFridays(count: number): Date[] {
+function getNextFridays(count: number, lookbackWeeks = 0): Date[] {
   const fridays: Date[] = []
   const d = new Date()
   while (d.getDay() !== 5) d.setDate(d.getDate() + 1)
+  d.setDate(d.getDate() - lookbackWeeks * 7)   // start N weeks before the upcoming Friday so you can scroll back
   for (let i = 0; i < count; i++) {
     fridays.push(new Date(d))
     d.setDate(d.getDate() + 7)
@@ -491,16 +494,30 @@ export default function GanttPage() {
   // Collapsed subtask rows
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
 
-  const fridays = getNextFridays(WEEK_COUNT)
+  // Zoom (column width multiplier) + the scroll container, so we can land the initial view on "today".
+  const [zoom, setZoom] = useState(1)
+  const gridScrollRef = useRef<HTMLDivElement | null>(null)
+  const scrolledToToday = useRef(false)
+
+  const fridays = getNextFridays(WEEK_COUNT, LOOKBACK_WEEKS)
   const workingDays = getWorkingDays(fridays)
-  const currentWeekIso = toISODate(fridays[0])
+  const currentWeekIso = toISODate(fridays[LOOKBACK_WEEKS])   // the current week sits LOOKBACK_WEEKS columns in
   const today = toISODate(new Date())
 
-  const CELL_W = timeView === 'days' ? CELL_W_DAYS : CELL_W_WEEKS
+  const CELL_W = Math.round((timeView === 'days' ? CELL_W_DAYS : CELL_W_WEEKS) * zoom)
 
   // Column set for current view
   const columns: Date[] = timeView === 'days' ? workingDays : fridays
   const colCount = columns.length
+
+  // Land the initial horizontal scroll on "today" (a few weeks of history sit to its left). Once only,
+  // so zooming/re-rendering doesn't fight the user's scroll position.
+  useEffect(() => {
+    if (scrolledToToday.current || !gridScrollRef.current || colCount === 0) return
+    const lookbackCols = timeView === 'days' ? LOOKBACK_WEEKS * 5 : LOOKBACK_WEEKS
+    gridScrollRef.current.scrollLeft = Math.max(0, lookbackCols * CELL_W - 80)
+    scrolledToToday.current = true
+  }, [colCount, timeView, CELL_W])
 
   useEffect(() => {
     let cancelled = false
@@ -1461,6 +1478,17 @@ export default function GanttPage() {
             </button>
           </div>
 
+          {/* Zoom — scales the column width */}
+          <div className="flex items-center border border-fg-border text-fg-muted overflow-hidden">
+            <button onClick={() => setZoom(z => ZOOM_LEVELS[Math.max(0, ZOOM_LEVELS.indexOf(z as typeof ZOOM_LEVELS[number]) - 1)] ?? z)}
+              disabled={zoom <= ZOOM_LEVELS[0]} title="Zoom out"
+              className="px-2.5 py-2 text-sm leading-none hover:text-fg-heading disabled:opacity-30 disabled:cursor-not-allowed">−</button>
+            <span className="px-1 text-[10px] font-light tabular-nums w-9 text-center">{Math.round(zoom * 100)}%</span>
+            <button onClick={() => setZoom(z => ZOOM_LEVELS[Math.min(ZOOM_LEVELS.length - 1, ZOOM_LEVELS.indexOf(z as typeof ZOOM_LEVELS[number]) + 1)] ?? z)}
+              disabled={zoom >= ZOOM_LEVELS[ZOOM_LEVELS.length - 1]} title="Zoom in"
+              className="px-2.5 py-2 text-sm leading-none hover:text-fg-heading disabled:opacity-30 disabled:cursor-not-allowed">+</button>
+          </div>
+
           {/* Crew size — drives the labour-hours model (2 = 16h/day, 3 = 24h, 4 = 32h) */}
           <div className="flex items-center gap-1.5 border border-fg-border px-2.5 py-1.5">
             <span className="text-[10px] font-light tracking-wide uppercase text-fg-muted">Crew</span>
@@ -1606,7 +1634,7 @@ export default function GanttPage() {
       )}
 
       {estimate && categories.length > 0 && (
-        <div className="overflow-x-auto border border-fg-border" style={{ userSelect: 'none' }}>
+        <div ref={gridScrollRef} className="overflow-auto border border-fg-border" style={{ userSelect: 'none', maxHeight: 'calc(100vh - 230px)' }}>
           <table className="border-collapse" style={{ minWidth: tableWidth, width: tableWidth }}>
             {/* ── Headers ── */}
             <thead>
