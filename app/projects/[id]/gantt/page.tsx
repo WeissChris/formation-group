@@ -1212,6 +1212,16 @@ export default function GanttPage() {
   const projGP = projTotals.revenue - projTotals.cost
   const projGPpct = projTotals.revenue > 0 ? projGP / projTotals.revenue : 0
 
+  // Accuracy check (Andrew): total the forecast figures and reconcile against the real contract, so you
+  // can see at a glance whether work is still unscheduled (under-claiming) before invoicing.
+  const forecastRevenue = entries.reduce((s, e) => s + e.segments.reduce((ss, sg) => ss + (sg.revenueAllocation || 0), 0), 0)
+  const unscheduledCats = categories.filter(c => {
+    const e = entries.find(x => x.category === c.category)
+    return !e || !e.segments.some(s => s.startDate && s.endDate)
+  })
+  const scheduledPct = projTotals.revenue > 0 ? Math.round((forecastRevenue / projTotals.revenue) * 100) : 0
+  const reconciled = Math.abs(forecastRevenue - projTotals.revenue) < 1
+
   const fixedColsWidth = COL_CATEGORY + COL_CREW + COL_BUDGET + COL_SCHED
   const tableWidth = fixedColsWidth + columns.length * CELL_W
 
@@ -1459,6 +1469,20 @@ export default function GanttPage() {
               <span className="text-fg-heading tabular-nums">{formatCurrency(projTotals[k])}</span>
             </div>
           ) : null)}
+          {/* Accuracy check — forecast scheduled vs contract; flags unscheduled (under-claim) work */}
+          <div className="h-4 w-px bg-fg-border" />
+          <div className="flex items-baseline gap-1.5" title="Total of the scheduled forecast figures vs the contract — anything short is work not yet on the programme">
+            <span className="text-[10px] uppercase tracking-wide text-fg-muted">Scheduled</span>
+            <span className={`tabular-nums ${reconciled ? 'text-green-600' : 'text-amber-600'}`}>
+              {formatCurrency(forecastRevenue)} / {formatCurrency(projTotals.revenue)}
+            </span>
+            <span className={reconciled ? 'text-green-600/80' : 'text-amber-600/80'}>
+              {reconciled ? '✓' : `${scheduledPct}%`}
+            </span>
+            {unscheduledCats.length > 0 && (
+              <span className="text-amber-600/80 text-[10px]">· {unscheduledCats.length} to schedule</span>
+            )}
+          </div>
         </div>
       )}
 
