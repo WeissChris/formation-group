@@ -1534,8 +1534,23 @@ export default function GanttPage() {
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
+      {/* Print / PDF: hide the chrome, un-stick + expand the grid so the whole programme prints, brand it.
+          Use the browser's "Save as PDF" from the print dialog for a branded PDF. */}
+      <style>{`@media print {
+        .gantt-no-print { display: none !important; }
+        .gantt-print-only { display: block !important; }
+        .gantt-scroll { overflow: visible !important; max-height: none !important; border: none !important; }
+        .gantt-scroll th, .gantt-scroll td { position: static !important; }
+        @page { size: A3 landscape; margin: 8mm; }
+      }`}</style>
+      <div className="hidden gantt-print-only mb-4">
+        <p className="text-[11px] tracking-[0.2em] uppercase text-fg-heading font-medium">Formation Landscapes</p>
+        <h1 className="text-xl font-light text-fg-heading mt-1">{project.name} — Programme</h1>
+        <p className="text-xs text-fg-muted mt-0.5">Revenue &amp; schedule · {new Date().toLocaleDateString()}</p>
+      </div>
+
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 mb-8 text-xs font-light text-fg-muted">
+      <div className="gantt-no-print flex items-center gap-2 mb-8 text-xs font-light text-fg-muted">
         <Link href="/projects" className="hover:text-fg-heading transition-colors">Projects</Link>
         <span>/</span>
         <Link href={`/projects/${id}`} className="hover:text-fg-heading transition-colors">{project.name}</Link>
@@ -1544,7 +1559,7 @@ export default function GanttPage() {
       </div>
 
       {/* Header */}
-      <div className="flex items-start justify-between mb-8 flex-wrap gap-4">
+      <div className="gantt-no-print flex items-start justify-between mb-8 flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-light tracking-wide text-fg-heading">Gantt &amp; Revenue Schedule</h1>
           <p className="text-sm font-light text-fg-muted mt-1">{project.name}</p>
@@ -1658,6 +1673,11 @@ export default function GanttPage() {
               Build timeline from estimate
             </button>
           )}
+          <button onClick={() => window.print()}
+            title="Print or Save as PDF — hides the controls, expands the full programme, branded"
+            className="px-4 py-2 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading hover:border-fg-heading transition-colors">
+            Print / PDF
+          </button>
           <button onClick={handleSetBaseline}
             title={baseline ? `Baseline set ${new Date(baseline.capturedAt).toLocaleDateString()} — click to re-snapshot` : 'Snapshot the current schedule as the baseline (set on planning day, before site start)'}
             className="px-4 py-2 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading hover:border-fg-heading transition-colors">
@@ -1734,7 +1754,7 @@ export default function GanttPage() {
       )}
 
       {estimate && categories.length > 0 && (
-        <div ref={gridScrollRef} className="overflow-auto border border-fg-border" style={{ userSelect: 'none', maxHeight: 'calc(100vh - 230px)' }}>
+        <div ref={gridScrollRef} className="gantt-scroll overflow-auto border border-fg-border" style={{ userSelect: 'none', maxHeight: 'calc(100vh - 230px)' }}>
           <table className="border-collapse" style={{ minWidth: tableWidth, width: tableWidth }}>
             {/* ── Headers ── */}
             <thead>
@@ -2064,7 +2084,7 @@ export default function GanttPage() {
       )}
 
       {/* Legend */}
-      <div className="flex items-center gap-6 mt-4 flex-wrap">
+      <div className="gantt-no-print flex items-center gap-6 mt-4 flex-wrap">
         <div className="flex items-center gap-2">
           <div className="w-8 h-3 rounded-sm" style={{ background: '#8A8580' }} />
           <span className="text-[10px] font-light text-fg-muted uppercase tracking-wide">Formation (≥40% margin)</span>
