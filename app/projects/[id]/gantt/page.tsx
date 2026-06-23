@@ -1346,6 +1346,20 @@ export default function GanttPage() {
   const fixedColsWidth = COL_CATEGORY + COL_CREW + COL_BUDGET + COL_SCHED
   const tableWidth = fixedColsWidth + columns.length * CELL_W
 
+  // Sticky-left helper: the 4 fixed columns (Category/Crew/Budget/Sched) stay put while the grid scrolls
+  // horizontally. idx 0-3 = which fixed column; idx 4 = a colSpan=4 cell that spans the whole fixed block.
+  const STICKY_LEFTS = [0, COL_CATEGORY, COL_CATEGORY + COL_CREW, COL_CATEGORY + COL_CREW + COL_BUDGET, 0]
+  const stickyL = (idx: number, z = 20): React.CSSProperties => ({ position: 'sticky', left: STICKY_LEFTS[idx], zIndex: z })
+
+  // Sticky-top header: the cashflow + date rows stay put while the grid scrolls down. Fixed row heights
+  // give exact cumulative `top` offsets. Corner cells (fixed column AND header) merge stickyL + top.
+  const H_CASH = 44, H_MONTH = 28, H_DOW = 20
+  const topMonth = H_CASH
+  const topDow = H_CASH + H_MONTH
+  const topDate = H_CASH + H_MONTH + (timeView === 'days' ? H_DOW : 0)
+  const stickyTop = (top: number, z = 30): React.CSSProperties => ({ position: 'sticky', top, zIndex: z })
+  const stickyCorner = (idx: number, top: number): React.CSSProperties => ({ ...stickyL(idx, 41), top })
+
   // ── Render segment bar cells ──────────────────────────────────────────────
 
   const renderSegmentCells = (
@@ -1638,12 +1652,36 @@ export default function GanttPage() {
           <table className="border-collapse" style={{ minWidth: tableWidth, width: tableWidth }}>
             {/* ── Headers ── */}
             <thead>
+              {/* Weekly cash flow — above the dates (Andrew), sticky at the top of the grid */}
+              <tr style={{ height: H_CASH }}>
+                <th colSpan={4} style={{ width: fixedColsWidth, ...stickyCorner(4, 0) }} className="bg-fg-bg border-b border-r border-fg-border px-3 align-middle text-left">
+                  <div className="text-[10px] font-light tracking-architectural uppercase text-fg-muted">Weekly Cash Flow</div>
+                  <div className="text-[8px] font-light text-fg-muted/50 mt-0.5">revenue · cost · net / wk</div>
+                </th>
+                {footerRuns.map((run, ri) => {
+                  const net = run.rev - run.cost
+                  const hasActivity = run.rev > 0 || run.cost > 0
+                  return (
+                    <th key={ri} colSpan={run.span} style={{ width: run.span * CELL_W, borderLeft: colBorderLeft(run.startIdx), ...stickyTop(0) }}
+                      className="bg-fg-bg border-b border-r border-fg-border/30 px-1 align-middle overflow-hidden font-normal">
+                      {hasActivity && (
+                        <div className="text-center leading-tight whitespace-nowrap">
+                          <div className="text-[10px] text-fg-heading/80 tabular-nums">{fmtK(run.rev)}</div>
+                          <div className="text-[10px] text-fg-muted/50 tabular-nums">{fmtK(run.cost)}</div>
+                          <div className={`text-[10px] font-medium tabular-nums ${net >= 0 ? 'text-green-600/90' : 'text-amber-600/90'}`}>{net >= 0 ? '+' : ''}{fmtK(net)}</div>
+                        </div>
+                      )}
+                    </th>
+                  )
+                })}
+              </tr>
+
               {/* Month / week group row */}
-              <tr>
-                <th colSpan={4} style={{ width: fixedColsWidth }} className="bg-fg-bg border-b border-r border-fg-border px-3 py-2 text-left" />
+              <tr style={{ height: H_MONTH }}>
+                <th colSpan={4} style={{ width: fixedColsWidth, ...stickyCorner(4, topMonth) }} className="bg-fg-bg border-b border-r border-fg-border px-3 py-1 text-left" />
                 {monthGroups.map((mg, i) => (
-                  <th key={i} colSpan={mg.count} style={{ width: mg.count * CELL_W }}
-                    className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-left text-[10px] font-light tracking-widest uppercase text-fg-muted">
+                  <th key={i} colSpan={mg.count} style={{ width: mg.count * CELL_W, ...stickyTop(topMonth) }}
+                    className="bg-fg-bg border-b border-r border-fg-border px-2 py-1 text-left text-[10px] font-light tracking-widest uppercase text-fg-muted">
                     {mg.month}
                   </th>
                 ))}
@@ -1651,14 +1689,15 @@ export default function GanttPage() {
 
               {/* Day-of-week sub-header (days view only) */}
               {timeView === 'days' && (
-                <tr>
-                  <th colSpan={4} style={{ width: fixedColsWidth }} className="bg-fg-bg border-b border-r border-fg-border" />
+                <tr style={{ height: H_DOW }}>
+                  <th colSpan={4} style={{ width: fixedColsWidth, ...stickyCorner(4, topDow) }} className="bg-fg-bg border-b border-r border-fg-border" />
                   {workingDays.map((d, i) => {
                     return (
                       <th key={i}
                         style={{
                           width: CELL_W_DAYS, minWidth: CELL_W_DAYS,
                           borderLeft: colBorderLeft(i),
+                          ...stickyTop(topDow),
                         }}
                         className="bg-fg-bg border-b border-r border-fg-border py-1 text-center text-[9px] font-light text-fg-muted/60">
                         {DAY_LABELS[d.getDay() === 0 ? 0 : d.getDay() - 1]}
@@ -1670,10 +1709,10 @@ export default function GanttPage() {
 
               {/* Date row */}
               <tr>
-                <th className="bg-fg-bg border-b border-r border-fg-border px-3 py-2 text-left text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_CATEGORY }}>Category</th>
-                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-center text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_CREW }}>Crew</th>
-                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-right text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_BUDGET }}>Budget / Cost</th>
-                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-center text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_SCHED }}>Start / Duration</th>
+                <th className="bg-fg-bg border-b border-r border-fg-border px-3 py-2 text-left text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_CATEGORY, ...stickyCorner(0, topDate) }}>Category</th>
+                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-center text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_CREW, ...stickyCorner(1, topDate) }}>Crew</th>
+                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-right text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_BUDGET, ...stickyCorner(2, topDate) }}>Budget / Cost</th>
+                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-center text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_SCHED, ...stickyCorner(3, topDate) }}>Start / Duration</th>
                 {columns.map((col, i) => {
                   const iso = toISODate(col)
                   const isCurrentWeek = timeView === 'weeks' ? iso === currentWeekIso : iso === today
@@ -1681,6 +1720,7 @@ export default function GanttPage() {
                     <th key={i} style={{
                       width: CELL_W, minWidth: CELL_W,
                       borderLeft: colBorderLeft(i),
+                      ...stickyTop(topDate),
                     }}
                       className={`border-b border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border'} py-1.5 text-center text-[10px] font-light text-fg-muted ${isCurrentWeek ? 'bg-fg-card/60' : 'bg-fg-bg'}`}>
                       {timeView === 'weeks' ? formatDayMonth(col) : String(col.getDate())}
@@ -1736,7 +1776,7 @@ export default function GanttPage() {
                     {/* ── Category row ── */}
                     <tr key={cat.category} className="border-b border-fg-border/40 group" style={{ height: 34 }}>
                       {/* Category label */}
-                      <td className="border-r border-fg-border px-3 py-2 text-xs font-light text-fg-heading whitespace-nowrap align-middle" style={{ width: COL_CATEGORY }}>
+                      <td className="border-r border-fg-border bg-fg-bg px-3 py-2 text-xs font-light text-fg-heading whitespace-nowrap align-middle" style={{ width: COL_CATEGORY, ...stickyL(0) }}>
                         <div className="flex items-center gap-1.5">
                           {hasSubtasks && (
                             <button onClick={() => toggleCollapse(cat.category)} className="text-fg-muted hover:text-fg-heading transition-colors flex-shrink-0">
@@ -1769,7 +1809,7 @@ export default function GanttPage() {
                         </div>
                       </td>
                       {/* Crew */}
-                      <td className="border-r border-fg-border px-2 py-2 text-center align-middle" style={{ width: COL_CREW }}>
+                      <td className="border-r border-fg-border bg-fg-bg px-2 py-2 text-center align-middle" style={{ width: COL_CREW, ...stickyL(1) }}>
                         <span className="text-[10px] font-light tracking-wide uppercase px-1.5 py-0.5"
                           style={{ background: cat.crewType === 'Formation' ? '#8A858520' : '#C5B8A820', color: cat.crewType === 'Formation' ? '#8A8580' : '#A09070' }}>
                           {cat.crewType === 'Formation' ? 'Form' : 'Sub'}
@@ -1777,7 +1817,7 @@ export default function GanttPage() {
                       </td>
                       {/* Budget — revenue + an inline, compact cost split (was 4 stacked lines; that drove
                           the row height). Single-letter type tags with tooltips keep it to ~1 line. */}
-                      <td className="border-r border-fg-border px-2 py-1.5 text-right text-[11px] font-light text-fg-muted tabular-nums align-middle" style={{ width: COL_BUDGET }}>
+                      <td className="border-r border-fg-border bg-fg-bg px-2 py-1.5 text-right text-[11px] font-light text-fg-muted tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(2) }}>
                         <div className="text-fg-heading">{formatCurrency(cat.budgetedRevenue)}</div>
                         <div className="mt-px flex flex-wrap justify-end gap-x-1.5 gap-y-0 text-[9px] leading-tight">
                           {COST_TYPE_KEYS.map(k => cat.cost[k] > 0 ? (
@@ -1789,7 +1829,7 @@ export default function GanttPage() {
                         </div>
                       </td>
                       {/* Schedule: start date + duration — the bar places itself, no drawing */}
-                      <td className="border-r border-fg-border px-1.5 py-1 align-middle" style={{ width: COL_SCHED }}>
+                      <td className="border-r border-fg-border bg-fg-bg px-1.5 py-1 align-middle" style={{ width: COL_SCHED, ...stickyL(3) }}>
                         <div className="flex items-center gap-1">
                           <input
                             type="date"
@@ -1824,7 +1864,7 @@ export default function GanttPage() {
                     {/* ── Subtask rows ── */}
                     {!isCollapsed && subtasks.map(subtask => (
                       <tr key={subtask.id} className="border-b border-fg-border/20 group/sub" style={{ height: 28 }}>
-                        <td className="border-r border-fg-border pl-8 pr-2 py-1.5 text-[11px] font-light text-fg-muted whitespace-nowrap align-middle" style={{ width: COL_CATEGORY }}>
+                        <td className="border-r border-fg-border bg-fg-bg pl-8 pr-2 py-1.5 text-[11px] font-light text-fg-muted whitespace-nowrap align-middle" style={{ width: COL_CATEGORY, ...stickyL(0) }}>
                           <div className="flex items-center gap-1">
                             <span className="text-fg-muted/40 text-[10px]">└</span>
                             <input
@@ -1840,10 +1880,10 @@ export default function GanttPage() {
                             </button>
                           </div>
                         </td>
-                        <td className="border-r border-fg-border" style={{ width: COL_CREW }} />
-                        <td className="border-r border-fg-border" style={{ width: COL_BUDGET }} />
+                        <td className="border-r border-fg-border bg-fg-bg" style={{ width: COL_CREW, ...stickyL(1) }} />
+                        <td className="border-r border-fg-border bg-fg-bg" style={{ width: COL_BUDGET, ...stickyL(2) }} />
                         {/* Sub-task schedule: start date + duration, same as the category rows */}
-                        <td className="border-r border-fg-border px-1.5 py-1 align-middle" style={{ width: COL_SCHED }}>
+                        <td className="border-r border-fg-border bg-fg-bg px-1.5 py-1 align-middle" style={{ width: COL_SCHED, ...stickyL(3) }}>
                           <div className="flex items-center gap-1">
                             <input
                               type="date"
@@ -1874,7 +1914,7 @@ export default function GanttPage() {
               {/* ── Milestones row ── */}
               {milestones.length > 0 && (
                 <tr className="border-t-2 border-fg-border/40" style={{ height: 40 }}>
-                  <td colSpan={4} className="border-r border-fg-border px-3 py-2 text-[10px] font-light tracking-architectural uppercase text-fg-muted align-middle">
+                  <td colSpan={4} style={stickyL(4)} className="border-r border-fg-border bg-fg-bg px-3 py-2 text-[10px] font-light tracking-architectural uppercase text-fg-muted align-middle">
                     Milestones
                   </td>
                   {columns.map((col, i) => {
@@ -1925,36 +1965,6 @@ export default function GanttPage() {
                 </tr>
               )}
             </tbody>
-
-            {/* ── Totals footer ── */}
-            <tfoot>
-              <tr className="border-t-2 border-fg-border" style={{ height: 46 }}>
-                <td colSpan={4} className="px-3 py-2 border-r border-fg-border align-top">
-                  <div className="text-[10px] font-light tracking-architectural uppercase text-fg-muted">Weekly Cash Flow</div>
-                  <div className="text-[8px] font-light text-fg-muted/50 mt-0.5">revenue · cost · net / wk</div>
-                </td>
-                {footerRuns.map((run, ri) => {
-                  const net = run.rev - run.cost
-                  const hasActivity = run.rev > 0 || run.cost > 0
-                  return (
-                    <td key={ri} colSpan={run.span} style={{
-                      width: run.span * CELL_W,
-                      borderLeft: colBorderLeft(run.startIdx),
-                    }} className="border-r border-fg-border/30 px-1 py-1 align-top overflow-hidden">
-                      {hasActivity && (
-                        <div className="text-center leading-tight whitespace-nowrap">
-                          <div className="text-[10px] text-fg-heading/80 tabular-nums">{fmtK(run.rev)}</div>
-                          <div className="text-[10px] text-fg-muted/50 tabular-nums">{fmtK(run.cost)}</div>
-                          <div className={`text-[10px] font-medium tabular-nums ${net >= 0 ? 'text-green-600/90' : 'text-amber-600/90'}`}>
-                            {net >= 0 ? '+' : ''}{fmtK(net)}
-                          </div>
-                        </div>
-                      )}
-                    </td>
-                  )
-                })}
-              </tr>
-            </tfoot>
           </table>
         </div>
       )}
