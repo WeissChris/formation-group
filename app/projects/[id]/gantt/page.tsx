@@ -231,11 +231,12 @@ interface SegEditProps {
   crew: number
   onUpdate: (seg: GanttSegment) => void
   onDelete: () => void
+  onConvertToMilestone: () => void
   onClose: () => void
   anchorRef: React.RefObject<HTMLDivElement | null>
 }
 
-function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBudget, equipmentBudget, onUpdate, onDelete, onClose, anchorRef }: SegEditProps) {
+function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBudget, equipmentBudget, onUpdate, onDelete, onConvertToMilestone, onClose, anchorRef }: SegEditProps) {
   // The foreman types this period's material/equipment % (0–100) and it updates LIVE: the other dated
   // periods auto-balance to fill the remainder so each resource always sums to 100%, and the totals/costs
   // recompute as you type — no Apply step. The breakdown below shows every period's share moving.
@@ -365,7 +366,11 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
         </div>
         <div className="flex justify-between items-center pt-1">
           <button onClick={onDelete} className="text-[10px] text-red-400/60 hover:text-red-400 uppercase tracking-wide">Remove</button>
-          <button onClick={() => { pushUpdate(); onClose() }} className="px-3 py-1.5 bg-fg-dark text-white/80 text-[10px] tracking-wide uppercase">Done</button>
+          <div className="flex items-center gap-2">
+            <button onClick={onConvertToMilestone} title="Replace this bar with a milestone marker at its start date"
+              className="text-[10px] text-fg-muted hover:text-fg-heading uppercase tracking-wide">◆ Milestone</button>
+            <button onClick={() => { pushUpdate(); onClose() }} className="px-3 py-1.5 bg-fg-dark text-white/80 text-[10px] tracking-wide uppercase">Done</button>
+          </div>
         </div>
       </div>
     </div>
@@ -493,6 +498,10 @@ export default function GanttPage() {
 
   // Collapsed subtask rows
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
+  // Custom category order (per project, persisted)
+  const [categoryOrder, setCategoryOrder] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(`fg_gantt_order_${id}`) || '[]') } catch { return [] }
+  })
 
   // Zoom (column width multiplier) + the scroll container, so we can land the initial view on "today".
   const [zoom, setZoom] = useState(1)
@@ -569,7 +578,21 @@ export default function GanttPage() {
     return () => { cancelled = true }
   }, [id, router])
 
-  const categories: CategorySummary[] = estimate ? extractCategories(estimate) : []
+  const rawCategories: CategorySummary[] = estimate ? extractCategories(estimate) : []
+  // Custom category order (Andrew: drag/reorder). Persisted per project; categories not in the saved
+  // order fall back to their estimate order at the end.
+  const categories: CategorySummary[] = [...rawCategories].sort((a, b) => {
+    const ia = categoryOrder.indexOf(a.category); const ib = categoryOrder.indexOf(b.category)
+    return (ia < 0 ? 1e9 + rawCategories.indexOf(a) : ia) - (ib < 0 ? 1e9 + rawCategories.indexOf(b) : ib)
+  })
+  const moveCategory = (catName: string, dir: -1 | 1) => {
+    const order = categories.map(c => c.category)
+    const i = order.indexOf(catName); const j = i + dir
+    if (i < 0 || j < 0 || j >= order.length) return
+    ;[order[i], order[j]] = [order[j], order[i]]
+    setCategoryOrder(order)
+    try { localStorage.setItem(`fg_gantt_order_${id}`, JSON.stringify(order)) } catch { /* ignore */ }
+  }
 
   const getEntry = (category: string): GanttEntry => {
     const existing = entries.find(e => e.category === category)
@@ -962,6 +985,14 @@ export default function GanttPage() {
       updateEntry(rebalanceEntry({ ...entry, segments: pruned }))
     }
     setPopover(null)
+  }
+
+  // Convert a work period (task or subtask bar) into a milestone marker at its start date, then remove
+  // the bar. Andrew: "ability to convert a task or subtask to a milestone".
+  const handleConvertToMilestone = (category: string, seg: GanttSegment, subtaskId?: string) => {
+    if (!seg.startDate) return
+    handleAddMilestone(seg.label || category, seg.startDate)
+    handleSegmentDelete(category, seg.id, subtaskId)
   }
 
   const handleAddSplit = (category: string) => {
@@ -1798,14 +1829,17 @@ export default function GanttPage() {
                               </span>
                             )}
                           </div>
-                          {/* Add subtask button (hover) */}
-                          <button
-                            onClick={() => handleAddSubtask(cat.category)}
-                            title="Add subtask row"
-                            className="opacity-0 group-hover:opacity-100 ml-auto flex-shrink-0 text-fg-muted/60 hover:text-fg-heading transition-all"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
+                          {/* Reorder + add-subtask buttons (hover) */}
+                          <div className="opacity-0 group-hover:opacity-100 ml-auto flex-shrink-0 flex items-center gap-0.5 transition-all">
+                            <button onClick={() => moveCategory(cat.category, -1)} title="Move up"
+                              className="text-fg-muted/50 hover:text-fg-heading leading-none text-[11px] px-0.5">▲</button>
+                            <button onClick={() => moveCategory(cat.category, 1)} title="Move down"
+                              className="text-fg-muted/50 hover:text-fg-heading leading-none text-[11px] px-0.5">▼</button>
+                            <button onClick={() => handleAddSubtask(cat.category)} title="Add subtask row"
+                              className="text-fg-muted/60 hover:text-fg-heading">
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
                       </td>
                       {/* Crew */}
@@ -2020,6 +2054,7 @@ export default function GanttPage() {
             anchorRef={popoverAnchorRef}
             onUpdate={updated => handleSegmentUpdate(popover.category, updated, popover.subtaskId)}
             onDelete={() => handleSegmentDelete(popover.category, popover.segId, popover.subtaskId)}
+            onConvertToMilestone={() => handleConvertToMilestone(popover.category, seg, popover.subtaskId)}
             onClose={() => setPopover(null)}
           />
         )
