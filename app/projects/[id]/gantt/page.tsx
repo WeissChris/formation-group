@@ -1117,6 +1117,54 @@ export default function GanttPage() {
     updateEntry({ ...entry, segments: [...entry.segments, newSeg] })
   }
 
+  // ── Auto Materials/Labour/Subcontractor split (Andrew §3) ─────────────────
+  // Split a category into discrete Materials/Labour/Subcontractor/Equipment line items, each carrying that
+  // type's budget and feeding the forecast. The category's own segments are cleared so the parent becomes a
+  // no-$ timeframe summary. Budgets sum to the category total, so the forecast is preserved on split; the
+  // foreman then schedules each type line independently. Opt-in: unsplit categories are untouched.
+  const TYPE_LINES: { key: 'labour' | 'material' | 'subcontractor' | 'equipment'; label: string }[] = [
+    { key: 'labour', label: 'Labour' },
+    { key: 'material', label: 'Materials' },
+    { key: 'subcontractor', label: 'Subcontractor' },
+    { key: 'equipment', label: 'Equipment' },
+  ]
+  const isCategorySplit = (entry: GanttEntry): boolean => (entry.subtasks ?? []).some(st => st.costType)
+  const handleSplitCategory = (category: string) => {
+    const entry = getEntry(category)
+    if (isCategorySplit(entry)) return   // already split
+    const cat = categories.find(c => c.category === category)
+    if (!cat) return
+    const baseSeg = entry.segments.find(s => s.startDate && s.endDate)
+    const typeSubs: GanttSubtask[] = TYPE_LINES
+      .filter(t => (cat.cost[t.key] ?? 0) > 0 || (cat.rev?.[t.key] ?? 0) > 0)
+      .map(t => ({
+        id: generateId(), label: t.label, costType: t.key,
+        segments: baseSeg
+          ? [{ id: generateId(), startDate: baseSeg.startDate, endDate: baseSeg.endDate, weekCount: baseSeg.weekCount, grain: baseSeg.grain, revenueAllocation: cat.rev?.[t.key] ?? 0, costAllocation: cat.cost[t.key] ?? 0 }]
+          : [],
+      }))
+    if (typeSubs.length === 0) return
+    // Keep any existing manual subtasks; prepend the type lines; clear the parent's own segments.
+    updateEntry({ ...entry, segments: [], subtasks: [...typeSubs, ...(entry.subtasks ?? [])] })
+  }
+  const handleUnsplitCategory = (category: string) => {
+    const entry = getEntry(category)
+    const cat = categories.find(c => c.category === category)
+    if (!cat) return
+    // Restore a single category bar spanning the type lines' dates; drop the type lines, keep manual ones.
+    const typeSubs = (entry.subtasks ?? []).filter(st => st.costType)
+    const dated = typeSubs.flatMap(st => st.segments).filter(s => s.startDate && s.endDate)
+    const start = dated.map(s => s.startDate).sort()[0]
+    const end = dated.map(s => s.endDate).sort().slice(-1)[0]
+    const restored: GanttSegment[] = start && end
+      ? [{ id: generateId(), startDate: start, endDate: end, weekCount: Math.max(1, weeksBetween(start, end)), grain: 'weeks', revenueAllocation: cat.budgetedRevenue, costAllocation: cat.budgetedCost }]
+      : []
+    updateEntry(recalcEntry({ ...entry, segments: restored, subtasks: (entry.subtasks ?? []).filter(st => !st.costType) }))
+  }
+  const handleSplitAll = () => {
+    categories.forEach(c => handleSplitCategory(c.category))
+  }
+
   // ── Subtask management ────────────────────────────────────────────────────
 
   // Add a subtask. With no parent it's a top-level subtask of the category; with parentSubtaskId it nests
@@ -1201,23 +1249,30 @@ export default function GanttPage() {
     deleteGanttGeneratedRevenueByProject(id)   // only "(Gantt)" rows — manual entries survive
 
     const rows: WeeklyRevenue[] = []
+    const pushSeg = (seg: GanttSegment, notes: string) => {
+      if (!seg.startDate || !seg.endDate || seg.weekCount <= 0) return
+      const weeklyRev = seg.revenueAllocation / seg.weekCount
+      const weeklyCost = seg.costAllocation / seg.weekCount
+      const start = new Date(seg.startDate)
+      for (let w = 0; w < seg.weekCount; w++) {
+        const d = new Date(start); d.setDate(d.getDate() + w * 7)
+        const weekEnding = toISODate(snapToFriday(d))
+        rows.push({
+          id: generateId(), projectId: project.id, projectName: project.name, entity: project.entity,
+          weekEnding, weekNumber: w + 1, plannedRevenue: weeklyRev,
+          actualInvoiced: actualByKey.get(`${weekEnding}|${notes}`) ?? 0,
+          isDeposit: false, scheduledCost: weeklyCost, notes,
+        })
+      }
+    }
     for (const entry of currentEntries) {
-      for (const seg of entry.segments) {
-        if (!seg.startDate || !seg.endDate || seg.weekCount <= 0) continue
-        const weeklyRev = seg.revenueAllocation / seg.weekCount
-        const weeklyCost = seg.costAllocation / seg.weekCount
-        const start = new Date(seg.startDate)
-        for (let w = 0; w < seg.weekCount; w++) {
-          const d = new Date(start); d.setDate(d.getDate() + w * 7)
-          const weekEnding = toISODate(snapToFriday(d))
-          const notes = `${entry.category}${seg.label ? ` — ${seg.label}` : ''} (Gantt)`
-          rows.push({
-            id: generateId(), projectId: project.id, projectName: project.name, entity: project.entity,
-            weekEnding, weekNumber: w + 1, plannedRevenue: weeklyRev,
-            actualInvoiced: actualByKey.get(`${weekEnding}|${notes}`) ?? 0,
-            isDeposit: false, scheduledCost: weeklyCost, notes,
-          })
-        }
+      for (const seg of entry.segments) pushSeg(seg, `${entry.category}${seg.label ? ` — ${seg.label}` : ''} (Gantt)`)
+      // Auto-split Materials/Labour/Subcontractor lines carry their type's budget into the forecast (§3).
+      // Manual (non-type) subtasks still carry no budget. Split categories have cleared parent segments,
+      // so there's no double count.
+      for (const { st } of flattenSubtasks(entry.subtasks ?? [])) {
+        if (!st.costType) continue
+        for (const seg of st.segments) pushSeg(seg, `${entry.category} — ${st.label} (Gantt)`)
       }
     }
     for (const e of rows) saveWeeklyRevenue(e)
@@ -1677,6 +1732,16 @@ export default function GanttPage() {
             const marg = seg.revenueAllocation > 0 ? ((seg.revenueAllocation - seg.costAllocation) / seg.revenueAllocation * 100).toFixed(1) : '0'
             const showText = isStart && seg.weekCount >= 2 && !isSubtask && timeView === 'weeks'
 
+            // Parent timeframe-summary bar (Andrew §3): a distinct top-half band, no $, no interaction.
+            if (seg.id.endsWith('-rollup')) {
+              return (
+                <div key={seg.id} className="absolute pointer-events-none" title={`${category} — timeframe`}
+                  style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, top: 2, height: 10,
+                    background: '#8A858033', borderTop: '2px solid #8A8580',
+                    borderRadius: isStart && isEnd ? 2 : isStart ? '2px 0 0 2px' : isEnd ? '0 2px 2px 0' : 0 }} />
+              )
+            }
+
             return (
               <div
                 key={seg.id}
@@ -1888,6 +1953,13 @@ export default function GanttPage() {
             <button onClick={handleSeedFromEstimate}
               className="px-4 py-2 border border-fg-border text-fg-heading text-xs font-light tracking-architectural uppercase hover:border-fg-heading transition-colors">
               Build timeline from estimate
+            </button>
+          )}
+          {estimate && categories.length > 0 && (
+            <button onClick={handleSplitAll}
+              title="Split every category into separate Materials / Labour / Subcontractor lines, each with its own schedule (budgets are preserved). Re-runnable; already-split categories are skipped."
+              className="px-4 py-2 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading hover:border-fg-heading transition-colors">
+              Split M/L/S
             </button>
           )}
           <span className="inline-flex items-stretch border border-fg-border">
@@ -2139,22 +2211,22 @@ export default function GanttPage() {
                 }
                 const segs = entry.segments
                 const subtasks = entry.subtasks ?? []
+                const split = isCategorySplit(entry)
                 const isCollapsed = collapsedCategories.has(cat.category)
                 const hasSubtasks = subtasks.length > 0
-                // When collapsed, show the category's own bars PLUS a rollup bar spanning all its
-                // subtasks' dates, so a condensed row still reads the full timeframe (Andrew). The rollup
-                // carries the category budget so its colour/tooltip reflect the category, and its id isn't
-                // a real segment so clicks/drags on it are no-ops.
+                // The parent shows a timeframe-summary bar spanning all its subtasks' dates when it's COLLAPSED
+                // (condensed read) or SPLIT into M/L/S lines (parent has no own bars — Andrew §3). The summary
+                // bar (id …-rollup) renders top-half with no $; clicks/drags on it are no-ops.
                 const collapsedRollup: GanttSegment[] = (() => {
-                  if (!isCollapsed || !hasSubtasks) return segs
+                  if (!(isCollapsed || split) || !hasSubtasks) return segs
                   const dated = flattenSubtasks(subtasks).flatMap(({ st }) => st.segments).filter(s => s.startDate && s.endDate)
                   if (dated.length === 0) return segs
                   const start = dated.map(s => s.startDate).sort()[0]
                   const end = dated.map(s => s.endDate).sort().slice(-1)[0]
                   const rollup: GanttSegment = {
                     id: `${entry.id}-rollup`, startDate: start, endDate: end, weekCount: Math.max(1, weeksBetween(start, end)),
-                    grain: 'weeks', label: `${subtasks.length} subtasks`,
-                    revenueAllocation: entry.budgetedRevenue, costAllocation: entry.budgetedCost,
+                    grain: 'weeks', label: '',
+                    revenueAllocation: 0, costAllocation: 0,
                   }
                   return [...segs, rollup]
                 })()
@@ -2222,6 +2294,9 @@ export default function GanttPage() {
                             </button>
                             <button onClick={() => handleAddSplit(cat.category)} title="Add another work period (split)"
                               className="text-fg-muted/50 hover:text-fg-heading leading-none text-[9px] uppercase tracking-wide px-0.5">split</button>
+                            <button onClick={() => split ? handleUnsplitCategory(cat.category) : handleSplitCategory(cat.category)}
+                              title={split ? 'Merge the M/L/S lines back into one category bar' : 'Split into Materials / Labour / Subcontractor lines'}
+                              className={`leading-none text-[9px] uppercase tracking-wide px-0.5 ${split ? 'text-fg-heading' : 'text-fg-muted/50 hover:text-fg-heading'}`}>{split ? 'merge' : 'M/L/S'}</button>
                           </div>
                         </div>
                       </td>
@@ -2250,7 +2325,9 @@ export default function GanttPage() {
                       <tr key={subtask.id} className="border-b border-fg-border/20 group/sub" style={{ height: 28 }}>
                         <td className="border-r border-fg-border bg-fg-bg pr-2 py-1.5 text-[11px] font-light text-fg-muted whitespace-nowrap align-middle" style={{ width: COL_CATEGORY, paddingLeft: 20 + depth * 16, ...stickyL(0) }}>
                           <div className="flex items-center gap-1">
-                            <span className="text-fg-muted/40 text-[10px]">└</span>
+                            {subtask.costType
+                              ? <span className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: COST_TYPE_META[subtask.costType].colour }} />
+                              : <span className="text-fg-muted/40 text-[10px]">└</span>}
                             <input
                               value={subtask.label}
                               onChange={e => handleRenameSubtask(cat.category, subtask.id, e.target.value)}
@@ -2274,7 +2351,14 @@ export default function GanttPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="border-r border-fg-border bg-fg-bg" style={{ width: COL_BUDGET, ...stickyL(1) }} />
+                        <td className="border-r border-fg-border bg-fg-bg px-2 text-right text-[10px] font-light text-fg-muted/70 tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(1) }}>
+                          {subtask.costType && (
+                            <span className="gantt-finance" title={subtask.costType === 'labour' ? 'Labour budget (claimed in hours)' : `${subtask.costType} budget (claimed in %)`}>
+                              {formatCurrency(showRevenue ? (cat.rev?.[subtask.costType] ?? 0) : (cat.cost[subtask.costType] ?? 0))}
+                              {subtask.costType === 'labour' ? ` · ${Math.round((cat.cost.labour ?? 0) / STD_LABOUR_RATE)}h` : ''}
+                            </span>
+                          )}
+                        </td>
                         {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true)}
                       </tr>
                     ))}

@@ -348,6 +348,9 @@ export interface GanttSubtask {
   label: string
   segments: GanttSegment[]
   subtasks?: GanttSubtask[]   // nested sub-tasks (purely visual sub-scheduling; carry no budget/forecast)
+  // When set, this is an auto-generated Materials/Labour/Subcontractor/Equipment line (Andrew §3): it
+  // carries that type's budget and DOES feed the forecast. Its parent category becomes a no-$ summary.
+  costType?: 'labour' | 'material' | 'subcontractor' | 'equipment'
 }
 
 export interface GanttEntry {
