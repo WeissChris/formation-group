@@ -557,9 +557,22 @@ export default function GanttPage() {
   }
   // Programme baseline — a snapshot of the schedule (set on planning day, before site start) that current
   // dates are measured against to show slip. Persisted per project.
-  const [baseline, setBaseline] = useState<{ capturedAt: string; entries: GanttEntry[] } | null>(() => {
-    try { const v = localStorage.getItem(`fg_gantt_baseline_${id}`); return v ? JSON.parse(v) : null } catch { return null }
+  // Baselines (Andrew): a time-stamped list you can add to and load. Loading one overlays it as ghost bars
+  // on the live chart. Migrates the old single-baseline key into the list on first load.
+  type BaselineSnap = { id: string; capturedAt: string; entries: GanttEntry[] }
+  const [baselines, setBaselines] = useState<BaselineSnap[]>(() => {
+    try {
+      const v = localStorage.getItem(`fg_gantt_baselines_${id}`)
+      if (v) return JSON.parse(v)
+      const old = localStorage.getItem(`fg_gantt_baseline_${id}`)   // legacy single baseline
+      if (old) { const o = JSON.parse(old); return [{ id: 'legacy', capturedAt: o.capturedAt, entries: o.entries }] }
+    } catch { /* ignore */ }
+    return []
   })
+  const [loadedBaselineId, setLoadedBaselineId] = useState<string | null>(null)
+  const [baselineMenuOpen, setBaselineMenuOpen] = useState(false)
+  // The baseline used for slip comparison + the ghost overlay: the loaded one, else the most recent.
+  const activeBaseline = (loadedBaselineId ? baselines.find(b => b.id === loadedBaselineId) : null) ?? baselines[baselines.length - 1] ?? null
   // Supervisor view — hides revenue / GP / margin so a site supervisor sees budget + cost only. A view
   // toggle (the app has no per-user roles yet), not enforced access control.
   const [supervisorView, setSupervisorView] = useState(false)
@@ -1198,16 +1211,31 @@ export default function GanttPage() {
 
   // Capture the current schedule as the baseline (planning-day reference). Re-set it any time (e.g.
   // fortnightly) to take a fresh snapshot; per-category slip is measured against the latest.
+  const persistBaselines = (list: BaselineSnap[]) => {
+    try { localStorage.setItem(`fg_gantt_baselines_${id}`, JSON.stringify(list)) } catch { /* ignore */ }
+  }
   const handleSetBaseline = () => {
-    const snap = { capturedAt: new Date().toISOString(), entries: latestEntriesRef.current }
-    setBaseline(snap)
-    try { localStorage.setItem(`fg_gantt_baseline_${id}`, JSON.stringify(snap)) } catch { /* ignore */ }
-    setSuccessMsg('Baseline set — start dates now show slip against this snapshot')
+    const snap: BaselineSnap = { id: generateId(), capturedAt: new Date().toISOString(), entries: latestEntriesRef.current }
+    const list = [...baselines, snap]
+    setBaselines(list)
+    persistBaselines(list)
+    setBaselineMenuOpen(false)
+    setSuccessMsg('Baseline saved — start dates now show slip against the latest snapshot')
     setTimeout(() => setSuccessMsg(''), 3000)
   }
-  // First dated start of a category in the baseline snapshot, for slip comparison.
+  const handleLoadBaseline = (bid: string) => {
+    setLoadedBaselineId(prev => prev === bid ? null : bid)   // toggle the ghost overlay
+    setBaselineMenuOpen(false)
+  }
+  const handleDeleteBaseline = (bid: string) => {
+    const list = baselines.filter(b => b.id !== bid)
+    setBaselines(list)
+    persistBaselines(list)
+    if (loadedBaselineId === bid) setLoadedBaselineId(null)
+  }
+  // First dated start of a category in the active baseline, for slip comparison.
   const baselineStartOf = (category: string): string | undefined => {
-    const e = baseline?.entries.find(x => x.category === category)
+    const e = activeBaseline?.entries.find(x => x.category === category)
     return e?.segments.filter(s => s.startDate && s.endDate).map(s => s.startDate).sort()[0]
   }
 
@@ -1482,7 +1510,7 @@ export default function GanttPage() {
   // fortnightly, always on a Friday. The "current" cycle is the one whose invoice Friday is the first on or
   // after today. Totals come from the forecast; variance compares it to the same cycle in the baseline.
   const planned = plannedByWeek(entries, fridays)
-  const planBaseline = baseline ? plannedByWeek(baseline.entries, fridays) : null
+  const planBaseline = activeBaseline ? plannedByWeek(activeBaseline.entries, fridays) : null
   const workStartIso = entries.flatMap(e => e.segments).filter(s => s.startDate).map(s => s.startDate).sort()[0]
   const invoiceFriIso: string | null = (() => {
     if (!workStartIso) return null
@@ -1543,6 +1571,7 @@ export default function GanttPage() {
     subtaskId?: string,
     isSubtask?: boolean,
     trailingLabel?: string,
+    ghostSegs?: GanttSegment[],
   ) => {
     // Column just past the last dated bar — where a trailing description sits (RHS of the grid line).
     const datedEnds = segs.filter(s => s.startDate && s.endDate).map(s => columns.findIndex(c => toISODate(c) === s.endDate)).filter(idx => idx >= 0)
@@ -1571,6 +1600,19 @@ export default function GanttPage() {
           {isTodayCol && (
             <div className="absolute inset-y-0 left-0 w-0.5 bg-red-500/50 z-10 pointer-events-none" />
           )}
+          {/* Baseline ghost overlay (Andrew) — a thin #DEEBF7 band along the top tracking the loaded
+              baseline's span, so the live bars and the baseline are both visible for comparison. */}
+          {ghostSegs?.filter(s => isSegmentActiveInCol(s, col)).map(gs => {
+            const gStart = columns.findIndex(c => toISODate(c) === gs.startDate)
+            const gEnd = columns.findIndex(c => toISODate(c) === gs.endDate)
+            const gIsStart = i === gStart || (gStart === -1 && i === 0)
+            const gIsEnd = i === gEnd || (gEnd === -1 && i === columns.length - 1)
+            return (
+              <div key={`ghost-${gs.id}`} className="absolute pointer-events-none z-10" title="Baseline"
+                style={{ left: gIsStart ? 2 : 0, right: gIsEnd ? 2 : 0, top: 1, height: 5, background: '#DEEBF7', opacity: 0.85, border: '1px solid #9DB8D2',
+                  borderRadius: gIsStart && gIsEnd ? 2 : gIsStart ? '2px 0 0 2px' : gIsEnd ? '0 2px 2px 0' : 0 }} />
+            )
+          })}
           {/* In-place milestones — a task/subtask converted to a milestone keeps its row + date (Andrew). */}
           {milestones.filter(m => m.category === category && (m.subtaskId ?? undefined) === subtaskId && milestoneMatchesCol(m, iso)).map(m => (
             <div
@@ -1819,11 +1861,39 @@ export default function GanttPage() {
               $
             </label>
           </span>
-          <button onClick={handleSetBaseline}
-            title={baseline ? `Baseline set ${new Date(baseline.capturedAt).toLocaleDateString()} — click to re-snapshot` : 'Snapshot the current schedule as the baseline (set on planning day, before site start)'}
-            className="px-4 py-2 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading hover:border-fg-heading transition-colors">
-            {baseline ? `Baseline ${new Date(baseline.capturedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}` : 'Set baseline'}
-          </button>
+          <div className="relative">
+            <button onClick={() => setBaselineMenuOpen(o => !o)}
+              title="Baselines — snapshot the schedule, or load a previous one as a ghost overlay to compare"
+              className={`px-4 py-2 border text-xs font-light tracking-architectural uppercase transition-colors ${loadedBaselineId ? 'border-fg-heading text-fg-heading' : 'border-fg-border text-fg-muted hover:text-fg-heading hover:border-fg-heading'}`}>
+              Baseline{loadedBaselineId ? ' ●' : baselines.length ? ` (${baselines.length})` : ''} ▾
+            </button>
+            {baselineMenuOpen && (
+              <div className="absolute right-0 mt-1 z-50 min-w-[240px] border border-fg-border bg-fg-bg shadow-lg text-xs font-light">
+                <button onClick={handleSetBaseline}
+                  className="w-full text-left px-3 py-2 border-b border-fg-border/60 text-fg-heading hover:bg-fg-card/30 transition-colors">
+                  + Set {baselines.length ? 'new ' : ''}baseline <span className="text-fg-muted/60">(now)</span>
+                </button>
+                {baselines.length === 0 ? (
+                  <div className="px-3 py-2 text-fg-muted/60 italic">No baselines yet</div>
+                ) : (
+                  [...baselines].reverse().map(b => (
+                    <div key={b.id} className={`flex items-center gap-2 px-3 py-1.5 hover:bg-fg-card/30 transition-colors ${loadedBaselineId === b.id ? 'bg-fg-card/20' : ''}`}>
+                      <button onClick={() => handleLoadBaseline(b.id)} className="flex-1 text-left text-fg-muted hover:text-fg-heading" title="Load as a ghost overlay (click again to hide)">
+                        <span className="inline-block w-3">{loadedBaselineId === b.id ? '✓' : ''}</span>
+                        {new Date(b.capturedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} {new Date(b.capturedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                      </button>
+                      <button onClick={() => handleDeleteBaseline(b.id)} title="Delete this baseline" className="text-fg-muted/40 hover:text-red-400/70 flex-shrink-0">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))
+                )}
+                {loadedBaselineId && (
+                  <div className="px-3 py-1.5 border-t border-fg-border/60 text-[10px] text-fg-muted/70">Ghost overlay on · click the loaded one to hide</div>
+                )}
+              </div>
+            )}
+          </div>
           <button onClick={handleSave}
             title="Saves the timeline and rebuilds the revenue forecast from it — they stay in sync"
             className="px-4 py-2 bg-fg-dark text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-fg-darker transition-colors">
@@ -2157,7 +2227,8 @@ export default function GanttPage() {
                         </div>
                       </td>
                       {/* Segment cells — collapsed rows roll the subtask span into a summary bar */}
-                      {renderSegmentCells(entry, collapsedRollup, cat.category, cat.crewType, undefined, false, descriptions[cat.category])}
+                      {renderSegmentCells(entry, collapsedRollup, cat.category, cat.crewType, undefined, false, descriptions[cat.category],
+                        loadedBaselineId ? activeBaseline?.entries.find(e => e.category === cat.category)?.segments : undefined)}
                     </tr>
 
                     {/* ── Subtask rows (flattened tree; indent = nesting depth) ── */}
