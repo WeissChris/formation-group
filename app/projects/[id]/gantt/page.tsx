@@ -39,9 +39,7 @@ const LOOKBACK_WEEKS = 4      // weeks shown BEFORE today so you can scroll back
 const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2] as const
 const DAYS_VIEW_WEEKS = 26   // Days view renders this many weeks of working-day columns (was 12 — too short for multi-month jobs)
 const COL_CATEGORY = 200
-const COL_CREW = 64
 const COL_BUDGET = 124
-const COL_SCHED = 158   // Start date + duration (weeks) — foreman scheduling without drawing (compact)
 
 // Cost-type palette for the per-task cost split + project totals strip.
 const COST_TYPE_META = {
@@ -273,9 +271,16 @@ interface SegEditProps {
   onConvertToMilestone: () => void
   onClose: () => void
   anchorRef: React.RefObject<HTMLDivElement | null>
+  // Precise schedule entry — moved here now the Start/Duration column is gone (Andrew). Shown for the
+  // primary period of a scope; split periods are adjusted by dragging.
+  canSchedule: boolean
+  schedStart: string
+  schedDuration: number | ''
+  schedUnit: string
+  onSchedule: (startIso: string, duration: number) => void
 }
 
-function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBudget, equipmentBudget, onUpdate, onDelete, onConvertToMilestone, onClose, anchorRef }: SegEditProps) {
+function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBudget, equipmentBudget, onUpdate, onDelete, onConvertToMilestone, onClose, anchorRef, canSchedule, schedStart, schedDuration, schedUnit, onSchedule }: SegEditProps) {
   // The foreman types this period's material/equipment % (0–100) and it updates LIVE: the other dated
   // periods auto-balance to fill the remainder so each resource always sums to 100%, and the totals/costs
   // recompute as you type — no Apply step. The breakdown below shows every period's share moving.
@@ -343,6 +348,24 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
           <input value={label} onChange={e => setLabel(e.target.value)} onBlur={() => pushUpdate()} placeholder="e.g. Slab prep"
             className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading" />
         </div>
+        {/* Precise schedule entry (the Start/Duration column was removed; drag the bar for quick changes). */}
+        {canSchedule && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-2xs font-light text-fg-muted block mb-1">Start date</label>
+              <input type="date" value={schedStart}
+                onChange={e => onSchedule(e.target.value, (typeof schedDuration === 'number' ? schedDuration : 1) || 1)}
+                className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading" />
+            </div>
+            <div>
+              <label className="text-2xs font-light text-fg-muted block mb-1">Duration ({schedUnit})</label>
+              <input type="number" min={1} value={schedDuration}
+                onChange={e => { if (schedStart) { const n = parseInt(e.target.value); onSchedule(schedStart, Number.isFinite(n) ? n : 1) } }}
+                placeholder="1"
+                className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
+            </div>
+          </div>
+        )}
         {(hasLabour || hasMaterials || hasSub || hasEquipment) && (
           <div className="grid grid-cols-2 gap-2">
             {hasLabour && (
@@ -383,7 +406,7 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
         {onlyPeriod && (hasLabour || hasMaterials || hasSub || hasEquipment) && (
           <p className="text-[9px] font-light text-amber-600/80 leading-snug">
             Only one period, so it holds 100% of the budget. To put e.g. 80% here and the rest later, add a
-            second period with the ＋ in the Start / Duration column, then set the split.
+            second period with “split” on the category row, then set the split.
           </p>
         )}
         {/* Live breakdown across all periods — auto-balances to 100% as you type */}
@@ -1547,12 +1570,13 @@ export default function GanttPage() {
     return `${new Date(`${monIso}T00:00:00`).toLocaleDateString(undefined, opt)} – ${new Date(`${invoiceFriIso}T00:00:00`).toLocaleDateString(undefined, opt)}`
   })()
 
-  const fixedColsWidth = COL_CATEGORY + COL_CREW + COL_BUDGET + COL_SCHED
+  const fixedColsWidth = COL_CATEGORY + COL_BUDGET
   const tableWidth = fixedColsWidth + columns.length * CELL_W
 
-  // Sticky-left helper: the 4 fixed columns (Category/Crew/Budget/Sched) stay put while the grid scrolls
-  // horizontally. idx 0-3 = which fixed column; idx 4 = a colSpan=4 cell that spans the whole fixed block.
-  const STICKY_LEFTS = [0, COL_CATEGORY, COL_CATEGORY + COL_CREW, COL_CATEGORY + COL_CREW + COL_BUDGET, 0]
+  // Sticky-left helper: the 2 fixed columns (Category/Budget) stay put while the grid scrolls horizontally
+  // (Crew + Start/Duration removed to maximise grid space — Andrew). idx 0 = Category, 1 = Budget, 2 = a
+  // colSpan=2 cell spanning the whole fixed block.
+  const STICKY_LEFTS = [0, COL_CATEGORY, 0]
   const stickyL = (idx: number, z = 20): React.CSSProperties => ({ position: 'sticky', left: STICKY_LEFTS[idx], zIndex: z })
 
   // Sticky-top header: the cashflow + date rows stay put while the grid scrolls down. Fixed row heights
@@ -2020,7 +2044,7 @@ export default function GanttPage() {
             <thead>
               {/* Weekly cash flow — above the dates (Andrew), sticky at the top of the grid */}
               <tr className="gantt-finance" style={{ height: H_CASH }}>
-                <th colSpan={4} style={{ width: fixedColsWidth, ...stickyCorner(4, 0) }} className="bg-fg-bg border-b border-r border-fg-border px-3 align-middle text-left">
+                <th colSpan={2} style={{ width: fixedColsWidth, ...stickyCorner(2, 0) }} className="bg-fg-bg border-b border-r border-fg-border px-3 align-middle text-left">
                   <div className="text-[10px] font-light tracking-architectural uppercase text-fg-muted">{showRevenue ? 'Weekly Cash Flow' : 'Weekly Cost'}</div>
                   <div className="text-[8px] font-light text-fg-muted/50 mt-0.5">{showRevenue ? 'revenue · cost · net / wk' : 'cost / wk'}</div>
                 </th>
@@ -2053,7 +2077,7 @@ export default function GanttPage() {
 
               {/* Month / week group row */}
               <tr style={{ height: H_MONTH }}>
-                <th colSpan={4} style={{ width: fixedColsWidth, ...stickyCorner(4, topMonth) }} className="bg-fg-bg border-b border-r border-fg-border px-3 py-1 text-left" />
+                <th colSpan={2} style={{ width: fixedColsWidth, ...stickyCorner(2, topMonth) }} className="bg-fg-bg border-b border-r border-fg-border px-3 py-1 text-left" />
                 {monthGroups.map((mg, i) => (
                   <th key={i} colSpan={mg.count} style={{ width: mg.count * CELL_W, ...stickyTop(topMonth) }}
                     className="bg-fg-bg border-b border-r border-fg-border px-2 py-1 text-left text-[10px] font-light tracking-widest uppercase text-fg-muted">
@@ -2065,7 +2089,7 @@ export default function GanttPage() {
               {/* Day-of-week sub-header (days view only) */}
               {timeView === 'days' && (
                 <tr style={{ height: H_DOW }}>
-                  <th colSpan={4} style={{ width: fixedColsWidth, ...stickyCorner(4, topDow) }} className="bg-fg-bg border-b border-r border-fg-border" />
+                  <th colSpan={2} style={{ width: fixedColsWidth, ...stickyCorner(2, topDow) }} className="bg-fg-bg border-b border-r border-fg-border" />
                   {workingDays.map((d, i) => {
                     return (
                       <th key={i}
@@ -2085,9 +2109,7 @@ export default function GanttPage() {
               {/* Date row */}
               <tr>
                 <th className="bg-fg-bg border-b border-r border-fg-border px-3 py-2 text-left text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_CATEGORY, ...stickyCorner(0, topDate) }}>Category</th>
-                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-center text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_CREW, ...stickyCorner(1, topDate) }}>Crew</th>
-                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-right text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_BUDGET, ...stickyCorner(2, topDate) }}>Budget / Cost</th>
-                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-center text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_SCHED, ...stickyCorner(3, topDate) }}>Start / Duration</th>
+                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-right text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_BUDGET, ...stickyCorner(1, topDate) }}>Budget / Cost</th>
                 {columns.map((col, i) => {
                   const iso = toISODate(col)
                   const isCurrentWeek = timeView === 'weeks' ? iso === currentWeekIso : iso === today
@@ -2195,19 +2217,14 @@ export default function GanttPage() {
                               className="text-fg-muted/60 hover:text-fg-heading">
                               <Plus className="w-3 h-3" />
                             </button>
+                            <button onClick={() => handleAddSplit(cat.category)} title="Add another work period (split)"
+                              className="text-fg-muted/50 hover:text-fg-heading leading-none text-[9px] uppercase tracking-wide px-0.5">split</button>
                           </div>
                         </div>
                       </td>
-                      {/* Crew */}
-                      <td className="border-r border-fg-border bg-fg-bg px-2 py-2 text-center align-middle" style={{ width: COL_CREW, ...stickyL(1) }}>
-                        <span className="text-[10px] font-light tracking-wide uppercase px-1.5 py-0.5"
-                          style={{ background: cat.crewType === 'Formation' ? '#8A858520' : '#C5B8A820', color: cat.crewType === 'Formation' ? '#8A8580' : '#A09070' }}>
-                          {cat.crewType === 'Formation' ? 'Form' : 'Sub'}
-                        </span>
-                      </td>
-                      {/* Budget — revenue + an inline, compact cost split (was 4 stacked lines; that drove
-                          the row height). Single-letter type tags with tooltips keep it to ~1 line. */}
-                      <td className="border-r border-fg-border bg-fg-bg px-2 py-1.5 text-right text-[11px] font-light text-fg-muted tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(2) }}>
+                      {/* Budget — revenue + an inline, compact cost split. Single-letter type tags with
+                          tooltips keep it to ~1 line. (Crew + Start/Duration columns removed — Andrew.) */}
+                      <td className="border-r border-fg-border bg-fg-bg px-2 py-1.5 text-right text-[11px] font-light text-fg-muted tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(1) }}>
                         <div className="gantt-finance">
                           <div className="text-fg-heading" title={showRevenue ? 'Contract revenue' : 'Budgeted cost'}>{formatCurrency(showRevenue ? cat.budgetedRevenue : cat.budgetedCost)}</div>
                           <div className="mt-px flex flex-wrap justify-end gap-x-1.5 gap-y-0 text-[9px] leading-tight">
@@ -2218,35 +2235,6 @@ export default function GanttPage() {
                               </span>
                             ) : null)}
                           </div>
-                        </div>
-                      </td>
-                      {/* Schedule: start date + duration — the bar places itself, no drawing */}
-                      <td className="border-r border-fg-border bg-fg-bg px-1.5 py-1 align-middle" style={{ width: COL_SCHED, ...stickyL(3) }}>
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="date"
-                            value={segs[0]?.startDate ?? ''}
-                            onChange={e => setTaskSchedule(cat.category, e.target.value, durationOf(segs) || 1)}
-                            title="Start date — the bar places itself"
-                            className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading outline-none focus:border-fg-heading w-[92px]"
-                          />
-                          <input
-                            type="number"
-                            min={1}
-                            value={durationOf(segs)}
-                            onChange={e => { if (segs[0]?.startDate) { const n = parseInt(e.target.value); setTaskSchedule(cat.category, segs[0].startDate, Number.isFinite(n) ? n : 1) } }}
-                            placeholder="–"
-                            title={timeView === 'days' ? 'Duration in days' : 'Duration in weeks'}
-                            className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading text-right tabular-nums outline-none focus:border-fg-heading w-8"
-                          />
-                          <span className="text-[9px] text-fg-muted/60">{timeView === 'days' ? 'day' : 'wk'}</span>
-                          <button
-                            onClick={() => handleAddSplit(cat.category)}
-                            title="Add another work period (split)"
-                            className="opacity-0 group-hover:opacity-100 ml-auto flex-shrink-0 text-fg-muted/50 hover:text-fg-heading transition-all"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
                         </div>
                       </td>
                       {/* Segment cells — collapsed rows roll the subtask span into a summary bar */}
@@ -2283,30 +2271,7 @@ export default function GanttPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="border-r border-fg-border bg-fg-bg" style={{ width: COL_CREW, ...stickyL(1) }} />
-                        <td className="border-r border-fg-border bg-fg-bg" style={{ width: COL_BUDGET, ...stickyL(2) }} />
-                        {/* Sub-task schedule: start date + duration, same as the category rows */}
-                        <td className="border-r border-fg-border bg-fg-bg px-1.5 py-1 align-middle" style={{ width: COL_SCHED, ...stickyL(3) }}>
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="date"
-                              value={subtask.segments[0]?.startDate ?? ''}
-                              onChange={e => setTaskSchedule(cat.category, e.target.value, durationOf(subtask.segments) || 1, subtask.id)}
-                              title="Start date"
-                              className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading outline-none focus:border-fg-heading w-[92px]"
-                            />
-                            <input
-                              type="number"
-                              min={1}
-                              value={durationOf(subtask.segments)}
-                              onChange={e => { if (subtask.segments[0]?.startDate) { const n = parseInt(e.target.value); setTaskSchedule(cat.category, subtask.segments[0].startDate, Number.isFinite(n) ? n : 1, subtask.id) } }}
-                              placeholder="–"
-                              title={timeView === 'days' ? 'Duration in days' : 'Duration in weeks'}
-                              className="bg-transparent border border-fg-border/50 rounded-sm px-1 py-0.5 text-[10px] font-light text-fg-heading text-right tabular-nums outline-none focus:border-fg-heading w-8"
-                            />
-                            <span className="text-[9px] text-fg-muted/60">{timeView === 'days' ? 'day' : 'wk'}</span>
-                          </div>
-                        </td>
+                        <td className="border-r border-fg-border bg-fg-bg" style={{ width: COL_BUDGET, ...stickyL(1) }} />
                         {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true)}
                       </tr>
                     ))}
@@ -2317,7 +2282,7 @@ export default function GanttPage() {
               {/* ── Milestones row ── (project-level only; converted task/subtask milestones sit in place) */}
               {milestones.some(m => !m.category) && (
                 <tr className="border-t-2 border-fg-border/40" style={{ height: 40 }}>
-                  <td colSpan={4} style={stickyL(4)} className="border-r border-fg-border bg-fg-bg px-3 py-2 text-[10px] font-light tracking-architectural uppercase text-fg-muted align-middle">
+                  <td colSpan={2} style={stickyL(2)} className="border-r border-fg-border bg-fg-bg px-3 py-2 text-[10px] font-light tracking-architectural uppercase text-fg-muted align-middle">
                     Milestones
                   </td>
                   {columns.map((col, i) => {
@@ -2426,6 +2391,11 @@ export default function GanttPage() {
             onDelete={() => handleSegmentDelete(popover.category, popover.segId, popover.subtaskId)}
             onConvertToMilestone={() => handleConvertToMilestone(popover.category, seg, popover.subtaskId)}
             onClose={() => setPopover(null)}
+            canSchedule={siblingSegs[0]?.id === seg.id}
+            schedStart={seg.startDate}
+            schedDuration={durationOf(siblingSegs)}
+            schedUnit={timeView === 'days' ? 'days' : 'weeks'}
+            onSchedule={(s, d) => setTaskSchedule(popover.category, s, d, popover.subtaskId)}
           />
         )
       })()}
