@@ -90,6 +90,8 @@ interface Milestone {
   colour?: string
   category?: string    // when set, the milestone is pinned IN PLACE on this category's row (Andrew); a
   subtaskId?: string   // converted task/subtask keeps its position instead of dropping to the bottom row
+  value?: number       // optional $ claim at this milestone (Andrew iter2 §3): adds to the cash-flow +
+                       // forecast at its week. Opt-in — unset has no effect.
 }
 
 interface CategorySummary {
@@ -503,9 +505,11 @@ function MilestonePopover({ milestone, onUpdate, onDelete, onClose, anchorRef }:
   const [label, setLabel] = useState(milestone.label)
   const [date, setDate] = useState(milestone.date)
   const [colour, setColour] = useState(milestone.colour ?? MILESTONE_COLOURS[0])
+  const [value, setValue] = useState(milestone.value != null ? String(milestone.value) : '')
 
   const apply = () => {
-    onUpdate({ ...milestone, label, date, colour })
+    const v = parseFloat(value)
+    onUpdate({ ...milestone, label, date, colour, value: Number.isFinite(v) && v > 0 ? v : undefined })
     onClose()
   }
 
@@ -530,6 +534,12 @@ function MilestonePopover({ milestone, onUpdate, onDelete, onClose, anchorRef }:
           <label className="text-2xs font-light text-fg-muted block mb-1">Date</label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
             className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading" />
+        </div>
+        <div>
+          <label className="text-2xs font-light text-fg-muted block mb-1">Claim value $ (optional)</label>
+          <input type="number" min={0} value={value} onChange={e => setValue(e.target.value)} placeholder="e.g. 5000"
+            title="A $ claim at this milestone — adds to the cash-flow + forecast at its week"
+            className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
         </div>
         <div>
           <label className="text-2xs font-light text-fg-muted block mb-1">Colour</label>
@@ -1546,9 +1556,22 @@ export default function GanttPage() {
   // by Materials/Labour/Subcontractor). A segment's weekly revenue is apportioned by its category's
   // revenue-by-type ratio.
   const catByName = new Map(categories.map(c => [c.category, c]))
+  // Milestone claims (Andrew iter2 §3) — a milestone's $ value adds to its week's revenue in the cash-flow
+  // strip + the fortnight/invoice totals. Keyed by the milestone's week-ending Friday. Opt-in (unset = 0).
+  const milestoneRevByWeek = (() => {
+    const map = new Map<string, number>()
+    for (const m of milestones) {
+      if (!m.value || m.value <= 0) continue
+      const d = new Date(`${m.date}T00:00:00`); while (d.getDay() !== 5) d.setDate(d.getDate() + 1)
+      const friIso = toISODate(d)
+      map.set(friIso, (map.get(friIso) ?? 0) + m.value)
+    }
+    return map
+  })()
   const weekTotals = columns.map(col => {
     const iso = toISODate(col)
-    let rev = 0, cost = 0
+    let rev = milestoneRevByWeek.get(toISODate(snapToFriday(col))) ?? 0
+    let cost = 0
     const revType = { labour: 0, material: 0, subcontractor: 0, equipment: 0 }
     for (const entry of entries) {
       const cat = catByName.get(entry.category)
@@ -1668,6 +1691,12 @@ export default function GanttPage() {
   // fortnightly, always on a Friday. The "current" cycle is the one whose invoice Friday is the first on or
   // after today. Totals come from the forecast; variance compares it to the same cycle in the baseline.
   const planned = plannedByWeek(entries, fridays)
+  // Fold milestone claims into the weekly plan so the fortnight + invoice totals include them too.
+  milestoneRevByWeek.forEach((val, friIso) => {
+    const cur = planned.get(friIso)
+    if (cur) cur.rev += val
+    else planned.set(friIso, { rev: val, cost: 0 })
+  })
   const planBaseline = activeBaseline ? plannedByWeek(activeBaseline.entries, fridays) : null
   const workStartIso = entries.flatMap(e => e.segments).filter(s => s.startDate).map(s => s.startDate).sort()[0]
   const invoiceFriIso: string | null = (() => {
@@ -1805,7 +1834,7 @@ export default function GanttPage() {
               style={{ width: 16 }}
               onClick={e => { e.stopPropagation(); milestoneAnchorRef.current = e.currentTarget as HTMLDivElement; setMilestonePopover(m.id) }}
               onMouseDown={e => e.stopPropagation()}
-              title={m.label}
+              title={m.value ? `${m.label} — ${formatCurrency(m.value)} claim` : m.label}
             >
               <span className="text-sm leading-none" style={{ color: m.colour ?? '#8A8580' }}>◆</span>
             </div>
@@ -2522,7 +2551,7 @@ export default function GanttPage() {
                               milestoneAnchorRef.current = e.currentTarget as HTMLDivElement
                               setMilestonePopover(m.id)
                             }}
-                            title={m.label}
+                            title={m.value ? `${m.label} — ${formatCurrency(m.value)} claim` : m.label}
                           >
                             <span className="text-base leading-none" style={{ color: m.colour ?? '#8A8580' }}>◆</span>
                             <span className="text-[8px] font-light text-fg-muted/80 mt-0.5 truncate max-w-full px-0.5 text-center leading-tight">
