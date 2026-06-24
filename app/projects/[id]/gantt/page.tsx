@@ -615,6 +615,7 @@ export default function GanttPage() {
   const [categoryOrder, setCategoryOrder] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem(`fg_gantt_order_${id}`) || '[]') } catch { return [] }
   })
+  const [dragCat, setDragCat] = useState<string | null>(null)   // category being dragged to reorder
   // Per-category free-text description (Andrew): shown under the name (hover summary) and trailing the bars
   // on the right of the grid line. Stored locally, keyed by category.
   const [descriptions, setDescriptions] = useState<Record<string, string>>(() => {
@@ -751,13 +752,27 @@ export default function GanttPage() {
     const ia = categoryOrder.indexOf(a.category); const ib = categoryOrder.indexOf(b.category)
     return (ia < 0 ? 1e9 + rawCategories.indexOf(a) : ia) - (ib < 0 ? 1e9 + rawCategories.indexOf(b) : ib)
   })
+  const persistCategoryOrder = (order: string[]) => {
+    setCategoryOrder(order)
+    try { localStorage.setItem(`fg_gantt_order_${id}`, JSON.stringify(order)) } catch { /* ignore */ }
+  }
   const moveCategory = (catName: string, dir: -1 | 1) => {
     const order = categories.map(c => c.category)
     const i = order.indexOf(catName); const j = i + dir
     if (i < 0 || j < 0 || j >= order.length) return
     ;[order[i], order[j]] = [order[j], order[i]]
-    setCategoryOrder(order)
-    try { localStorage.setItem(`fg_gantt_order_${id}`, JSON.stringify(order)) } catch { /* ignore */ }
+    persistCategoryOrder(order)
+  }
+  // Drag-and-drop reorder (Andrew §2 "pick up and carry"): drop `from` onto `to` → `from` lands before it.
+  const reorderCategoryBefore = (from: string, to: string) => {
+    if (from === to) return
+    const order = categories.map(c => c.category)
+    const fromIdx = order.indexOf(from)
+    if (fromIdx < 0) return
+    order.splice(fromIdx, 1)
+    const toIdx = order.indexOf(to)
+    order.splice(toIdx < 0 ? order.length : toIdx, 0, from)
+    persistCategoryOrder(order)
   }
 
   const getEntry = (category: string): GanttEntry => {
@@ -2298,7 +2313,9 @@ export default function GanttPage() {
                 return (
                   <>
                     {/* ── Category row ── */}
-                    <tr key={cat.category} className="border-b border-fg-border/40 group" style={{ height: 34 }}>
+                    <tr key={cat.category} className={`border-b border-fg-border/40 group ${dragCat && dragCat !== cat.category ? 'hover:border-t-2 hover:border-t-fg-heading' : ''}`} style={{ height: 34 }}
+                      onDragOver={dragCat ? (e => e.preventDefault()) : undefined}
+                      onDrop={dragCat ? (() => { reorderCategoryBefore(dragCat, cat.category); setDragCat(null) }) : undefined}>
                       {/* Category label */}
                       <td className="border-r border-fg-border bg-fg-bg px-3 py-2 text-xs font-light text-fg-heading whitespace-nowrap align-middle" style={{ width: COL_CATEGORY, ...stickyL(0) }}>
                         <div className="flex items-center gap-1.5">
@@ -2330,8 +2347,13 @@ export default function GanttPage() {
                               className="bg-transparent border-none outline-none text-[10px] font-light italic text-fg-muted/60 placeholder:text-fg-muted/25 hover:text-fg-heading focus:text-fg-heading w-full min-w-0 truncate"
                             />
                           </div>
-                          {/* Reorder + add-subtask buttons (hover) */}
+                          {/* Reorder (drag handle + arrows) + add-subtask buttons (hover) */}
                           <div className="opacity-0 group-hover:opacity-100 ml-auto flex-shrink-0 flex items-center gap-0.5 transition-all">
+                            <span draggable
+                              onDragStart={() => setDragCat(cat.category)}
+                              onDragEnd={() => setDragCat(null)}
+                              title="Drag to reorder"
+                              className="cursor-grab active:cursor-grabbing text-fg-muted/40 hover:text-fg-heading leading-none text-[11px] px-0.5 select-none">⠿</span>
                             <button onClick={() => moveCategory(cat.category, -1)} title="Move up"
                               className="text-fg-muted/50 hover:text-fg-heading leading-none text-[11px] px-0.5">▲</button>
                             <button onClick={() => moveCategory(cat.category, 1)} title="Move down"
