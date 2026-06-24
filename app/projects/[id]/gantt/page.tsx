@@ -1689,6 +1689,11 @@ export default function GanttPage() {
     const opt: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }
     return `${new Date(`${monIso}T00:00:00`).toLocaleDateString(undefined, opt)} – ${new Date(`${invoiceFriIso}T00:00:00`).toLocaleDateString(undefined, opt)}`
   })()
+  // Friday role prompts (Andrew §6) — shown IN-APP only. Foreman every Friday (update schedule); Director on
+  // an invoicing Friday (review totals + invoice). Emailing these on a schedule needs recipient config + an
+  // explicit go-ahead under the no-outbound-email rule, so this is the in-app stand-in, not an auto-send.
+  const isFridayToday = new Date(`${today}T00:00:00`).getDay() === 5
+  const isInvoicingFriday = isFridayToday && invoiceFriIso === today
 
   const fixedColsWidth = COL_CATEGORY + COL_BUDGET
   const tableWidth = fixedColsWidth + columns.length * CELL_W
@@ -2171,7 +2176,16 @@ export default function GanttPage() {
               {fortVar >= 0 ? '▲' : '▼'} {formatCurrency(Math.abs(fortVar))} vs baseline
             </span>
           )}
-          <span className="text-fg-muted/60 ml-auto">Raise this cycle&apos;s progress claim and update the schedule</span>
+          {isFridayToday ? (
+            <span className="ml-auto flex items-center gap-2">
+              <span className="px-2 py-0.5 border border-fg-border/70 text-fg-muted" title="Foreman — Friday 7am: update the schedule + progress">Foreman: update schedule</span>
+              {isInvoicingFriday && (
+                <span className="px-2 py-0.5 border border-amber-600/50 text-amber-600" title="Director — invoicing Friday 2pm: review the grand totals + invoice the client">Director: review &amp; invoice today</span>
+              )}
+            </span>
+          ) : (
+            <span className="text-fg-muted/60 ml-auto">Raise this cycle&apos;s progress claim and update the schedule</span>
+          )}
         </div>
       )}
 
