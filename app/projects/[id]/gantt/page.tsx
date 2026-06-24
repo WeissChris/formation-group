@@ -31,8 +31,10 @@ import type { Project, Estimate, GanttEntry, GanttSegment, GanttSubtask, WeeklyR
 import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react'
 
 // ── constants ─────────────────────────────────────────────────────────────────
-const CELL_W_WEEKS = 48
-const CELL_W_DAYS = 24
+// Base column widths at 100% zoom, calibrated so the grid (after the ~324px fixed columns) shows roughly
+// 30 weeks in weeks view and 10 weeks (50 working days) in days view on a typical screen (Andrew).
+const CELL_W_WEEKS = 39
+const CELL_W_DAYS = 23
 const WEEK_COUNT = 52
 const LOOKBACK_WEEKS = 4      // weeks shown BEFORE today so you can scroll back from "today"
 // Andrew's zoom scale: 100% default, then ~25% steps each way (25/50/75/100/125/150/200).
@@ -1646,9 +1648,9 @@ export default function GanttPage() {
             const gIsStart = i === gStart || (gStart === -1 && i === 0)
             const gIsEnd = i === gEnd || (gEnd === -1 && i === columns.length - 1)
             return (
-              <div key={`ghost-${gs.id}`} className="absolute pointer-events-none z-10" title="Baseline"
-                style={{ left: gIsStart ? 2 : 0, right: gIsEnd ? 2 : 0, top: 1, height: 5, background: '#DEEBF7', opacity: 0.85, border: '1px solid #9DB8D2',
-                  borderRadius: gIsStart && gIsEnd ? 2 : gIsStart ? '2px 0 0 2px' : gIsEnd ? '0 2px 2px 0' : 0 }} />
+              <div key={`ghost-${gs.id}`} className="absolute inset-y-1 pointer-events-none" title="Baseline"
+                style={{ left: gIsStart ? 2 : 0, right: gIsEnd ? 2 : 0, background: '#DEEBF7', opacity: 0.5,
+                  borderRadius: gIsStart && gIsEnd ? 3 : gIsStart ? '3px 0 0 3px' : gIsEnd ? '0 3px 3px 0' : 0 }} />
             )
           })}
           {/* In-place milestones — a task/subtask converted to a milestone keeps its row + date (Andrew). */}
@@ -1692,9 +1694,10 @@ export default function GanttPage() {
                     handleBarClick(e as unknown as React.MouseEvent, category, seg.id, e.currentTarget as HTMLDivElement, subtaskId)
                   }
                 }}
-                title={showRevenue
+                title={(showRevenue
                   ? `${category}${seg.label ? ` — ${seg.label}` : ''}\nRevenue: ${formatCurrency(weeklyRev)}/wk\nCost: ${formatCurrency(weeklyCost)}/wk\nMargin: ${marg}%`
-                  : `${category}${seg.label ? ` — ${seg.label}` : ''}\nBudget: ${formatCurrency(weeklyCost)}/wk`}
+                  : `${category}${seg.label ? ` — ${seg.label}` : ''}\nBudget: ${formatCurrency(weeklyCost)}/wk`)
+                  + (trailingLabel ? `\n${trailingLabel}` : '')}
               >
                 {showText && (
                   <div className="gantt-finance px-1.5 leading-tight">
