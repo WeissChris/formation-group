@@ -2253,11 +2253,11 @@ export default function GanttPage() {
                   const isCurrentWeek = timeView === 'weeks' ? iso === currentWeekIso : iso === today
                   return (
                     <th key={i} style={{
-                      width: CELL_W, minWidth: CELL_W,
+                      width: CELL_W, minWidth: CELL_W, height: CELL_W,   // square date metric (Andrew §1)
                       borderLeft: colBorderLeft(i),
                       ...stickyTop(topDate),
                     }}
-                      className={`border-b border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border'} py-1.5 text-center text-[10px] font-light text-fg-muted ${isCurrentWeek ? 'bg-fg-card/60' : 'bg-fg-bg'}`}>
+                      className={`border-b border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border'} py-0.5 text-center text-[10px] font-light leading-tight text-fg-muted ${isCurrentWeek ? 'bg-fg-card/60' : 'bg-fg-bg'}`}>
                       {timeView === 'weeks' ? formatDayMonth(col) : String(col.getDate())}
                     </th>
                   )
@@ -2313,7 +2313,7 @@ export default function GanttPage() {
                 return (
                   <>
                     {/* ── Category row ── */}
-                    <tr key={cat.category} className={`border-b border-fg-border/40 group ${dragCat && dragCat !== cat.category ? 'hover:border-t-2 hover:border-t-fg-heading' : ''}`} style={{ height: 34 }}
+                    <tr key={cat.category} className={`border-b border-fg-border/40 group ${dragCat && dragCat !== cat.category ? 'hover:border-t-2 hover:border-t-fg-heading' : ''}`} style={{ height: 30 }}
                       onDragOver={dragCat ? (e => e.preventDefault()) : undefined}
                       onDrop={dragCat ? (() => { reorderCategoryBefore(dragCat, cat.category); setDragCat(null) }) : undefined}>
                       {/* Category label */}
@@ -2392,7 +2392,7 @@ export default function GanttPage() {
 
                     {/* ── Subtask rows (flattened tree; indent = nesting depth) ── */}
                     {!isCollapsed && flattenSubtasks(subtasks).map(({ st: subtask, depth }) => (
-                      <tr key={subtask.id} className="border-b border-fg-border/20 group/sub" style={{ height: 28 }}>
+                      <tr key={subtask.id} className="border-b border-fg-border/20 group/sub" style={{ height: 25 }}>
                         <td className="border-r border-fg-border bg-fg-bg pr-2 py-1.5 text-[11px] font-light text-fg-muted whitespace-nowrap align-middle" style={{ width: COL_CATEGORY, paddingLeft: 20 + depth * 16, ...stickyL(0) }}>
                           <div className="flex items-center gap-1">
                             {subtask.costType
