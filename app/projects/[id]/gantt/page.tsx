@@ -552,6 +552,17 @@ export default function GanttPage() {
   const [supervisorView, setSupervisorView] = useState(false)
   const showRevenue = !supervisorView
 
+  // Whether the PDF/print includes financial figures (Andrew: export with the option to include or exclude
+  // financials). Off → a class on <body> hides every .gantt-finance element in the print stylesheet.
+  const [printFinancials, setPrintFinancials] = useState(true)
+  const doPrint = () => {
+    if (typeof document === 'undefined') return
+    if (!printFinancials) document.body.classList.add('gantt-print-nofinance')
+    const cleanup = () => { document.body.classList.remove('gantt-print-nofinance'); window.removeEventListener('afterprint', cleanup) }
+    window.addEventListener('afterprint', cleanup)
+    window.print()
+  }
+
   // Zoom (column width multiplier) + the scroll container, so we can land the initial view on "today".
   const [zoom, setZoom] = useState(1)
   const gridScrollRef = useRef<HTMLDivElement | null>(null)
@@ -1589,7 +1600,7 @@ export default function GanttPage() {
                   : `${category}${seg.label ? ` — ${seg.label}` : ''}\nBudget: ${formatCurrency(weeklyCost)}/wk`}
               >
                 {showText && (
-                  <div className="px-1.5 leading-tight">
+                  <div className="gantt-finance px-1.5 leading-tight">
                     {showRevenue && (
                       <div className="text-[9px] text-white/85 font-light whitespace-nowrap truncate">
                         {formatCurrency(weeklyRev)} rev
@@ -1633,6 +1644,7 @@ export default function GanttPage() {
         .gantt-print-only { display: block !important; }
         .gantt-scroll { overflow: visible !important; max-height: none !important; border: none !important; }
         .gantt-scroll th, .gantt-scroll td { position: static !important; }
+        .gantt-print-nofinance .gantt-finance { display: none !important; }
         @page { size: A3 landscape; margin: 8mm; }
       }`}</style>
       <div className="hidden gantt-print-only mb-4">
@@ -1772,11 +1784,18 @@ export default function GanttPage() {
               Build timeline from estimate
             </button>
           )}
-          <button onClick={() => window.print()}
-            title="Print or Save as PDF — hides the controls, expands the full programme, branded"
-            className="px-4 py-2 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading hover:border-fg-heading transition-colors">
-            Print / PDF
-          </button>
+          <span className="inline-flex items-stretch border border-fg-border">
+            <button onClick={doPrint}
+              title="Print or Save as PDF — hides the controls, expands the full programme, branded"
+              className="px-4 py-2 text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading transition-colors">
+              Print / PDF
+            </button>
+            <label title="Include the dollar figures in the PDF (uncheck for a schedule-only programme)"
+              className="flex items-center gap-1.5 px-2 border-l border-fg-border text-[10px] font-light tracking-wide uppercase text-fg-muted cursor-pointer hover:text-fg-heading">
+              <input type="checkbox" checked={printFinancials} onChange={e => setPrintFinancials(e.target.checked)} className="accent-fg-heading" />
+              $
+            </label>
+          </span>
           <button onClick={handleSetBaseline}
             title={baseline ? `Baseline set ${new Date(baseline.capturedAt).toLocaleDateString()} — click to re-snapshot` : 'Snapshot the current schedule as the baseline (set on planning day, before site start)'}
             className="px-4 py-2 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading hover:border-fg-heading transition-colors">
@@ -1806,7 +1825,7 @@ export default function GanttPage() {
       )}
 
       {estimate && categories.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mb-3 px-3 py-2.5 border border-fg-border bg-fg-bg/40 text-xs font-light">
+        <div className="gantt-finance flex flex-wrap items-center gap-x-5 gap-y-2 mb-3 px-3 py-2.5 border border-fg-border bg-fg-bg/40 text-xs font-light">
           {showRevenue && (
             <div className="flex items-baseline gap-1.5">
               <span className="text-[10px] uppercase tracking-wide text-fg-muted">Revenue</span>
@@ -1865,7 +1884,7 @@ export default function GanttPage() {
           claim/update. The prompt is in-app (whoever opens the page); an emailed prompt to the Foreman/
           Director would need recipient config + per-send approval and isn't auto-sent. */}
       {estimate && categories.length > 0 && (fortRev > 0 || fortCost > 0) && (
-        <div className="mb-3 px-3 py-2 border border-fg-border/70 bg-fg-bg/30 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs font-light">
+        <div className="gantt-finance mb-3 px-3 py-2 border border-fg-border/70 bg-fg-bg/30 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs font-light">
           <span className="text-[10px] uppercase tracking-architectural text-fg-heading">Invoicing fortnight</span>
           <span className="text-fg-muted">{fortLabel}{invoiceFriIso ? ` · invoice ${new Date(`${invoiceFriIso}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}` : ''}</span>
           {showRevenue && (
@@ -1893,7 +1912,7 @@ export default function GanttPage() {
             {/* ── Headers ── */}
             <thead>
               {/* Weekly cash flow — above the dates (Andrew), sticky at the top of the grid */}
-              <tr style={{ height: H_CASH }}>
+              <tr className="gantt-finance" style={{ height: H_CASH }}>
                 <th colSpan={4} style={{ width: fixedColsWidth, ...stickyCorner(4, 0) }} className="bg-fg-bg border-b border-r border-fg-border px-3 align-middle text-left">
                   <div className="text-[10px] font-light tracking-architectural uppercase text-fg-muted">{showRevenue ? 'Weekly Cash Flow' : 'Weekly Cost'}</div>
                   <div className="text-[8px] font-light text-fg-muted/50 mt-0.5">{showRevenue ? 'revenue · cost · net / wk' : 'cost / wk'}</div>
@@ -2066,14 +2085,16 @@ export default function GanttPage() {
                       {/* Budget — revenue + an inline, compact cost split (was 4 stacked lines; that drove
                           the row height). Single-letter type tags with tooltips keep it to ~1 line. */}
                       <td className="border-r border-fg-border bg-fg-bg px-2 py-1.5 text-right text-[11px] font-light text-fg-muted tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(2) }}>
-                        <div className="text-fg-heading" title={showRevenue ? 'Contract revenue' : 'Budgeted cost'}>{formatCurrency(showRevenue ? cat.budgetedRevenue : cat.budgetedCost)}</div>
-                        <div className="mt-px flex flex-wrap justify-end gap-x-1.5 gap-y-0 text-[9px] leading-tight">
-                          {COST_TYPE_KEYS.map(k => cat.cost[k] > 0 ? (
-                            <span key={k} className="whitespace-nowrap" title={`${COST_TYPE_META[k].label}: ${formatCurrency(cat.cost[k])}${k === 'labour' ? ` · ${Math.round(cat.cost[k] / STD_LABOUR_RATE)}h` : ''}`}>
-                              <span style={{ color: COST_TYPE_META[k].colour }}>{COST_TYPE_META[k].label[0]}</span>
-                              <span className="text-fg-muted/60"> {fmtK(cat.cost[k])}</span>
-                            </span>
-                          ) : null)}
+                        <div className="gantt-finance">
+                          <div className="text-fg-heading" title={showRevenue ? 'Contract revenue' : 'Budgeted cost'}>{formatCurrency(showRevenue ? cat.budgetedRevenue : cat.budgetedCost)}</div>
+                          <div className="mt-px flex flex-wrap justify-end gap-x-1.5 gap-y-0 text-[9px] leading-tight">
+                            {COST_TYPE_KEYS.map(k => cat.cost[k] > 0 ? (
+                              <span key={k} className="whitespace-nowrap" title={`${COST_TYPE_META[k].label}: ${formatCurrency(cat.cost[k])}${k === 'labour' ? ` · ${Math.round(cat.cost[k] / STD_LABOUR_RATE)}h` : ''}`}>
+                                <span style={{ color: COST_TYPE_META[k].colour }}>{COST_TYPE_META[k].label[0]}</span>
+                                <span className="text-fg-muted/60"> {fmtK(cat.cost[k])}</span>
+                              </span>
+                            ) : null)}
+                          </div>
                         </div>
                       </td>
                       {/* Schedule: start date + duration — the bar places itself, no drawing */}
