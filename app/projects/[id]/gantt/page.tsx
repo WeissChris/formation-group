@@ -678,7 +678,21 @@ export default function GanttPage() {
   const gridScrollRef = useRef<HTMLDivElement | null>(null)
   const scrolledToToday = useRef(false)
 
-  const fridays = getNextFridays(WEEK_COUNT, LOOKBACK_WEEKS)
+  // Render enough weeks to reach the project's last scheduled date (Andrew iter3: full-lifespan horizon),
+  // floored at WEEK_COUNT and capped at 156 (3yr). Covers bars, nested subtasks and milestones.
+  const horizonWeeks = (() => {
+    let latest = ''
+    for (const e of entries) {
+      for (const s of e.segments) if (s.endDate && s.endDate > latest) latest = s.endDate
+      for (const { st } of flattenSubtasks(e.subtasks ?? [])) for (const s of st.segments) if (s.endDate && s.endDate > latest) latest = s.endDate
+    }
+    for (const m of milestones) if (m.date && m.date > latest) latest = m.date
+    if (!latest) return WEEK_COUNT
+    const firstCol = new Date(); firstCol.setDate(firstCol.getDate() - LOOKBACK_WEEKS * 7)
+    const weeks = Math.ceil((new Date(`${latest}T00:00:00`).getTime() - firstCol.getTime()) / (7 * 86400000)) + 4
+    return Math.min(156, Math.max(WEEK_COUNT, weeks))
+  })()
+  const fridays = getNextFridays(horizonWeeks, LOOKBACK_WEEKS)
   const workingDays = getWorkingDays(fridays)
   const currentWeekIso = toISODate(fridays[LOOKBACK_WEEKS])   // the current week sits LOOKBACK_WEEKS columns in
   const today = toISODate(new Date())
