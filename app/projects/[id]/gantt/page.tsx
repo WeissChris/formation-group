@@ -542,6 +542,19 @@ export default function GanttPage() {
   const [categoryOrder, setCategoryOrder] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem(`fg_gantt_order_${id}`) || '[]') } catch { return [] }
   })
+  // Per-category free-text description (Andrew): shown under the name (hover summary) and trailing the bars
+  // on the right of the grid line. Stored locally, keyed by category.
+  const [descriptions, setDescriptions] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem(`fg_gantt_desc_${id}`) || '{}') } catch { return {} }
+  })
+  const setCategoryDescription = (category: string, text: string) => {
+    setDescriptions(prev => {
+      const next = { ...prev, [category]: text }
+      if (!text.trim()) delete next[category]
+      try { localStorage.setItem(`fg_gantt_desc_${id}`, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
   // Programme baseline — a snapshot of the schedule (set on planning day, before site start) that current
   // dates are measured against to show slip. Persisted per project.
   const [baseline, setBaseline] = useState<{ capturedAt: string; entries: GanttEntry[] } | null>(() => {
@@ -1529,7 +1542,11 @@ export default function GanttPage() {
     crewType: 'Formation' | 'Subcontractor',
     subtaskId?: string,
     isSubtask?: boolean,
+    trailingLabel?: string,
   ) => {
+    // Column just past the last dated bar — where a trailing description sits (RHS of the grid line).
+    const datedEnds = segs.filter(s => s.startDate && s.endDate).map(s => columns.findIndex(c => toISODate(c) === s.endDate)).filter(idx => idx >= 0)
+    const trailingIdx = trailingLabel && datedEnds.length ? Math.min(Math.max(...datedEnds) + 1, columns.length - 1) : -1
     return columns.map((col, i) => {
       const iso = toISODate(col)
       const isCurrentWeek = timeView === 'weeks' ? iso === currentWeekIso : iso === today
@@ -1625,6 +1642,12 @@ export default function GanttPage() {
           })}
           {!activeSegs.length && (
             <div className="absolute inset-0 hover:bg-fg-border/15 transition-colors" />
+          )}
+          {/* Trailing category description on the RHS of the grid line (Andrew). */}
+          {i === trailingIdx && trailingLabel && (
+            <div className="absolute inset-y-0 left-1 z-10 flex items-center pointer-events-none whitespace-nowrap">
+              <span className="text-[10px] font-light italic text-fg-muted/70">{trailingLabel}</span>
+            </div>
           )}
         </td>
       )
@@ -2052,7 +2075,7 @@ export default function GanttPage() {
                           <div className="flex flex-col min-w-0">
                             <span className="truncate">{cat.category}</span>
                             {scheduled && (
-                              <span className="text-[10px] font-light tabular-nums flex flex-wrap gap-x-1.5 leading-tight">
+                              <span className="gantt-finance text-[10px] font-light tabular-nums flex flex-wrap gap-x-1.5 leading-tight">
                                 {labBudgetCat > 0 && <span title="Labour allocated across periods" className={labAlloc !== 100 ? 'text-amber-600' : 'text-fg-muted/50'}>L {labAlloc}%</span>}
                                 {matBudgetCat > 0 && <span title="Materials allocated" className={matAlloc !== 100 ? 'text-amber-600' : 'text-fg-muted/50'}>M {matAlloc}%</span>}
                                 {subBudgetCat > 0 && <span title="Subcontractor allocated" className={subAlloc !== 100 ? 'text-amber-600' : 'text-fg-muted/50'}>S {subAlloc}%</span>}
@@ -2061,6 +2084,13 @@ export default function GanttPage() {
                                 {slipDays !== 0 && <span title="Start vs baseline" className={slipDays > 0 ? 'text-amber-600' : 'text-green-600/80'}>{slipDays > 0 ? `+${slipDays}d` : `${slipDays}d`}</span>}
                               </span>
                             )}
+                            <input
+                              value={descriptions[cat.category] ?? ''}
+                              onChange={e => setCategoryDescription(cat.category, e.target.value)}
+                              placeholder="+ description"
+                              title={descriptions[cat.category] || 'Add a description for this category'}
+                              className="bg-transparent border-none outline-none text-[10px] font-light italic text-fg-muted/60 placeholder:text-fg-muted/25 hover:text-fg-heading focus:text-fg-heading w-full min-w-0 truncate"
+                            />
                           </div>
                           {/* Reorder + add-subtask buttons (hover) */}
                           <div className="opacity-0 group-hover:opacity-100 ml-auto flex-shrink-0 flex items-center gap-0.5 transition-all">
@@ -2127,7 +2157,7 @@ export default function GanttPage() {
                         </div>
                       </td>
                       {/* Segment cells — collapsed rows roll the subtask span into a summary bar */}
-                      {renderSegmentCells(entry, collapsedRollup, cat.category, cat.crewType)}
+                      {renderSegmentCells(entry, collapsedRollup, cat.category, cat.crewType, undefined, false, descriptions[cat.category])}
                     </tr>
 
                     {/* ── Subtask rows (flattened tree; indent = nesting depth) ── */}
