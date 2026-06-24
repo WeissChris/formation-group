@@ -35,7 +35,8 @@ const CELL_W_WEEKS = 48
 const CELL_W_DAYS = 24
 const WEEK_COUNT = 52
 const LOOKBACK_WEEKS = 4      // weeks shown BEFORE today so you can scroll back from "today"
-const ZOOM_LEVELS = [0.6, 0.75, 1, 1.3, 1.6] as const
+// Andrew's zoom scale: 100% default, then ~25% steps each way (25/50/75/100/125/150/200).
+const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2] as const
 const DAYS_VIEW_WEEKS = 26   // Days view renders this many weeks of working-day columns (was 12 — too short for multi-month jobs)
 const COL_CATEGORY = 200
 const COL_CREW = 64
@@ -58,10 +59,12 @@ const MILESTONE_COLOURS = ['#8A8580', '#C8A870', '#7A9E87', '#A07080', '#6A8CA0'
 // Labour productivity target per crew size (Andrew): the revenue a crew of N should generate per week,
 // and the labour cost budget that supports it. Budget = N × $2,720/wk (40h × $68 standard rate). Crew-2
 // and crew-3 are Andrew's figures; crew-4 is extrapolated (adjust if needed).
-const CREW_LABOUR_TARGET: Record<number, { revenue: number; budget: number }> = {
-  2: { revenue: 9500, budget: 5440 },
-  3: { revenue: 14000, budget: 8160 },
-  4: { revenue: 18500, budget: 10880 },
+// Weekly revenue + labour targets by crew size (Andrew's figures). He specified teams of 2 and 3; the
+// team-of-4 row is extrapolated on the same +7.5k revenue / +5k labour step and should be confirmed.
+const CREW_LABOUR_TARGET: Record<number, { revenue: number; labour: number }> = {
+  2: { revenue: 17500, labour: 9000 },
+  3: { revenue: 25000, labour: 14000 },
+  4: { revenue: 32500, labour: 19000 },
 }
 
 // Compact currency for the dense cash-flow strip — "$192k", "$8.9k", "$420". Full figures like
@@ -1381,35 +1384,23 @@ export default function GanttPage() {
     }
   })()
 
-  // ── Month + week boundary column indices ────────────────────────────────────
-  // Month boundaries get the strongest rule; week boundaries (days view only — every Monday) get a
-  // medium rule so weeks read at a glance, per Andrew's "week gridlines in bold". In weeks view every
-  // column IS a week, so the per-column border is strengthened directly instead.
-
-  const monthBoundaryIndices = new Set<number>()
+  // ── Week boundary column indices ────────────────────────────────────────────
+  // In days view a week boundary (Friday→Monday) falls every 5th column; in weeks view every column is a
+  // week, handled directly in colBorderLeft. Used to paint that boundary black per Andrew's gridline rule.
   const weekBoundaryIndices = new Set<number>()
-  const fortnightBoundaryIndices = new Set<number>()   // the invoicing cycle — every 2nd week from today
   for (let i = 1; i < columns.length; i++) {
-    if (columns[i].getMonth() !== columns[i - 1].getMonth()) {
-      monthBoundaryIndices.add(i)
-    }
-    if (timeView === 'days' && i % 5 === 0) {
-      weekBoundaryIndices.add(i)
-    }
-    // Fortnightly invoicing cycle, aligned so the current week is a boundary (Andrew: identify the
-    // cycle / bold the invoicing cycles). In weeks view every column is a week; in days, every 10 days.
-    const wk = timeView === 'days' ? i / 5 : i
-    if (Number.isInteger(wk) && (wk - LOOKBACK_WEEKS) % 2 === 0) {
-      fortnightBoundaryIndices.add(i)
-    }
+    if (timeView === 'days' && i % 5 === 0) weekBoundaryIndices.add(i)
   }
-  // Border rule for a column's left edge — month strongest, then the fortnightly invoicing cycle, then
-  // the week. Used by the body, header and footer so the vertical rules line up top to bottom.
+  // Gridline colours (Andrew): every day/week/category separator is grey #D3D3D3; the line that separates
+  // a Friday from the next Monday (the week boundary) is black #000000. In weeks view every column IS a
+  // Mon–Fri week, so every column boundary is a week boundary; in days view the boundary falls every 5th
+  // day. (The previous white-on-light rules were invisible on this light theme.)
+  const isWeekBoundary = (i: number): boolean =>
+    i > 0 && (timeView === 'weeks' || weekBoundaryIndices.has(i))
   const colBorderLeft = (i: number): string | undefined =>
-    monthBoundaryIndices.has(i) ? '2px solid rgba(255,255,255,0.26)'
-    : fortnightBoundaryIndices.has(i) ? '2px solid rgba(255,255,255,0.18)'
-    : weekBoundaryIndices.has(i) ? '2px solid rgba(255,255,255,0.13)'
-    : undefined
+    i === 0 ? undefined
+    : isWeekBoundary(i) ? '1.5px solid #000000'
+    : '1px solid #D3D3D3'
 
   if (!project) return (
     <div className="max-w-[1200px] mx-auto px-6 py-12">
@@ -1669,8 +1660,8 @@ export default function GanttPage() {
             </select>
             {CREW_LABOUR_TARGET[crewSize] && (
               <span className="text-[10px] font-light text-fg-muted/70 border-l border-fg-border pl-1.5 ml-0.5 whitespace-nowrap"
-                title={`A crew of ${crewSize} should turn over ${formatCurrency(CREW_LABOUR_TARGET[crewSize].revenue)} of revenue per week on ${formatCurrency(CREW_LABOUR_TARGET[crewSize].budget)} of labour cost`}>
-                target <span className="text-fg-heading tabular-nums">{fmtK(CREW_LABOUR_TARGET[crewSize].revenue)}</span>/wk
+                title={`A crew of ${crewSize} should turn over ${formatCurrency(CREW_LABOUR_TARGET[crewSize].revenue)} of revenue per week on ${formatCurrency(CREW_LABOUR_TARGET[crewSize].labour)} of labour`}>
+                target <span className="text-fg-heading tabular-nums">{fmtK(CREW_LABOUR_TARGET[crewSize].revenue)}</span>/wk · lab <span className="text-fg-heading tabular-nums">{fmtK(CREW_LABOUR_TARGET[crewSize].labour)}</span>
               </span>
             )}
           </div>
