@@ -1696,6 +1696,25 @@ export default function GanttPage() {
   const isFridayToday = new Date(`${today}T00:00:00`).getDay() === 5
   const isInvoicingFriday = isFridayToday && invoiceFriIso === today
 
+  // Full-horizon invoicing matrix (Andrew iter3): every 14-day bucket from the first invoice Friday (2nd
+  // Friday after work starts) across the whole rendered horizon, keyed by the bucket's invoice Friday. Each
+  // total is that fortnight's planned revenue (the two week-ending Fridays). Empty buckets resolve to 0 so
+  // the cash-flow row shows a $0 placeholder at every fortnight boundary. Recomputes whenever entries change.
+  const invoiceByFri = (() => {
+    const map = new Map<string, number>()
+    if (!workStartIso || columns.length === 0) return map
+    const first = snapToFriday(new Date(`${workStartIso}T00:00:00`)); first.setDate(first.getDate() + 7)
+    const lastColIso = toISODate(columns[columns.length - 1])
+    const f = first
+    let guard = 0
+    while (toISODate(f) <= lastColIso && guard++ < 200) {
+      const friIso = toISODate(f)
+      map.set(friIso, (planned.get(friIso)?.rev ?? 0) + (planned.get(addDays(friIso, -7))?.rev ?? 0))
+      f.setDate(f.getDate() + 14)
+    }
+    return map
+  })()
+
   const fixedColsWidth = COL_CATEGORY + COL_BUDGET
   const tableWidth = fixedColsWidth + columns.length * CELL_W
 
@@ -2200,7 +2219,7 @@ export default function GanttPage() {
               <tr className="gantt-finance" style={{ height: H_CASH }}>
                 <th colSpan={2} style={{ width: fixedColsWidth, ...stickyCorner(2, 0) }} className="bg-fg-bg border-b border-r border-fg-border px-3 align-middle text-left">
                   <div className="text-[10px] font-light tracking-architectural uppercase text-fg-muted">{showRevenue ? 'Weekly Cash Flow' : 'Weekly Cost'}</div>
-                  <div className="text-[8px] font-light text-fg-muted/50 mt-0.5">{showRevenue ? 'revenue · cost · net / wk' : 'cost / wk'}</div>
+                  <div className="text-[8px] font-light text-fg-muted/50 mt-0.5">{showRevenue ? 'revenue · cost · net / wk · INV = fortnight invoice' : 'cost / wk'}</div>
                 </th>
                 {footerRuns.map((run, ri) => {
                   const net = run.rev - run.cost
@@ -2217,13 +2236,23 @@ export default function GanttPage() {
                   return (
                     <th key={ri} colSpan={run.span} title={srcTitle} style={{ width: run.span * CELL_W, borderLeft: colBorderLeft(run.startIdx), ...stickyTop(0) }}
                       className="bg-fg-bg border-b border-r border-fg-border/30 px-1 align-middle overflow-hidden font-normal">
-                      {hasActivity && (
-                        <div className="text-center leading-tight whitespace-nowrap">
-                          {showRevenue && <div className="text-[10px] text-fg-heading/80 tabular-nums">{fmtK(run.rev)}</div>}
-                          <div className={`text-[10px] tabular-nums ${showRevenue ? 'text-fg-muted/50' : 'text-fg-heading/80'}`}>{fmtK(run.cost)}</div>
-                          {showRevenue && <div className={`text-[10px] font-medium tabular-nums ${net >= 0 ? 'text-green-600/90' : 'text-amber-600/90'}`}>{net >= 0 ? '+' : ''}{fmtK(net)}</div>}
-                        </div>
-                      )}
+                      <div className="text-center leading-tight whitespace-nowrap">
+                        {hasActivity && (
+                          <>
+                            {showRevenue && <div className="text-[10px] text-fg-heading/80 tabular-nums">{fmtK(run.rev)}</div>}
+                            <div className={`text-[10px] tabular-nums ${showRevenue ? 'text-fg-muted/50' : 'text-fg-heading/80'}`}>{fmtK(run.cost)}</div>
+                            {showRevenue && <div className={`text-[10px] font-medium tabular-nums ${net >= 0 ? 'text-green-600/90' : 'text-amber-600/90'}`}>{net >= 0 ? '+' : ''}{fmtK(net)}</div>}
+                          </>
+                        )}
+                        {/* Fortnight invoice total — embedded in the cash-flow row at every 2-week boundary,
+                            across the whole horizon, with a $0 placeholder (Andrew iter2 §4 / iter3). */}
+                        {showRevenue && invoiceByFri.has(run.weekKey) && (
+                          <div className="mt-0.5 inline-block px-1 border border-fg-heading bg-fg-heading/10 rounded-sm text-[9px] font-semibold text-fg-heading tabular-nums"
+                            title={`Fortnight invoice total — ${formatCurrency(invoiceByFri.get(run.weekKey)!)}`}>
+                            INV {fmtK(invoiceByFri.get(run.weekKey)!)}
+                          </div>
+                        )}
+                      </div>
                     </th>
                   )
                 })}
