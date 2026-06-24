@@ -27,6 +27,7 @@ import { readLineItemRevenue, getEstimateContract, lineContractValue, addLineCos
 import { normalizedPcts, rebalancedPcts, datedPeriodCount } from '@/lib/ganttAllocation'
 import { labourWorkingDays } from '@/lib/ganttSchedule'
 import { mapSubtaskTree, findSubtaskInTree, removeSubtaskFromTree, addChildSubtask, flattenSubtasks } from '@/lib/ganttSubtasks'
+import { plannedByWeek } from '@/lib/ganttForecast'
 import type { Project, Estimate, GanttEntry, GanttSegment, GanttSubtask, WeeklyRevenue } from '@/types'
 import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react'
 
@@ -203,27 +204,6 @@ function barLabourShares(segments: GanttSegment[], crew: number): number[] {
 
 // Labour hours fall out of a bar's length: labourWorkingDays × crew × 8. labourWorkingDays lives in
 // lib/ganttSchedule (a Weeks-view bar means 5 working days per week, not the Fri→Fri calendar count).
-
-// Planned revenue + cost per week (keyed by the week's Friday ISO) for a set of gantt entries. A segment
-// contributes revenueAllocation/weekCount to every week it overlaps (Mon–Fri of that week), so it works
-// in both weeks and days view and against a baseline snapshot. Used for the fortnightly cycle totals.
-function plannedByWeek(entries: GanttEntry[], fridays: Date[]): Map<string, { rev: number; cost: number }> {
-  const map = new Map<string, { rev: number; cost: number }>()
-  for (const f of fridays) {
-    const friIso = toISODate(f)
-    const mon = new Date(f); mon.setDate(mon.getDate() - 4)
-    const monIso = toISODate(mon)
-    let rev = 0, cost = 0
-    for (const e of entries) for (const seg of e.segments) {
-      if (seg.startDate && seg.endDate && seg.weekCount > 0 && seg.startDate <= friIso && seg.endDate >= monIso) {
-        rev += seg.revenueAllocation / seg.weekCount
-        cost += seg.costAllocation / seg.weekCount
-      }
-    }
-    map.set(friIso, { rev, cost })
-  }
-  return map
-}
 
 function extractCategories(estimate: Estimate): CategorySummary[] {
   // Each posting's budgeted revenue = its lines' contract value (line revenue + project markup on each
@@ -1589,6 +1569,7 @@ export default function GanttPage() {
     const revType = { labour: 0, material: 0, subcontractor: 0, equipment: 0 }
     for (const entry of entries) {
       const cat = catByName.get(entry.category)
+      // Parent (unsplit) segments — apportion their revenue across types by the category's ratio.
       for (const seg of entry.segments) {
         if (seg.startDate && seg.endDate && iso >= seg.startDate && iso <= seg.endDate && seg.weekCount > 0) {
           const wRev = seg.revenueAllocation / seg.weekCount
@@ -1599,6 +1580,19 @@ export default function GanttPage() {
             revType.material += wRev * (cat.rev.material / cat.budgetedRevenue)
             revType.subcontractor += wRev * (cat.rev.subcontractor / cat.budgetedRevenue)
             revType.equipment += wRev * (cat.rev.equipment / cat.budgetedRevenue)
+          }
+        }
+      }
+      // Auto-split type lines (Materials/Labour/Subcontractor) — the claim lives here for split categories,
+      // and the revenue IS that discipline. THIS is the row whose claims were going missing (Andrew iter4).
+      for (const { st } of flattenSubtasks(entry.subtasks ?? [])) {
+        if (!st.costType) continue
+        for (const seg of st.segments) {
+          if (seg.startDate && seg.endDate && iso >= seg.startDate && iso <= seg.endDate && seg.weekCount > 0) {
+            const wRev = seg.revenueAllocation / seg.weekCount
+            rev += wRev
+            cost += seg.costAllocation / seg.weekCount
+            revType[st.costType] += wRev
           }
         }
       }
