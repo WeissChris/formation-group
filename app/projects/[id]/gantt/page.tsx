@@ -88,6 +88,8 @@ interface Milestone {
   label: string
   date: string    // ISO date
   colour?: string
+  category?: string    // when set, the milestone is pinned IN PLACE on this category's row (Andrew); a
+  subtaskId?: string   // converted task/subtask keeps its position instead of dropping to the bottom row
 }
 
 interface CategorySummary {
@@ -1035,7 +1037,9 @@ export default function GanttPage() {
   // the bar. Andrew: "ability to convert a task or subtask to a milestone".
   const handleConvertToMilestone = (category: string, seg: GanttSegment, subtaskId?: string) => {
     if (!seg.startDate) return
-    handleAddMilestone(seg.label || category, seg.startDate)
+    // Pin the milestone in place (this category's row, optionally a subtask) rather than dropping it into
+    // the Milestones row at the bottom of the chart (Andrew).
+    handleAddMilestone(seg.label || category, seg.startDate, category, subtaskId)
     handleSegmentDelete(category, seg.id, subtaskId)
   }
 
@@ -1091,13 +1095,15 @@ export default function GanttPage() {
 
   // ── Milestone management ─────────────────────────────────────────────────
 
-  const handleAddMilestone = (label?: string, date?: string) => {
+  const handleAddMilestone = (label?: string, date?: string, category?: string, subtaskId?: string) => {
     const newM: Milestone = {
       id: generateId(),
       projectId: id,
       label: label ?? 'Milestone',
       date: date ?? toISODate(fridays[4]),
       colour: MILESTONE_COLOURS[milestones.length % MILESTONE_COLOURS.length],
+      ...(category ? { category } : {}),
+      ...(subtaskId ? { subtaskId } : {}),
     }
     const updated = [...milestones, newM]
     setMilestones(updated)
@@ -1485,6 +1491,17 @@ export default function GanttPage() {
 
   // ── Render segment bar cells ──────────────────────────────────────────────
 
+  // Does a milestone's date land in the column ending `iso`? In weeks view a date snaps forward to its
+  // week-ending Friday; in days view it's the exact day. Shared by the in-place markers and the bottom row.
+  const milestoneMatchesCol = (m: Milestone, iso: string): boolean => {
+    if (timeView === 'weeks') {
+      const d = new Date(`${m.date}T00:00:00`)
+      while (d.getDay() !== 5) d.setDate(d.getDate() + 1)
+      return toISODate(d) === iso
+    }
+    return m.date === iso
+  }
+
   const renderSegmentCells = (
     entry: GanttEntry,
     segs: GanttSegment[],
@@ -1517,6 +1534,19 @@ export default function GanttPage() {
           {isTodayCol && (
             <div className="absolute inset-y-0 left-0 w-0.5 bg-red-500/50 z-10 pointer-events-none" />
           )}
+          {/* In-place milestones — a task/subtask converted to a milestone keeps its row + date (Andrew). */}
+          {milestones.filter(m => m.category === category && (m.subtaskId ?? undefined) === subtaskId && milestoneMatchesCol(m, iso)).map(m => (
+            <div
+              key={m.id}
+              className="absolute inset-y-0 left-0 z-20 flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity"
+              style={{ width: 16 }}
+              onClick={e => { e.stopPropagation(); milestoneAnchorRef.current = e.currentTarget as HTMLDivElement; setMilestonePopover(m.id) }}
+              onMouseDown={e => e.stopPropagation()}
+              title={m.label}
+            >
+              <span className="text-sm leading-none" style={{ color: m.colour ?? '#8A8580' }}>◆</span>
+            </div>
+          ))}
           {activeSegs.map(seg => {
             const startIdx = columns.findIndex(c => toISODate(c) === seg.startDate)
             const endIdx = columns.findIndex(c => toISODate(c) === seg.endDate)
@@ -2127,8 +2157,8 @@ export default function GanttPage() {
                 )
               })}
 
-              {/* ── Milestones row ── */}
-              {milestones.length > 0 && (
+              {/* ── Milestones row ── (project-level only; converted task/subtask milestones sit in place) */}
+              {milestones.some(m => !m.category) && (
                 <tr className="border-t-2 border-fg-border/40" style={{ height: 40 }}>
                   <td colSpan={4} style={stickyL(4)} className="border-r border-fg-border bg-fg-bg px-3 py-2 text-[10px] font-light tracking-architectural uppercase text-fg-muted align-middle">
                     Milestones
@@ -2136,8 +2166,9 @@ export default function GanttPage() {
                   {columns.map((col, i) => {
                     const iso = toISODate(col)
                     const isTodayCol = i === todayColIdx
-                    // Find milestones that fall in this column
+                    // Project-level milestones that fall in this column (in-place ones render on their rows)
                     const colMilestones = milestones.filter(m => {
+                      if (m.category) return false
                       if (timeView === 'weeks') {
                         // Match to nearest Friday
                         const mDate = new Date(m.date)
