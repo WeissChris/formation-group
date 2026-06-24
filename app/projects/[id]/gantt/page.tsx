@@ -280,9 +280,15 @@ interface SegEditProps {
   schedDuration: number | ''
   schedUnit: string
   onSchedule: (startIso: string, duration: number) => void
+  // Auto-split type line (Andrew §3): when set, the popover shows a single claim editor — Labour in hours,
+  // Materials/Subcontractor/Equipment in % — with Totals-for-this-claim + Remaining, instead of the
+  // per-period % grid.
+  costType?: 'labour' | 'material' | 'subcontractor' | 'equipment'
+  typeBudgetRev?: number
+  typeBudgetCost?: number
 }
 
-function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBudget, equipmentBudget, onUpdate, onDelete, onConvertToMilestone, onClose, anchorRef, canSchedule, schedStart, schedDuration, schedUnit, onSchedule }: SegEditProps) {
+function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBudget, equipmentBudget, onUpdate, onDelete, onConvertToMilestone, onClose, anchorRef, canSchedule, schedStart, schedDuration, schedUnit, onSchedule, costType, typeBudgetRev = 0, typeBudgetCost = 0 }: SegEditProps) {
   // The foreman types this period's material/equipment % (0–100) and it updates LIVE: the other dated
   // periods auto-balance to fill the remainder so each resource always sums to 100%, and the totals/costs
   // recompute as you type — no Apply step. The breakdown below shows every period's share moving.
@@ -293,6 +299,30 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
   const [matPct, setMatPct] = useState(seg.materialsPct != null ? String(Math.round(seg.materialsPct)) : '')
   const [subPct, setSubPct] = useState(seg.subPct != null ? String(Math.round(seg.subPct)) : '')
   const [eqPct, setEqPct] = useState(seg.equipmentPct != null ? String(Math.round(seg.equipmentPct)) : '')
+
+  // Type-line claim (Andrew §3): Labour in hours, others in % of that type's budget. Setting it writes the
+  // period's revenue/cost directly (no auto-balance — type lines are claimed manually).
+  const [claimVal, setClaimVal] = useState(
+    costType === 'labour'
+      ? String(Math.round((seg.costAllocation || 0) / STD_LABOUR_RATE))
+      : (typeBudgetRev > 0 ? String(Math.round((seg.revenueAllocation || 0) / typeBudgetRev * 100)) : '0')
+  )
+  const applyClaim = (raw: string) => {
+    setClaimVal(raw)
+    const n = Math.max(0, parseFloat(raw) || 0)
+    let newRev = 0, newCost = 0
+    if (costType === 'labour') {
+      newCost = n * STD_LABOUR_RATE
+      newRev = typeBudgetCost > 0 ? (newCost / typeBudgetCost) * typeBudgetRev : 0
+    } else {
+      const p = n / 100
+      newRev = p * typeBudgetRev
+      newCost = p * typeBudgetCost
+    }
+    onUpdate({ ...seg, revenueAllocation: newRev, costAllocation: newCost })
+  }
+  const claimedOther = siblingSegs.filter(s => s.id !== seg.id).reduce((s, x) => s + (x.revenueAllocation || 0), 0)
+  const claimRemaining = typeBudgetRev - claimedOther - (seg.revenueAllocation || 0)
 
   // Push the current state up immediately so the parent auto-balances + recomputes. The just-changed
   // field is passed as an override (its useState hasn't committed yet on this keystroke).
@@ -368,7 +398,23 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
             </div>
           </div>
         )}
-        {(hasLabour || hasMaterials || hasSub || hasEquipment) && (
+        {/* Type-line claim editor (Andrew §3): Labour in hours, Materials/Sub/Equip in % */}
+        {costType && (
+          <>
+            <div>
+              <label className="text-2xs font-light text-fg-muted block mb-1">
+                {costType === 'labour' ? 'Hours this claim' : `% of ${costType} this claim`}
+              </label>
+              <input type="number" min={0} value={claimVal} onChange={e => applyClaim(e.target.value)} placeholder="0"
+                className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
+            </div>
+            <div className="text-[10px] text-fg-muted space-y-0.5 border-t border-fg-border/50 pt-2">
+              <div className="flex justify-between"><span>Totals for this claim</span><span className="tabular-nums text-fg-heading">{formatCurrency(seg.revenueAllocation || 0)}{costType === 'labour' ? ` · ${Math.round((seg.costAllocation || 0) / STD_LABOUR_RATE)}h` : ''}</span></div>
+              <div className="flex justify-between"><span>Remaining</span><span className={`tabular-nums ${claimRemaining < -0.5 ? 'text-amber-600' : 'text-fg-muted'}`}>{formatCurrency(claimRemaining)}</span></div>
+            </div>
+          </>
+        )}
+        {!costType && (hasLabour || hasMaterials || hasSub || hasEquipment) && (
           <div className="grid grid-cols-2 gap-2">
             {hasLabour && (
               <div>
@@ -405,14 +451,14 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
           </div>
         )}
         {/* Single period holds the whole budget — nowhere to split a partial % to, so guide them to split */}
-        {onlyPeriod && (hasLabour || hasMaterials || hasSub || hasEquipment) && (
+        {!costType && onlyPeriod && (hasLabour || hasMaterials || hasSub || hasEquipment) && (
           <p className="text-[9px] font-light text-amber-600/80 leading-snug">
             Only one period, so it holds 100% of the budget. To put e.g. 80% here and the rest later, add a
             second period with “split” on the category row, then set the split.
           </p>
         )}
         {/* Live breakdown across all periods — auto-balances to 100% as you type */}
-        {datedSibs.length > 1 && (hasLabour || hasMaterials || hasSub || hasEquipment) && (
+        {!costType && datedSibs.length > 1 && (hasLabour || hasMaterials || hasSub || hasEquipment) && (
           <div className="text-[9px] font-light text-fg-muted space-y-0.5 border-t border-fg-border/40 pt-2">
             {hasLabour && <div className="flex justify-between gap-2"><span className="tabular-nums">Lab {splitLine('labourPct')}</span><span className={`tabular-nums ${totalClass(labTotal)}`}>={labTotal}%</span></div>}
             {hasMaterials && <div className="flex justify-between gap-2"><span className="tabular-nums">Mat {splitLine('materialsPct')}</span><span className={`tabular-nums ${totalClass(matTotal)}`}>={matTotal}%</span></div>}
@@ -420,14 +466,16 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
             {hasEquipment && <div className="flex justify-between gap-2"><span className="tabular-nums">Eq {splitLine('equipmentPct')}</span><span className={`tabular-nums ${totalClass(eqTotal)}`}>={eqTotal}%</span></div>}
           </div>
         )}
-        {/* Period cost from the %s — only the cost types this scope carries */}
-        <div className="text-[10px] text-fg-muted space-y-0.5 border-t border-fg-border/50 pt-2">
-          {hasLabour && <div className="flex justify-between"><span>Labour</span><span className="tabular-nums text-fg-heading">{Math.round(labCost / STD_LABOUR_RATE)}h · {formatCurrency(labCost)}</span></div>}
-          {hasMaterials && <div className="flex justify-between"><span>Materials</span><span className="tabular-nums">{formatCurrency(matCost)}</span></div>}
-          {hasSub && <div className="flex justify-between"><span>Subcontractor</span><span className="tabular-nums">{formatCurrency(subCost)}</span></div>}
-          {hasEquipment && <div className="flex justify-between"><span>Equipment</span><span className="tabular-nums">{formatCurrency(eqCost)}</span></div>}
-          <div className="flex justify-between font-medium text-fg-heading pt-0.5"><span>Period cost</span><span className="tabular-nums">{formatCurrency(periodCost)}</span></div>
-        </div>
+        {/* Period cost from the %s — only the cost types this scope carries (not for single type lines) */}
+        {!costType && (
+          <div className="text-[10px] text-fg-muted space-y-0.5 border-t border-fg-border/50 pt-2">
+            {hasLabour && <div className="flex justify-between"><span>Labour</span><span className="tabular-nums text-fg-heading">{Math.round(labCost / STD_LABOUR_RATE)}h · {formatCurrency(labCost)}</span></div>}
+            {hasMaterials && <div className="flex justify-between"><span>Materials</span><span className="tabular-nums">{formatCurrency(matCost)}</span></div>}
+            {hasSub && <div className="flex justify-between"><span>Subcontractor</span><span className="tabular-nums">{formatCurrency(subCost)}</span></div>}
+            {hasEquipment && <div className="flex justify-between"><span>Equipment</span><span className="tabular-nums">{formatCurrency(eqCost)}</span></div>}
+            <div className="flex justify-between font-medium text-fg-heading pt-0.5"><span>Period cost</span><span className="tabular-nums">{formatCurrency(periodCost)}</span></div>
+          </div>
+        )}
         <div className="flex justify-between items-center pt-1">
           <button onClick={onDelete} className="text-[10px] text-red-400/60 hover:text-red-400 uppercase tracking-wide">Remove</button>
           <div className="flex items-center gap-2">
@@ -2455,6 +2503,8 @@ export default function GanttPage() {
         }
         if (!seg) return null
         const cat = categories.find(c => c.category === popover.category)
+        const popSub = popover.subtaskId ? findSubtaskInTree(entry?.subtasks ?? [], popover.subtaskId) : undefined
+        const popCostType = popSub?.costType
         const labBudget = cat?.cost.labour ?? 0
         const matBudget = cat?.cost.material ?? 0
         const subBudget = cat?.cost.subcontractor ?? 0
@@ -2483,6 +2533,9 @@ export default function GanttPage() {
             schedDuration={durationOf(siblingSegs)}
             schedUnit={timeView === 'days' ? 'days' : 'weeks'}
             onSchedule={(s, d) => setTaskSchedule(popover.category, s, d, popover.subtaskId)}
+            costType={popCostType}
+            typeBudgetRev={popCostType ? (cat?.rev?.[popCostType] ?? 0) : 0}
+            typeBudgetCost={popCostType ? (cat?.cost?.[popCostType] ?? 0) : 0}
           />
         )
       })()}
