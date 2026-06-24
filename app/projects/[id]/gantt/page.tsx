@@ -1185,9 +1185,10 @@ export default function GanttPage() {
   // type's budget and feeding the forecast. The category's own segments are cleared so the parent becomes a
   // no-$ timeframe summary. Budgets sum to the category total, so the forecast is preserved on split; the
   // foreman then schedules each type line independently. Opt-in: unsplit categories are untouched.
+  // Fixed line order (Andrew iter2 §2): Materials, Labour, Subcontractor (then Equipment) — NEVER alphabetical.
   const TYPE_LINES: { key: 'labour' | 'material' | 'subcontractor' | 'equipment'; label: string }[] = [
-    { key: 'labour', label: 'Labour' },
     { key: 'material', label: 'Materials' },
+    { key: 'labour', label: 'Labour' },
     { key: 'subcontractor', label: 'Subcontractor' },
     { key: 'equipment', label: 'Equipment' },
   ]
@@ -1614,7 +1615,7 @@ export default function GanttPage() {
     i > 0 && (timeView === 'weeks' || weekBoundaryIndices.has(i))
   const colBorderLeft = (i: number): string | undefined =>
     i === 0 ? undefined
-    : isWeekBoundary(i) ? '1.5px solid #000000'
+    : isWeekBoundary(i) ? '2.5px solid #000000'   // heavy Friday→Monday anchor (Andrew iter2 §1)
     : '1px solid #D3D3D3'
 
   if (!project) return (
@@ -1735,6 +1736,7 @@ export default function GanttPage() {
     isSubtask?: boolean,
     trailingLabel?: string,
     ghostSegs?: GanttSegment[],
+    typeColour?: string,   // distinct discipline colour for Materials/Labour/Subcontractor lines (iter2 §1)
   ) => {
     // Column just past the last dated bar — where a trailing description sits (RHS of the grid line).
     const datedEnds = segs.filter(s => s.startDate && s.endDate).map(s => columns.findIndex(c => toISODate(c) === s.endDate)).filter(idx => idx >= 0)
@@ -1794,7 +1796,7 @@ export default function GanttPage() {
             const endIdx = columns.findIndex(c => toISODate(c) === seg.endDate)
             const isStart = i === startIdx || (startIdx === -1 && i === 0)
             const isEnd = i === endIdx || (endIdx === -1 && i === columns.length - 1)
-            const colour = isSubtask ? subtaskBarColour(crewType) : barColour(seg, crewType)
+            const colour = typeColour ?? (isSubtask ? subtaskBarColour(crewType) : barColour(seg, crewType))
             const weeklyRev = seg.weekCount > 0 ? seg.revenueAllocation / seg.weekCount : 0
             const weeklyCost = seg.weekCount > 0 ? seg.costAllocation / seg.weekCount : 0
             const marg = seg.revenueAllocation > 0 ? ((seg.revenueAllocation - seg.costAllocation) / seg.revenueAllocation * 100).toFixed(1) : '0'
@@ -2443,7 +2445,7 @@ export default function GanttPage() {
                             </span>
                           )}
                         </td>
-                        {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true)}
+                        {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true, undefined, undefined, subtask.costType ? COST_TYPE_META[subtask.costType].colour : undefined)}
                       </tr>
                     ))}
                   </>
