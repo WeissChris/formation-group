@@ -1398,18 +1398,31 @@ export default function GanttPage() {
 
   // ── Per-week totals ───────────────────────────────────────────────────────
 
+  // Per-week revenue/cost, plus the week's revenue split by type (Andrew: define each week's revenue source
+  // by Materials/Labour/Subcontractor). A segment's weekly revenue is apportioned by its category's
+  // revenue-by-type ratio.
+  const catByName = new Map(categories.map(c => [c.category, c]))
   const weekTotals = columns.map(col => {
     const iso = toISODate(col)
     let rev = 0, cost = 0
+    const revType = { labour: 0, material: 0, subcontractor: 0, equipment: 0 }
     for (const entry of entries) {
+      const cat = catByName.get(entry.category)
       for (const seg of entry.segments) {
         if (seg.startDate && seg.endDate && iso >= seg.startDate && iso <= seg.endDate && seg.weekCount > 0) {
-          rev += seg.revenueAllocation / seg.weekCount
+          const wRev = seg.revenueAllocation / seg.weekCount
+          rev += wRev
           cost += seg.costAllocation / seg.weekCount
+          if (cat && cat.budgetedRevenue > 0) {
+            revType.labour += wRev * (cat.rev.labour / cat.budgetedRevenue)
+            revType.material += wRev * (cat.rev.material / cat.budgetedRevenue)
+            revType.subcontractor += wRev * (cat.rev.subcontractor / cat.budgetedRevenue)
+            revType.equipment += wRev * (cat.rev.equipment / cat.budgetedRevenue)
+          }
         }
       }
     }
-    return { rev, cost }
+    return { rev, cost, revType }
   })
 
   // Collapse the cash-flow strip into runs: consecutive columns within the SAME week carrying the same
@@ -1417,15 +1430,16 @@ export default function GanttPage() {
   // figure into one wide, readable cell per week; in weeks view each column is its own week, so every
   // run stays a single cell (unchanged).
   const footerRuns = (() => {
-    const runs: { startIdx: number; span: number; rev: number; cost: number; weekKey: string }[] = []
+    type Run = { startIdx: number; span: number; rev: number; cost: number; weekKey: string; revType: typeof weekTotals[number]['revType'] }
+    const runs: Run[] = []
     for (let i = 0; i < weekTotals.length; i++) {
-      const { rev, cost } = weekTotals[i]
+      const { rev, cost, revType } = weekTotals[i]
       const weekKey = toISODate(snapToFriday(columns[i]))
       const last = runs[runs.length - 1]
       if (last && last.rev === rev && last.cost === cost && last.weekKey === weekKey) {
         last.span++
       } else {
-        runs.push({ startIdx: i, span: 1, rev, cost, weekKey })
+        runs.push({ startIdx: i, span: 1, rev, cost, weekKey, revType })
       }
     }
     return runs
@@ -2013,8 +2027,17 @@ export default function GanttPage() {
                 {footerRuns.map((run, ri) => {
                   const net = run.rev - run.cost
                   const hasActivity = run.rev > 0 || run.cost > 0
+                  // Revenue source for the week, by type (Andrew) — shown on hover so the cell stays compact.
+                  const rt = run.revType
+                  const srcParts = [
+                    rt.labour > 0 ? `Labour ${formatCurrency(rt.labour)}` : '',
+                    rt.material > 0 ? `Materials ${formatCurrency(rt.material)}` : '',
+                    rt.subcontractor > 0 ? `Subcontractor ${formatCurrency(rt.subcontractor)}` : '',
+                    rt.equipment > 0 ? `Equipment ${formatCurrency(rt.equipment)}` : '',
+                  ].filter(Boolean)
+                  const srcTitle = showRevenue && srcParts.length ? `Revenue this week — ${srcParts.join(' · ')}` : undefined
                   return (
-                    <th key={ri} colSpan={run.span} style={{ width: run.span * CELL_W, borderLeft: colBorderLeft(run.startIdx), ...stickyTop(0) }}
+                    <th key={ri} colSpan={run.span} title={srcTitle} style={{ width: run.span * CELL_W, borderLeft: colBorderLeft(run.startIdx), ...stickyTop(0) }}
                       className="bg-fg-bg border-b border-r border-fg-border/30 px-1 align-middle overflow-hidden font-normal">
                       {hasActivity && (
                         <div className="text-center leading-tight whitespace-nowrap">
