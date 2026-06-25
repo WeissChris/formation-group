@@ -29,11 +29,27 @@ describe('plannedByWeek', () => {
     expect(m.get('2026-08-21')?.rev).toBeCloseTo(19746 / 3)
   })
 
-  it('does NOT count manual (non-costType) subtasks', () => {
+  it('counts a plain (untyped) subtask as a Labour claim — Andrew iter6', () => {
     const m = plannedByWeek([entry({
-      subtasks: [{ id: 'note', label: 'Set out', segments: [seg('2026-08-07', '2026-08-07', 1, 5000)] }],
+      subtasks: [{ id: 'rfw', label: 'Remove for works', segments: [seg('2026-08-07', '2026-08-07', 1, 5000)] }],
     })], fridays)
-    expect(sum(m)).toBeCloseTo(0)
+    expect(sum(m)).toBeCloseTo(5000)
+  })
+
+  it('drops the category bar once a nested leaf is claimed (no double-count)', () => {
+    const m = plannedByWeek([entry({
+      segments: [seg('2026-08-07', '2026-08-21', 3, 9000)],   // category bar
+      subtasks: [{ id: 'rfw', label: 'Remove for works', segments: [seg('2026-08-07', '2026-08-07', 1, 5000)] }],
+    })], fridays)
+    expect(sum(m)).toBeCloseTo(5000)   // the claimed subtask, NOT 9000 + 5000
+  })
+
+  it('keeps the category bar when subtasks carry no claim', () => {
+    const m = plannedByWeek([entry({
+      segments: [seg('2026-08-07', '2026-08-21', 3, 9000)],
+      subtasks: [{ id: 'note', label: 'note', segments: [] }],   // no claim
+    })], fridays)
+    expect(sum(m)).toBeCloseTo(9000)
   })
 })
 
@@ -64,7 +80,8 @@ describe('claimLeafSegments (leaf roll-up, iter5)', () => {
     expect(leaves.map(l => l.seg.revenueAllocation)).toEqual([6000])
   })
 
-  it('skips manual leaves with no costType', () => {
-    expect(claimLeafSegments([{ id: 'n', label: 'note', segments: [seg('2026-08-07', '2026-08-07', 1, 5000)] }])).toEqual([])
+  it('treats an untyped leaf as a Labour claim (iter6)', () => {
+    const leaves = claimLeafSegments([{ id: 'n', label: 'Remove for works', segments: [seg('2026-08-07', '2026-08-07', 1, 5000)] }])
+    expect(leaves.map(l => [l.costType, l.seg.revenueAllocation])).toEqual([['labour', 5000]])
   })
 })

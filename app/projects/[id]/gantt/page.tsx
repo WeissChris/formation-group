@@ -2525,22 +2525,24 @@ export default function GanttPage() {
                           </div>
                         </td>
                         <td className="border-r border-fg-border bg-fg-bg px-2 text-right text-[10px] font-light text-fg-muted/70 tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(1) }}>
-                          {subtask.costType && (() => {
+                          {(() => {
                             // Live roll-up (Andrew iter6 Phase 2): the line's value = the sum of its leaf
-                            // claims (its own bar if it's a leaf), recomputed every render. Direct type lines
-                            // also show the category budget as the denominator; nested items show just claimed.
+                            // claims, recomputed every render. Untyped subtasks count as Labour. Explicit
+                            // direct type lines also show the category budget as the denominator.
+                            const effType = subtask.costType ?? 'labour'
                             const leaves = claimLeafSegments([subtask])
                             const claimedRev = leaves.reduce((s, c) => s + (c.seg.revenueAllocation || 0), 0)
                             const claimedCost = leaves.reduce((s, c) => s + (c.seg.costAllocation || 0), 0)
+                            if (!subtask.costType && claimedRev <= 0) return null   // untyped + unclaimed → quiet
                             const claimed = showRevenue ? claimedRev : claimedCost
-                            const budget = showRevenue ? (cat.rev?.[subtask.costType] ?? 0) : (cat.cost[subtask.costType] ?? 0)
-                            const isDirect = depth === 0
+                            const budget = showRevenue ? (cat.rev?.[effType] ?? 0) : (cat.cost[effType] ?? 0)
+                            const isDirect = depth === 0 && !!subtask.costType
                             const over = isDirect && claimed - budget > 0.5
                             return (
                               <span className={`gantt-finance ${over ? 'text-amber-600' : ''}`}
-                                title={`${subtask.costType} — claimed ${formatCurrency(claimedRev)}${isDirect ? ` of ${formatCurrency(showRevenue ? (cat.rev?.[subtask.costType] ?? 0) : (cat.cost[subtask.costType] ?? 0))} budget` : ''}${subtask.costType === 'labour' ? ` · ${Math.round(claimedCost / STD_LABOUR_RATE)}h` : ''}`}>
+                                title={`${effType} — claimed ${formatCurrency(claimedRev)}${isDirect ? ` of ${formatCurrency(budget)} budget` : ''}${effType === 'labour' ? ` · ${Math.round(claimedCost / STD_LABOUR_RATE)}h` : ''}`}>
                                 <span className="text-fg-heading">{formatCurrency(claimed)}</span>{isDirect ? <span className="text-fg-muted/50"> / {formatCurrency(budget)}</span> : null}
-                                {subtask.costType === 'labour' ? <span className="text-fg-muted/50"> · {Math.round(claimedCost / STD_LABOUR_RATE)}h</span> : null}
+                                {effType === 'labour' ? <span className="text-fg-muted/50"> · {Math.round(claimedCost / STD_LABOUR_RATE)}h</span> : null}
                               </span>
                             )
                           })()}
@@ -2642,7 +2644,10 @@ export default function GanttPage() {
         if (!seg) return null
         const cat = categories.find(c => c.category === popover.category)
         const popSub = popover.subtaskId ? findSubtaskInTree(entry?.subtasks ?? [], popover.subtaskId) : undefined
-        const popCostType = popSub?.costType
+        // Any nested subtask is claimable; one with no discipline defaults to Labour/hours (Andrew iter6),
+        // so it opens the hours editor instead of the locked per-period % grid. The category's own bar
+        // (no subtaskId) keeps the 4-type allocation grid.
+        const popCostType = popSub ? (popSub.costType ?? 'labour') : undefined
         // "What am I editing" context + this discipline's claimed-elsewhere total (for an accurate Remaining).
         const contextLabel = popSub ? `${popover.category} › ${popSub.label}` : popover.category
         const typeClaimedElsewhere = popCostType && entry

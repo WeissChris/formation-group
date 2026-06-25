@@ -15,19 +15,24 @@ export function claimLeafSegments(subtasks: GanttSubtask[], parentLabel = ''): {
     const label = node.label || parentLabel
     if (node.subtasks?.length) {
       out.push(...claimLeafSegments(node.subtasks, label))   // branch → roll up its leaves, skip own segs
-    } else if (node.costType) {
-      for (const seg of node.segments) out.push({ costType: node.costType, seg, label })
+    } else {
+      // EVERY nested leaf is claimable (Andrew iter6): one with no discipline defaults to a Labour/hours
+      // claim, so a plain subtask added straight under a category can be claimed in hours and still counts.
+      const costType = node.costType ?? 'labour'
+      for (const seg of node.segments) out.push({ costType, seg, label })
     }
   }
   return out
 }
 
-// Every revenue-bearing segment of an entry: its own (unsplit-category) segments plus the leaf claims from
-// the subtask tree. The single source of truth for all forecast readers, so the cash-flow strip, the
-// fortnight/invoice totals and the persisted forecast can never disagree (the iter4/iter5 bug class).
+// Every revenue-bearing segment of an entry: the leaf claims from the subtask tree, plus the category's own
+// (unsplit) bar — but the own bar is dropped once any nested leaf actually carries a claim, so a parent is a
+// pure roll-up of its claimed children and never double-counts (single source of truth for all readers).
 export function entryClaimSegments(entry: GanttEntry): { costType?: CostTypeKey; seg: GanttSegment; label: string }[] {
-  const own = entry.segments.map(seg => ({ seg, label: seg.label ?? '' }))
-  return [...own, ...claimLeafSegments(entry.subtasks ?? [])]
+  const leaves = claimLeafSegments(entry.subtasks ?? [])
+  const leafClaimed = leaves.some(l => l.seg.startDate && l.seg.endDate && (l.seg.revenueAllocation || 0) > 0)
+  const own = leafClaimed ? [] : entry.segments.map(seg => ({ seg, label: seg.label ?? '' }))
+  return [...own, ...leaves]
 }
 
 // Planned revenue + cost per week (keyed by the week's Friday ISO). A segment contributes
