@@ -1777,7 +1777,7 @@ export default function GanttPage() {
 
   // Sticky-top header: the cashflow + date rows stay put while the grid scrolls down. Fixed row heights
   // give exact cumulative `top` offsets. Corner cells (fixed column AND header) merge stickyL + top.
-  const H_CASH = 44, H_MONTH = 28, H_DOW = 20
+  const H_CASH = 54, H_MONTH = 28, H_DOW = 20   // taller: the cash-flow row now lists revenue by source/wk
   const topMonth = H_CASH
   const topDow = H_CASH + H_MONTH
   const topDate = H_CASH + H_MONTH + (timeView === 'days' ? H_DOW : 0)
@@ -2270,10 +2270,9 @@ export default function GanttPage() {
               <tr className="gantt-finance" style={{ height: H_CASH }}>
                 <th colSpan={2} style={{ width: fixedColsWidth, ...stickyCorner(2, 0) }} className="bg-fg-bg border-b border-r border-fg-border px-3 align-middle text-left">
                   <div className="text-[10px] font-light tracking-architectural uppercase text-fg-muted">{showRevenue ? 'Weekly Cash Flow' : 'Weekly Cost'}</div>
-                  <div className="text-[8px] font-light text-fg-muted/50 mt-0.5">{showRevenue ? 'revenue · cost · net / wk · INV = fortnight invoice' : 'cost / wk'}</div>
+                  <div className="text-[8px] font-light text-fg-muted/50 mt-0.5">{showRevenue ? 'revenue by source / wk · M·L·S · INV = fortnight invoice' : 'cost / wk'}</div>
                 </th>
                 {footerRuns.map((run, ri) => {
-                  const net = run.rev - run.cost
                   const hasActivity = run.rev > 0 || run.cost > 0
                   // Revenue source for the week, by type (Andrew) — shown on hover so the cell stays compact.
                   const rt = run.revType
@@ -2288,17 +2287,24 @@ export default function GanttPage() {
                     <th key={ri} colSpan={run.span} title={srcTitle} style={{ width: run.span * CELL_W, borderLeft: colBorderLeft(run.startIdx), ...stickyTop(0) }}
                       className="bg-fg-bg border-b border-r border-fg-border/30 px-1 align-middle overflow-hidden font-normal">
                       <div className="text-center leading-tight whitespace-nowrap">
-                        {hasActivity && (
+                        {/* Revenue BY SOURCE, weekly (Andrew) — Materials / Labour / Subcontractor (+ Equip),
+                            each in its discipline colour. Supervisor view shows cost only. */}
+                        {hasActivity && showRevenue && (
                           <>
-                            {showRevenue && <div className="text-[10px] text-fg-heading/80 tabular-nums">{fmtK(run.rev)}</div>}
-                            <div className={`text-[10px] tabular-nums ${showRevenue ? 'text-fg-muted/50' : 'text-fg-heading/80'}`}>{fmtK(run.cost)}</div>
-                            {showRevenue && <div className={`text-[10px] font-medium tabular-nums ${net >= 0 ? 'text-green-600/90' : 'text-amber-600/90'}`}>{net >= 0 ? '+' : ''}{fmtK(net)}</div>}
+                            {rt.material > 0 && <div className="text-[9px] tabular-nums" style={{ color: COST_TYPE_META.material.colour }}>M {fmtK(rt.material)}</div>}
+                            {rt.labour > 0 && <div className="text-[9px] tabular-nums" style={{ color: COST_TYPE_META.labour.colour }}>L {fmtK(rt.labour)}</div>}
+                            {rt.subcontractor > 0 && <div className="text-[9px] tabular-nums" style={{ color: COST_TYPE_META.subcontractor.colour }}>S {fmtK(rt.subcontractor)}</div>}
+                            {rt.equipment > 0 && <div className="text-[9px] tabular-nums" style={{ color: COST_TYPE_META.equipment.colour }}>E {fmtK(rt.equipment)}</div>}
                           </>
                         )}
-                        {/* Fortnight invoice total — embedded in the cash-flow row at every 2-week boundary,
-                            across the whole horizon, with a $0 placeholder (Andrew iter2 §4 / iter3). */}
+                        {hasActivity && !showRevenue && (
+                          <div className="text-[10px] text-fg-heading/80 tabular-nums">{fmtK(run.cost)}</div>
+                        )}
+                        {/* Fortnight invoice total — highlighted yellow at every 2-week boundary across the
+                            whole horizon, with a $0 placeholder (Andrew). */}
                         {showRevenue && invoiceByFri.has(run.weekKey) && (
-                          <div className="mt-0.5 inline-block px-1 border border-fg-heading bg-fg-heading/10 rounded-sm text-[9px] font-semibold text-fg-heading tabular-nums"
+                          <div className="mt-0.5 inline-block px-1 rounded-sm text-[9px] font-bold tabular-nums"
+                            style={{ background: '#FDE047', border: '1px solid #CA8A04', color: '#713F12' }}
                             title={`Fortnight invoice total — ${formatCurrency(invoiceByFri.get(run.weekKey)!)}`}>
                             INV {fmtK(invoiceByFri.get(run.weekKey)!)}
                           </div>
