@@ -403,8 +403,8 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
                 className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
             </div>
             <div className="text-[10px] text-fg-muted space-y-0.5 border-t border-fg-border/50 pt-2">
-              <div className="flex justify-between"><span>Totals for this claim</span><span className="tabular-nums text-fg-heading">{formatCurrency(seg.revenueAllocation || 0)}{costType === 'labour' ? ` · ${Math.round((seg.costAllocation || 0) / STD_LABOUR_RATE)}h` : ''}</span></div>
-              <div className="flex justify-between"><span>Remaining</span><span className={`tabular-nums ${claimRemaining < -0.5 ? 'text-amber-600' : 'text-fg-muted'}`}>{formatCurrency(claimRemaining)}{costType === 'labour' ? ` · ${Math.round(remainingHours)}h` : ''}</span></div>
+              <div className="flex justify-between"><span>Totals for this claim</span><span className="tabular-nums text-fg-heading">{costType === 'labour' ? `${Math.round((seg.costAllocation || 0) / STD_LABOUR_RATE)}h` : formatCurrency(seg.revenueAllocation || 0)}</span></div>
+              <div className="flex justify-between"><span>Remaining</span><span className={`tabular-nums ${claimRemaining < -0.5 ? 'text-amber-600' : 'text-fg-muted'}`}>{costType === 'labour' ? `${Math.round(remainingHours)}h` : formatCurrency(claimRemaining)}</span></div>
             </div>
           </>
         )}
