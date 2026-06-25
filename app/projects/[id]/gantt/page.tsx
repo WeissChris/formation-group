@@ -27,7 +27,7 @@ import { readLineItemRevenue, getEstimateContract, lineContractValue, addLineCos
 import { normalizedPcts, rebalancedPcts, datedPeriodCount } from '@/lib/ganttAllocation'
 import { labourWorkingDays } from '@/lib/ganttSchedule'
 import { mapSubtaskTree, findSubtaskInTree, removeSubtaskFromTree, addChildSubtask, flattenSubtasks } from '@/lib/ganttSubtasks'
-import { plannedByWeek, entryClaimSegments } from '@/lib/ganttForecast'
+import { plannedByWeek, entryClaimSegments, claimLeafSegments } from '@/lib/ganttForecast'
 import type { Project, Estimate, GanttEntry, GanttSegment, GanttSubtask, WeeklyRevenue } from '@/types'
 import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react'
 
@@ -2468,6 +2468,13 @@ export default function GanttPage() {
                       <td className="border-r border-fg-border bg-fg-bg px-2 py-1.5 text-right text-[11px] font-light text-fg-muted tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(1) }}>
                         <div className="gantt-finance">
                           <div className="text-fg-heading" title={showRevenue ? 'Contract revenue' : 'Budgeted cost'}>{formatCurrency(showRevenue ? cat.budgetedRevenue : cat.budgetedCost)}</div>
+                          {/* Live category roll-up (Andrew iter6) — sum of every leaf claim under this category,
+                              so the top tier reflects the nested inputs in real time. Shown once split/scheduled. */}
+                          {split && (() => {
+                            const segs = entryClaimSegments(entry)
+                            const claimed = segs.reduce((s, c) => s + (showRevenue ? (c.seg.revenueAllocation || 0) : (c.seg.costAllocation || 0)), 0)
+                            return <div className="text-[9px] text-fg-muted/70" title="Claimed so far (rolled up from all nested lines)">claimed {formatCurrency(claimed)}</div>
+                          })()}
                           <div className="mt-px flex flex-wrap justify-end gap-x-1.5 gap-y-0 text-[9px] leading-tight">
                             {COST_TYPE_KEYS.map(k => cat.cost[k] > 0 ? (
                               <span key={k} className="whitespace-nowrap" title={`${COST_TYPE_META[k].label}: ${formatCurrency(cat.cost[k])}${k === 'labour' ? ` · ${Math.round(cat.cost[k] / STD_LABOUR_RATE)}h` : ''}`}>
@@ -2515,12 +2522,25 @@ export default function GanttPage() {
                           </div>
                         </td>
                         <td className="border-r border-fg-border bg-fg-bg px-2 text-right text-[10px] font-light text-fg-muted/70 tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(1) }}>
-                          {subtask.costType && (
-                            <span className="gantt-finance" title={subtask.costType === 'labour' ? 'Labour budget (claimed in hours)' : `${subtask.costType} budget (claimed in %)`}>
-                              {formatCurrency(showRevenue ? (cat.rev?.[subtask.costType] ?? 0) : (cat.cost[subtask.costType] ?? 0))}
-                              {subtask.costType === 'labour' ? ` · ${Math.round((cat.cost.labour ?? 0) / STD_LABOUR_RATE)}h` : ''}
-                            </span>
-                          )}
+                          {subtask.costType && (() => {
+                            // Live roll-up (Andrew iter6 Phase 2): the line's value = the sum of its leaf
+                            // claims (its own bar if it's a leaf), recomputed every render. Direct type lines
+                            // also show the category budget as the denominator; nested items show just claimed.
+                            const leaves = claimLeafSegments([subtask])
+                            const claimedRev = leaves.reduce((s, c) => s + (c.seg.revenueAllocation || 0), 0)
+                            const claimedCost = leaves.reduce((s, c) => s + (c.seg.costAllocation || 0), 0)
+                            const claimed = showRevenue ? claimedRev : claimedCost
+                            const budget = showRevenue ? (cat.rev?.[subtask.costType] ?? 0) : (cat.cost[subtask.costType] ?? 0)
+                            const isDirect = depth === 0
+                            const over = isDirect && claimed - budget > 0.5
+                            return (
+                              <span className={`gantt-finance ${over ? 'text-amber-600' : ''}`}
+                                title={`${subtask.costType} — claimed ${formatCurrency(claimedRev)}${isDirect ? ` of ${formatCurrency(showRevenue ? (cat.rev?.[subtask.costType] ?? 0) : (cat.cost[subtask.costType] ?? 0))} budget` : ''}${subtask.costType === 'labour' ? ` · ${Math.round(claimedCost / STD_LABOUR_RATE)}h` : ''}`}>
+                                <span className="text-fg-heading">{formatCurrency(claimed)}</span>{isDirect ? <span className="text-fg-muted/50"> / {formatCurrency(budget)}</span> : null}
+                                {subtask.costType === 'labour' ? <span className="text-fg-muted/50"> · {Math.round(claimedCost / STD_LABOUR_RATE)}h</span> : null}
+                              </span>
+                            )
+                          })()}
                         </td>
                         {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true, undefined, undefined, subtask.costType ? COST_TYPE_META[subtask.costType].colour : undefined)}
                       </tr>
