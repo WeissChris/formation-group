@@ -27,7 +27,7 @@ import { readLineItemRevenue, getEstimateContract, lineContractValue, addLineCos
 import { normalizedPcts, rebalancedPcts, datedPeriodCount } from '@/lib/ganttAllocation'
 import { labourWorkingDays } from '@/lib/ganttSchedule'
 import { mapSubtaskTree, findSubtaskInTree, removeSubtaskFromTree, addChildSubtask, flattenSubtasks } from '@/lib/ganttSubtasks'
-import { plannedByWeek } from '@/lib/ganttForecast'
+import { plannedByWeek, entryClaimSegments } from '@/lib/ganttForecast'
 import type { Project, Estimate, GanttEntry, GanttSegment, GanttSubtask, WeeklyRevenue } from '@/types'
 import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react'
 
@@ -268,9 +268,11 @@ interface SegEditProps {
   costType?: 'labour' | 'material' | 'subcontractor' | 'equipment'
   typeBudgetRev?: number
   typeBudgetCost?: number
+  typeClaimedElsewhere?: number   // sum of this discipline's OTHER leaf claims in the category (for Remaining)
+  contextLabel?: string           // read-only "what am I editing" label at the top of the modal (iter5 §1)
 }
 
-function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBudget, equipmentBudget, onUpdate, onDelete, onConvertToMilestone, onClose, anchorRef, canSchedule, schedStart, schedDuration, schedUnit, onSchedule, costType, typeBudgetRev = 0, typeBudgetCost = 0 }: SegEditProps) {
+function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBudget, equipmentBudget, onUpdate, onDelete, onConvertToMilestone, onClose, anchorRef, canSchedule, schedStart, schedDuration, schedUnit, onSchedule, costType, typeBudgetRev = 0, typeBudgetCost = 0, typeClaimedElsewhere = 0, contextLabel }: SegEditProps) {
   // The foreman types this period's material/equipment % (0–100) and it updates LIVE: the other dated
   // periods auto-balance to fill the remainder so each resource always sums to 100%, and the totals/costs
   // recompute as you type — no Apply step. The breakdown below shows every period's share moving.
@@ -303,8 +305,9 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
     }
     onUpdate({ ...seg, revenueAllocation: newRev, costAllocation: newCost })
   }
-  const claimedOther = siblingSegs.filter(s => s.id !== seg.id).reduce((s, x) => s + (x.revenueAllocation || 0), 0)
-  const claimRemaining = typeBudgetRev - claimedOther - (seg.revenueAllocation || 0)
+  // Remaining (iter5) = this discipline's budget − everything already claimed elsewhere in the category
+  // (other type-line leaves + this scope's other periods) − this claim. So it tracks the category total.
+  const claimRemaining = typeBudgetRev - typeClaimedElsewhere - (seg.revenueAllocation || 0)
 
   // Push the current state up immediately so the parent auto-balances + recomputes. The just-changed
   // field is passed as an override (its useState hasn't committed yet on this keystroke).
@@ -352,10 +355,16 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
       className="fixed z-50 bg-fg-bg border border-fg-border shadow-xl p-4 w-72"
       style={{ top, left }}
     >
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-1">
         <span className="text-[10px] font-light tracking-architectural uppercase text-fg-muted">Work period allocation</span>
         <button onClick={onClose}><X className="w-3 h-3 text-fg-muted" /></button>
       </div>
+      {/* Read-only context: exactly which category / nested line this claim belongs to (Andrew iter5 §1). */}
+      {contextLabel && (
+        <div className="mb-3 px-2 py-1 border-l-2 border-fg-heading/40 bg-fg-card/20 text-[11px] font-light text-fg-heading truncate" title={contextLabel}>
+          {contextLabel}
+        </div>
+      )}
       <div className="space-y-3">
         <div>
           <label className="text-2xs font-light text-fg-muted block mb-1">Label (optional)</label>
@@ -1243,7 +1252,20 @@ export default function GanttPage() {
     if (parentSubtaskId) {
       const parent = findSubtaskInTree(entry.subtasks ?? [], parentSubtaskId)
       newSubtask.label = `Sub-task ${(parent?.subtasks?.length ?? 0) + 1}`
-      updateEntry({ ...entry, subtasks: addChildSubtask(entry.subtasks ?? [], parentSubtaskId, newSubtask) })
+      // Nested items inherit the parent's discipline (iter5) — a child of a Labour line is a Labour input
+      // (hours), of a Materials/Sub line a % input — so it can be claimed directly with no "split".
+      if (parent?.costType) newSubtask.costType = parent.costType
+      // If the parent is a claim leaf (its own bar, no children yet), MOVE its schedule + claim onto this
+      // first child so the parent rolls up to the same total instead of dropping to $0 when you itemise.
+      const isFirstClaimChild = parent?.costType && (parent.subtasks?.length ?? 0) === 0 && parent.segments.length > 0
+      if (isFirstClaimChild && parent) {
+        newSubtask.segments = parent.segments
+        newSubtask.label = parent.label
+        const cleared = mapSubtaskTree(entry.subtasks ?? [], parentSubtaskId, st => ({ ...st, segments: [] }))
+        updateEntry({ ...entry, subtasks: addChildSubtask(cleared, parentSubtaskId, newSubtask) })
+      } else {
+        updateEntry({ ...entry, subtasks: addChildSubtask(entry.subtasks ?? [], parentSubtaskId, newSubtask) })
+      }
     } else {
       newSubtask.label = `Sub-task ${(entry.subtasks?.length ?? 0) + 1}`
       updateEntry({ ...entry, subtasks: [...(entry.subtasks ?? []), newSubtask] })
@@ -1334,13 +1356,10 @@ export default function GanttPage() {
       }
     }
     for (const entry of currentEntries) {
-      for (const seg of entry.segments) pushSeg(seg, `${entry.category}${seg.label ? ` — ${seg.label}` : ''} (Gantt)`)
-      // Auto-split Materials/Labour/Subcontractor lines carry their type's budget into the forecast (§3).
-      // Manual (non-type) subtasks still carry no budget. Split categories have cleared parent segments,
-      // so there's no double count.
-      for (const { st } of flattenSubtasks(entry.subtasks ?? [])) {
-        if (!st.costType) continue
-        for (const seg of st.segments) pushSeg(seg, `${entry.category} — ${st.label} (Gantt)`)
+      // Leaf-claim roll-up (iter5): unsplit bars + the leaf claims of the split/nested tree, so nested
+      // inputs at any depth reach the persisted forecast and never double-count a parent against its children.
+      for (const { seg, label } of entryClaimSegments(entry)) {
+        pushSeg(seg, `${entry.category}${label ? ` — ${label}` : ''} (Gantt)`)
       }
     }
     for (const e of rows) saveWeeklyRevenue(e)
@@ -1569,30 +1588,21 @@ export default function GanttPage() {
     const revType = { labour: 0, material: 0, subcontractor: 0, equipment: 0 }
     for (const entry of entries) {
       const cat = catByName.get(entry.category)
-      // Parent (unsplit) segments — apportion their revenue across types by the category's ratio.
-      for (const seg of entry.segments) {
+      // Every revenue-bearing segment: unsplit-category bars + leaf claims from the split/nested tree, so
+      // nested inputs at any depth land in the cash-flow (Andrew iter4/iter5). Type-line claims attribute
+      // straight to their discipline; an unsplit parent's revenue is apportioned by the category ratio.
+      for (const { costType, seg } of entryClaimSegments(entry)) {
         if (seg.startDate && seg.endDate && iso >= seg.startDate && iso <= seg.endDate && seg.weekCount > 0) {
           const wRev = seg.revenueAllocation / seg.weekCount
           rev += wRev
           cost += seg.costAllocation / seg.weekCount
-          if (cat && cat.budgetedRevenue > 0) {
+          if (costType) {
+            revType[costType] += wRev
+          } else if (cat && cat.budgetedRevenue > 0) {
             revType.labour += wRev * (cat.rev.labour / cat.budgetedRevenue)
             revType.material += wRev * (cat.rev.material / cat.budgetedRevenue)
             revType.subcontractor += wRev * (cat.rev.subcontractor / cat.budgetedRevenue)
             revType.equipment += wRev * (cat.rev.equipment / cat.budgetedRevenue)
-          }
-        }
-      }
-      // Auto-split type lines (Materials/Labour/Subcontractor) — the claim lives here for split categories,
-      // and the revenue IS that discipline. THIS is the row whose claims were going missing (Andrew iter4).
-      for (const { st } of flattenSubtasks(entry.subtasks ?? [])) {
-        if (!st.costType) continue
-        for (const seg of st.segments) {
-          if (seg.startDate && seg.endDate && iso >= seg.startDate && iso <= seg.endDate && seg.weekCount > 0) {
-            const wRev = seg.revenueAllocation / seg.weekCount
-            rev += wRev
-            cost += seg.costAllocation / seg.weekCount
-            revType[st.costType] += wRev
           }
         }
       }
@@ -1680,7 +1690,8 @@ export default function GanttPage() {
 
   // Accuracy check (Andrew): total the forecast figures and reconcile against the real contract, so you
   // can see at a glance whether work is still unscheduled (under-claiming) before invoicing.
-  const forecastRevenue = entries.reduce((s, e) => s + e.segments.reduce((ss, sg) => ss + (sg.revenueAllocation || 0), 0), 0)
+  // Scheduled forecast total — same leaf-claim source as the cash-flow so split/nested categories count too.
+  const forecastRevenue = entries.reduce((s, e) => s + entryClaimSegments(e).reduce((ss, c) => ss + (c.seg.revenueAllocation || 0), 0), 0)
   const unscheduledCats = categories.filter(c => {
     const e = entries.find(x => x.category === c.category)
     return !e || !e.segments.some(s => s.startDate && s.endDate)
@@ -2609,6 +2620,11 @@ export default function GanttPage() {
         const cat = categories.find(c => c.category === popover.category)
         const popSub = popover.subtaskId ? findSubtaskInTree(entry?.subtasks ?? [], popover.subtaskId) : undefined
         const popCostType = popSub?.costType
+        // "What am I editing" context + this discipline's claimed-elsewhere total (for an accurate Remaining).
+        const contextLabel = popSub ? `${popover.category} › ${popSub.label}` : popover.category
+        const typeClaimedElsewhere = popCostType && entry
+          ? entryClaimSegments(entry).filter(c => c.costType === popCostType && c.seg.id !== popover.segId).reduce((s, c) => s + (c.seg.revenueAllocation || 0), 0)
+          : 0
         const labBudget = cat?.cost.labour ?? 0
         const matBudget = cat?.cost.material ?? 0
         const subBudget = cat?.cost.subcontractor ?? 0
@@ -2640,6 +2656,8 @@ export default function GanttPage() {
             costType={popCostType}
             typeBudgetRev={popCostType ? (cat?.rev?.[popCostType] ?? 0) : 0}
             typeBudgetCost={popCostType ? (cat?.cost?.[popCostType] ?? 0) : 0}
+            typeClaimedElsewhere={typeClaimedElsewhere}
+            contextLabel={contextLabel}
           />
         )
       })()}
