@@ -308,6 +308,9 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
   // Remaining (iter5) = this discipline's budget − everything already claimed elsewhere in the category
   // (other type-line leaves + this scope's other periods) − this claim. So it tracks the category total.
   const claimRemaining = typeBudgetRev - typeClaimedElsewhere - (seg.revenueAllocation || 0)
+  // For Labour, Chris wants the Remaining counter in HOURS, not $ (iter6 polish). Convert the remaining
+  // revenue to cost via the type's rev/cost ratio, then to hours at the standard rate.
+  const remainingHours = typeBudgetRev > 0 ? (claimRemaining * (typeBudgetCost / typeBudgetRev)) / STD_LABOUR_RATE : 0
 
   // Push the current state up immediately so the parent auto-balances + recomputes. The just-changed
   // field is passed as an override (its useState hasn't committed yet on this keystroke).
@@ -401,7 +404,7 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
             </div>
             <div className="text-[10px] text-fg-muted space-y-0.5 border-t border-fg-border/50 pt-2">
               <div className="flex justify-between"><span>Totals for this claim</span><span className="tabular-nums text-fg-heading">{formatCurrency(seg.revenueAllocation || 0)}{costType === 'labour' ? ` · ${Math.round((seg.costAllocation || 0) / STD_LABOUR_RATE)}h` : ''}</span></div>
-              <div className="flex justify-between"><span>Remaining</span><span className={`tabular-nums ${claimRemaining < -0.5 ? 'text-amber-600' : 'text-fg-muted'}`}>{formatCurrency(claimRemaining)}</span></div>
+              <div className="flex justify-between"><span>Remaining</span><span className={`tabular-nums ${claimRemaining < -0.5 ? 'text-amber-600' : 'text-fg-muted'}`}>{costType === 'labour' ? `${Math.round(remainingHours)}h` : formatCurrency(claimRemaining)}</span></div>
             </div>
           </>
         )}
