@@ -270,9 +270,13 @@ interface SegEditProps {
   typeBudgetCost?: number
   typeClaimedElsewhere?: number   // sum of this discipline's OTHER leaf claims in the category (for Remaining)
   contextLabel?: string           // read-only "what am I editing" label at the top of the modal (iter5 §1)
+  // Discipline picker for a nested subtask: which types the category carries, + a setter. Lets the user mark
+  // a subtask Materials/Subcontractor (% claim) instead of the Labour/hours default.
+  availableTypes?: ('labour' | 'material' | 'subcontractor' | 'equipment')[]
+  onSetCostType?: (ct: 'labour' | 'material' | 'subcontractor' | 'equipment') => void
 }
 
-function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBudget, equipmentBudget, onUpdate, onDelete, onConvertToMilestone, onClose, anchorRef, canSchedule, schedStart, schedDuration, schedUnit, onSchedule, costType, typeBudgetRev = 0, typeBudgetCost = 0, typeClaimedElsewhere = 0, contextLabel }: SegEditProps) {
+function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBudget, equipmentBudget, onUpdate, onDelete, onConvertToMilestone, onClose, anchorRef, canSchedule, schedStart, schedDuration, schedUnit, onSchedule, costType, typeBudgetRev = 0, typeBudgetCost = 0, typeClaimedElsewhere = 0, contextLabel, availableTypes, onSetCostType }: SegEditProps) {
   // The foreman types this period's material/equipment % (0–100) and it updates LIVE: the other dated
   // periods auto-balance to fill the remainder so each resource always sums to 100%, and the totals/costs
   // recompute as you type — no Apply step. The breakdown below shows every period's share moving.
@@ -389,6 +393,21 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
                 onChange={e => { if (schedStart) { const n = parseInt(e.target.value); onSchedule(schedStart, Number.isFinite(n) ? n : 1) } }}
                 placeholder="1"
                 className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
+            </div>
+          </div>
+        )}
+        {/* Discipline picker for a nested subtask — Labour (hours) / Materials / Sub / Equip (%). */}
+        {availableTypes && availableTypes.length > 0 && (
+          <div>
+            <label className="text-2xs font-light text-fg-muted block mb-1">Type</label>
+            <div className="flex flex-wrap gap-1">
+              {availableTypes.map(t => (
+                <button key={t} onClick={() => onSetCostType?.(t)}
+                  title={t === 'labour' ? 'Claimed in hours' : 'Claimed in %'}
+                  className={`px-2 py-1 text-[10px] uppercase tracking-wide border transition-colors ${costType === t ? 'border-fg-heading text-fg-heading' : 'border-fg-border text-fg-muted hover:text-fg-heading'}`}>
+                  {COST_TYPE_META[t].label}
+                </button>
+              ))}
             </div>
           </div>
         )}
@@ -1285,6 +1304,19 @@ export default function GanttPage() {
     const entry = entries.find(e => e.category === category)
     if (!entry) return
     updateEntry({ ...entry, subtasks: removeSubtaskFromTree(entry.subtasks ?? [], subtaskId) })
+  }
+
+  // Set a nested subtask's discipline (Labour = hours, Materials/Sub = %). Changing the discipline resets the
+  // claim value (the unit changes) but keeps the schedule; re-selecting the current one just makes it explicit.
+  const handleSetSubtaskCostType = (category: string, subtaskId: string, costType: 'labour' | 'material' | 'subcontractor' | 'equipment') => {
+    const entry = entries.find(e => e.category === category)
+    if (!entry) return
+    const updated = mapSubtaskTree(entry.subtasks ?? [], subtaskId, st => {
+      const effective = st.costType ?? 'labour'
+      if (effective === costType) return { ...st, costType }   // same discipline → keep the claim
+      return { ...st, costType, segments: st.segments.map(s => ({ ...s, revenueAllocation: 0, costAllocation: 0 })) }
+    })
+    updateEntry({ ...entry, subtasks: updated })
   }
 
   const toggleCollapse = (category: string) => {
@@ -2659,6 +2691,8 @@ export default function GanttPage() {
         const typeClaimedElsewhere = popCostType && entry
           ? entryClaimSegments(entry).filter(c => c.costType === popCostType && c.seg.id !== popover.segId).reduce((s, c) => s + (c.seg.revenueAllocation || 0), 0)
           : 0
+        // Discipline picker — only for subtasks, offering the cost types the category actually carries.
+        const availableTypes = popSub ? COST_TYPE_KEYS.filter(k => (cat?.cost[k] ?? 0) > 0) : undefined
         const labBudget = cat?.cost.labour ?? 0
         const matBudget = cat?.cost.material ?? 0
         const subBudget = cat?.cost.subcontractor ?? 0
@@ -2669,7 +2703,7 @@ export default function GanttPage() {
           : (entry?.segments ?? [])
         return (
           <SegmentPopover
-            key={`${popover.subtaskId ?? 'main'}-${popover.segId}`}
+            key={`${popover.subtaskId ?? 'main'}-${popover.segId}-${popCostType ?? ''}`}
             seg={seg}
             siblingSegs={siblingSegs}
             labourBudget={labBudget}
@@ -2692,6 +2726,8 @@ export default function GanttPage() {
             typeBudgetCost={popCostType ? (cat?.cost?.[popCostType] ?? 0) : 0}
             typeClaimedElsewhere={typeClaimedElsewhere}
             contextLabel={contextLabel}
+            availableTypes={availableTypes}
+            onSetCostType={popover.subtaskId ? (ct => handleSetSubtaskCostType(popover.category, popover.subtaskId!, ct)) : undefined}
           />
         )
       })()}
