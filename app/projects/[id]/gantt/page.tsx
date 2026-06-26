@@ -791,14 +791,8 @@ export default function GanttPage() {
     setCategoryOrder(order)
     try { localStorage.setItem(`fg_gantt_order_${id}`, JSON.stringify(order)) } catch { /* ignore */ }
   }
-  const moveCategory = (catName: string, dir: -1 | 1) => {
-    const order = categories.map(c => c.category)
-    const i = order.indexOf(catName); const j = i + dir
-    if (i < 0 || j < 0 || j >= order.length) return
-    ;[order[i], order[j]] = [order[j], order[i]]
-    persistCategoryOrder(order)
-  }
   // Drag-and-drop reorder (Andrew §2 "pick up and carry"): drop `from` onto `to` → `from` lands before it.
+  // The grab handle is the only reorder control now (the up/down arrows were removed).
   const reorderCategoryBefore = (from: string, to: string) => {
     if (from === to) return
     const order = categories.map(c => c.category)
@@ -2448,22 +2442,28 @@ export default function GanttPage() {
                 return (
                   <>
                     {/* ── Category row ── */}
-                    <tr key={cat.category} className={`border-b border-fg-border/40 group ${dragCat && dragCat !== cat.category ? 'hover:border-t-2 hover:border-t-fg-heading' : ''}`} style={{ height: 30 }}
+                    <tr key={cat.category} className={`border-b border-fg-border/40 group ${dragCat && dragCat !== cat.category ? 'hover:border-t-2 hover:border-t-fg-heading' : ''}`}
                       onDragOver={dragCat ? (e => e.preventDefault()) : undefined}
                       onDrop={dragCat ? (() => { reorderCategoryBefore(dragCat, cat.category); setDragCat(null) }) : undefined}>
-                      {/* Category label */}
-                      <td className="border-r border-fg-border bg-fg-bg px-3 py-2 text-xs font-light text-fg-heading whitespace-nowrap align-middle" style={{ width: COL_CATEGORY, ...stickyL(0) }}>
-                        <div className="flex items-center gap-1.5">
+                      {/* Category label — grab handle far left (reorder), + add-subtask far right (by totals) */}
+                      <td className="border-r border-fg-border bg-fg-bg pl-1 pr-1.5 py-1.5 text-xs font-light text-fg-heading align-middle" style={{ width: COL_CATEGORY, ...stickyL(0) }}>
+                        <div className="flex items-start gap-1">
+                          {/* Far-left drag handle (BuildXact-style) — drag to reorder; replaces the up/down arrows */}
+                          <span draggable
+                            onDragStart={() => setDragCat(cat.category)}
+                            onDragEnd={() => setDragCat(null)}
+                            title="Drag to reorder"
+                            className="cursor-grab active:cursor-grabbing text-fg-muted/30 hover:text-fg-heading leading-none text-[12px] select-none flex-shrink-0 mt-px">⠿</span>
                           {hasSubtasks && (
-                            <button onClick={() => toggleCollapse(cat.category)} className="text-fg-muted hover:text-fg-heading transition-colors flex-shrink-0">
+                            <button onClick={() => toggleCollapse(cat.category)} className="text-fg-muted hover:text-fg-heading transition-colors flex-shrink-0 mt-px">
                               {isCollapsed
                                 ? <ChevronRight className="w-3 h-3" />
                                 : <ChevronDown className="w-3 h-3" />
                               }
                             </button>
                           )}
-                          <div className="flex flex-col min-w-0">
-                            <span className="truncate">{cat.category}</span>
+                          <div className="flex flex-col min-w-0 flex-1">
+                            <span className="break-words leading-tight">{cat.category}</span>
                             {scheduled && (
                               <span className="gantt-finance text-[10px] font-light tabular-nums flex flex-wrap gap-x-1.5 leading-tight">
                                 {labBudgetCat > 0 && <span title="Labour allocated across periods" className={labAlloc !== 100 ? 'text-amber-600' : 'text-fg-muted/50'}>L {labAlloc}%</span>}
@@ -2482,26 +2482,19 @@ export default function GanttPage() {
                               className="bg-transparent border-none outline-none text-[10px] font-light italic text-fg-muted/60 placeholder:text-fg-muted/25 hover:text-fg-heading focus:text-fg-heading w-full min-w-0 truncate"
                             />
                           </div>
-                          {/* Reorder (drag handle + arrows) + add-subtask buttons (hover) */}
-                          <div className="opacity-0 group-hover:opacity-100 ml-auto flex-shrink-0 flex items-center gap-0.5 transition-all">
-                            <span draggable
-                              onDragStart={() => setDragCat(cat.category)}
-                              onDragEnd={() => setDragCat(null)}
-                              title="Drag to reorder"
-                              className="cursor-grab active:cursor-grabbing text-fg-muted/40 hover:text-fg-heading leading-none text-[11px] px-0.5 select-none">⠿</span>
-                            <button onClick={() => moveCategory(cat.category, -1)} title="Move up"
-                              className="text-fg-muted/50 hover:text-fg-heading leading-none text-[11px] px-0.5">▲</button>
-                            <button onClick={() => moveCategory(cat.category, 1)} title="Move down"
-                              className="text-fg-muted/50 hover:text-fg-heading leading-none text-[11px] px-0.5">▼</button>
+                          {/* Far-right (by the totals): + add subtask (always there), split / M·L·S on hover */}
+                          <div className="flex-shrink-0 flex flex-col items-end gap-0.5 mt-px">
                             <button onClick={() => handleAddSubtask(cat.category)} title="Add subtask row"
-                              className="text-fg-muted/60 hover:text-fg-heading">
-                              <Plus className="w-3 h-3" />
+                              className="text-fg-muted/40 hover:text-fg-heading transition-colors">
+                              <Plus className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => handleAddSplit(cat.category)} title="Add another work period (split)"
-                              className="text-fg-muted/50 hover:text-fg-heading leading-none text-[9px] uppercase tracking-wide px-0.5">split</button>
-                            <button onClick={() => split ? handleUnsplitCategory(cat.category) : handleSplitCategory(cat.category)}
-                              title={split ? 'Merge the M/L/S lines back into one category bar' : 'Split into Materials / Labour / Subcontractor lines'}
-                              className={`leading-none text-[9px] uppercase tracking-wide px-0.5 ${split ? 'text-fg-heading' : 'text-fg-muted/50 hover:text-fg-heading'}`}>{split ? 'merge' : 'M/L/S'}</button>
+                            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1.5 transition-all">
+                              <button onClick={() => handleAddSplit(cat.category)} title="Add another work period"
+                                className="text-fg-muted/40 hover:text-fg-heading leading-none text-[8px] uppercase tracking-wide">split</button>
+                              <button onClick={() => split ? handleUnsplitCategory(cat.category) : handleSplitCategory(cat.category)}
+                                title={split ? 'Merge the M/L/S lines back into one category bar' : 'Split into Materials / Labour / Subcontractor lines'}
+                                className={`leading-none text-[8px] uppercase tracking-wide ${split ? 'text-fg-heading' : 'text-fg-muted/40 hover:text-fg-heading'}`}>{split ? 'merge' : 'M/L/S'}</button>
+                            </div>
                           </div>
                         </div>
                       </td>
