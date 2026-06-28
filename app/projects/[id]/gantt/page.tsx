@@ -1610,53 +1610,46 @@ export default function GanttPage() {
     }
     return map
   })()
-  const weekTotals = columns.map(col => {
-    const iso = toISODate(col)
-    let rev = milestoneRevByWeek.get(toISODate(snapToFriday(col))) ?? 0
-    let cost = 0
-    const revType = { labour: 0, material: 0, subcontractor: 0, equipment: 0 }
-    for (const entry of entries) {
-      const cat = catByName.get(entry.category)
-      // Every revenue-bearing segment: unsplit-category bars + leaf claims from the split/nested tree, so
-      // nested inputs at any depth land in the cash-flow (Andrew iter4/iter5). Type-line claims attribute
-      // straight to their discipline; an unsplit parent's revenue is apportioned by the category ratio.
-      for (const { costType, seg } of entryClaimSegments(entry)) {
-        if (seg.startDate && seg.endDate && iso >= seg.startDate && iso <= seg.endDate && seg.weekCount > 0) {
-          const wRev = seg.revenueAllocation / seg.weekCount
-          rev += wRev
-          cost += seg.costAllocation / seg.weekCount
-          if (costType) {
-            revType[costType] += wRev
-          } else if (cat && cat.budgetedRevenue > 0) {
-            revType.labour += wRev * (cat.rev.labour / cat.budgetedRevenue)
-            revType.material += wRev * (cat.rev.material / cat.budgetedRevenue)
-            revType.subcontractor += wRev * (cat.rev.subcontractor / cat.budgetedRevenue)
-            revType.equipment += wRev * (cat.rev.equipment / cat.budgetedRevenue)
+  // ONE cash-flow cell PER WEEK (Andrew). The columns are grouped purely by their week-ending Friday and the
+  // WEEK's total is computed once — so a bar that starts/ends mid-week never fragments the strip into several
+  // cramped cells in Days view (the old per-column collapse did). Weeks view: each column is already a week.
+  const footerRuns = (() => {
+    const groups: { startIdx: number; span: number; weekKey: string }[] = []
+    for (let i = 0; i < columns.length; i++) {
+      const weekKey = toISODate(snapToFriday(columns[i]))
+      const last = groups[groups.length - 1]
+      if (last && last.weekKey === weekKey) last.span++
+      else groups.push({ startIdx: i, span: 1, weekKey })
+    }
+    return groups.map(g => {
+      const friIso = g.weekKey
+      const monIso = addDays(friIso, -4)   // Monday of the week
+      let rev = milestoneRevByWeek.get(friIso) ?? 0
+      let cost = 0
+      const revType = { labour: 0, material: 0, subcontractor: 0, equipment: 0 }
+      for (const entry of entries) {
+        const cat = catByName.get(entry.category)
+        // Unsplit-category bars + leaf claims from the split/nested tree; a segment overlapping this week
+        // contributes revenueAllocation/weekCount once. Type-line claims attribute to their discipline; an
+        // unsplit parent's revenue is apportioned by the category ratio.
+        for (const { costType, seg } of entryClaimSegments(entry)) {
+          if (seg.startDate && seg.endDate && seg.weekCount > 0 && seg.startDate <= friIso && seg.endDate >= monIso) {
+            const wRev = seg.revenueAllocation / seg.weekCount
+            rev += wRev
+            cost += seg.costAllocation / seg.weekCount
+            if (costType) {
+              revType[costType] += wRev
+            } else if (cat && cat.budgetedRevenue > 0) {
+              revType.labour += wRev * (cat.rev.labour / cat.budgetedRevenue)
+              revType.material += wRev * (cat.rev.material / cat.budgetedRevenue)
+              revType.subcontractor += wRev * (cat.rev.subcontractor / cat.budgetedRevenue)
+              revType.equipment += wRev * (cat.rev.equipment / cat.budgetedRevenue)
+            }
           }
         }
       }
-    }
-    return { rev, cost, revType }
-  })
-
-  // Collapse the cash-flow strip into runs: consecutive columns within the SAME week carrying the same
-  // figures become one colSpan cell. In days view this turns five cramped 24px repeats of the weekly
-  // figure into one wide, readable cell per week; in weeks view each column is its own week, so every
-  // run stays a single cell (unchanged).
-  const footerRuns = (() => {
-    type Run = { startIdx: number; span: number; rev: number; cost: number; weekKey: string; revType: typeof weekTotals[number]['revType'] }
-    const runs: Run[] = []
-    for (let i = 0; i < weekTotals.length; i++) {
-      const { rev, cost, revType } = weekTotals[i]
-      const weekKey = toISODate(snapToFriday(columns[i]))
-      const last = runs[runs.length - 1]
-      if (last && last.rev === rev && last.cost === cost && last.weekKey === weekKey) {
-        last.span++
-      } else {
-        runs.push({ startIdx: i, span: 1, rev, cost, weekKey, revType })
-      }
-    }
-    return runs
+      return { startIdx: g.startIdx, span: g.span, weekKey: friIso, rev, cost, revType }
+    })
   })()
 
   // ── Today indicator column index ──────────────────────────────────────────
@@ -2312,31 +2305,48 @@ export default function GanttPage() {
                   return (
                     <th key={ri} colSpan={run.span} title={srcTitle} style={{ width: run.span * CELL_W, borderLeft: colBorderLeft(run.startIdx), ...stickyTop(0) }}
                       className="bg-fg-bg border-b border-r border-fg-border/30 px-1 align-middle overflow-hidden font-normal">
-                      <div className="text-center leading-tight whitespace-nowrap">
-                        {/* Revenue BY SOURCE, weekly (Andrew) — Materials / Labour / Subcontractor (+ Equip)
-                            each in its discipline colour, then the combined week total. Supervisor → cost. */}
-                        {hasActivity && showRevenue && (
+                      {(() => {
+                        // Revenue BY SOURCE, weekly — Materials / Labour / Subcontractor (+ Equip) in their
+                        // discipline colours, the combined week total, and the fortnight INV badge. Wide
+                        // (Days-view) week cells lay the sources LEFT and the total + INV RIGHT (Andrew's
+                        // streamlined example); narrow (Weeks-view) cells stack them. Supervisor → cost only.
+                        const invTotal = invoiceByFri.get(run.weekKey)
+                        const hasInv = showRevenue && invTotal !== undefined
+                        const wide = run.span >= 3
+                        const sourceDivs = (
                           <>
                             {rt.material > 0 && <div className="text-[9px] tabular-nums" style={{ color: COST_TYPE_META.material.colour }}>M {fmtK(rt.material)}</div>}
                             {rt.labour > 0 && <div className="text-[9px] tabular-nums" style={{ color: COST_TYPE_META.labour.colour }}>L {fmtK(rt.labour)}</div>}
                             {rt.subcontractor > 0 && <div className="text-[9px] tabular-nums" style={{ color: COST_TYPE_META.subcontractor.colour }}>S {fmtK(rt.subcontractor)}</div>}
                             {rt.equipment > 0 && <div className="text-[9px] tabular-nums" style={{ color: COST_TYPE_META.equipment.colour }}>E {fmtK(rt.equipment)}</div>}
-                            <div className="text-[10px] font-semibold text-fg-heading tabular-nums border-t border-fg-border/50 mt-px pt-px" title="Week total">{fmtK(run.rev)}</div>
                           </>
-                        )}
-                        {hasActivity && !showRevenue && (
-                          <div className="text-[10px] text-fg-heading/80 tabular-nums">{fmtK(run.cost)}</div>
-                        )}
-                        {/* Fortnight invoice total — yellow, sitting at the bottom of the cell next to the dates
-                            (Andrew), at every 2-week boundary across the horizon ($0 placeholder). */}
-                        {showRevenue && invoiceByFri.has(run.weekKey) && (
-                          <div className="mt-1 inline-block px-1 rounded-sm text-[9px] font-bold tabular-nums"
+                        )
+                        const invBadge = hasInv ? (
+                          <span className="inline-block px-1 rounded-sm text-[9px] font-bold tabular-nums whitespace-nowrap"
                             style={{ background: '#FDE047', border: '1px solid #CA8A04', color: '#713F12' }}
-                            title={`Fortnight invoice total — ${formatCurrency(invoiceByFri.get(run.weekKey)!)}`}>
-                            INV {fmtK(invoiceByFri.get(run.weekKey)!)}
+                            title={`Fortnight invoice total — ${formatCurrency(invTotal!)}`}>INV {fmtK(invTotal!)}</span>
+                        ) : null
+                        if (!showRevenue) {
+                          return <div className="text-center leading-tight">{hasActivity && <div className="text-[10px] text-fg-heading/80 tabular-nums">{fmtK(run.cost)}</div>}</div>
+                        }
+                        if (wide) {
+                          return (
+                            <div className="flex items-center justify-between gap-1 px-1 leading-tight">
+                              <div className="flex flex-col items-start text-left">{hasActivity && sourceDivs}</div>
+                              <div className="flex flex-col items-end gap-0.5">
+                                {hasActivity && <div className="text-[11px] font-bold text-fg-heading tabular-nums">T {fmtK(run.rev)}</div>}
+                                {invBadge}
+                              </div>
+                            </div>
+                          )
+                        }
+                        return (
+                          <div className="text-center leading-tight whitespace-nowrap">
+                            {hasActivity && (<>{sourceDivs}<div className="text-[10px] font-semibold text-fg-heading tabular-nums border-t border-fg-border/50 mt-px pt-px" title="Week total">{fmtK(run.rev)}</div></>)}
+                            {invBadge && <div className="mt-1">{invBadge}</div>}
                           </div>
-                        )}
-                      </div>
+                        )
+                      })()}
                     </th>
                   )
                 })}
