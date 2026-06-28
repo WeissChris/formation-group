@@ -583,7 +583,7 @@ export default function GanttPage() {
   const [variations, setVariations] = useState<Estimate[]>([])   // accepted variations, scheduled alongside the base
   const [entries, setEntries] = useState<GanttEntry[]>([])
   const [successMsg, setSuccessMsg] = useState('')
-  const [timeView, setTimeView] = useState<TimeView>('weeks')
+  const [timeView, setTimeView] = useState<TimeView>('days')   // default to Days scale (Chris)
 
   // Persistence safety: every bar/segment/subtask/schedule edit only calls setEntries — the only
   // persist path is the manual "Save Gantt" button. Track a dirty flag + the latest entries so we can
