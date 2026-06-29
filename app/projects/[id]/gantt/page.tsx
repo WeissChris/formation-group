@@ -719,9 +719,25 @@ export default function GanttPage() {
     const weeks = Math.ceil((new Date(`${latest}T00:00:00`).getTime() - firstCol.getTime()) / (7 * 86400000)) + 4
     return Math.min(156, Math.max(WEEK_COUNT, weeks))
   })()
-  const fridays = getNextFridays(horizonWeeks, LOOKBACK_WEEKS)
+  const fridays = (() => {
+    const all = getNextFridays(horizonWeeks, LOOKBACK_WEEKS)
+    if (!clientPrint) return all
+    // Client PDF: trim to the active work range — cut the empty weeks before the first bar and after the
+    // last, so the programme reads zoomed-in on what matters.
+    let earliest = '', latest = ''
+    for (const e of entries) for (const { seg } of entryClaimSegments(e)) {
+      if (seg.startDate && (!earliest || seg.startDate < earliest)) earliest = seg.startDate
+      if (seg.endDate && seg.endDate > latest) latest = seg.endDate
+    }
+    for (const m of milestones) if (m.date) { if (!earliest || m.date < earliest) earliest = m.date; if (m.date > latest) latest = m.date }
+    if (!earliest) return all
+    const firstFri = toISODate(snapToFriday(new Date(`${earliest}T00:00:00`)))
+    const lastFri = toISODate(snapToFriday(new Date(`${latest}T00:00:00`)))
+    const trimmed = all.filter(f => { const iso = toISODate(f); return iso >= firstFri && iso <= lastFri })
+    return trimmed.length ? trimmed : all
+  })()
   const workingDays = getWorkingDays(fridays)
-  const currentWeekIso = toISODate(fridays[LOOKBACK_WEEKS])   // the current week sits LOOKBACK_WEEKS columns in
+  const currentWeekIso = fridays[LOOKBACK_WEEKS] ? toISODate(fridays[LOOKBACK_WEEKS]) : (fridays[0] ? toISODate(fridays[0]) : '')
   const today = toISODate(new Date())
 
   const CELL_W = Math.round((timeView === 'days' ? CELL_W_DAYS : CELL_W_WEEKS) * zoom)
