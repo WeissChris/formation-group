@@ -3,6 +3,13 @@
 Ops / quoting / scheduling web app for Formation Landscapes (Chris Weiss). This file is the
 context a fresh session needs; read it first.
 
+## Product vision
+The site is intended to manage the **entire customer cycle** — from the initial design
+proposal, through quoting and project setup, to a finished construction project. Treat new
+work as building toward that single end-to-end flow (design proposal -> estimate/quote ->
+accepted -> scheduling/gantt + revenue forecast -> construction delivery -> completion), and
+keep the stages joined up rather than as isolated tools.
+
 ## Stack & repo
 - Next.js 14 (App Router), React 18, TypeScript, Tailwind 3, Vitest. Windows dev machine.
 - GitHub: https://github.com/WeissChris/formation-group (branch `main`).
