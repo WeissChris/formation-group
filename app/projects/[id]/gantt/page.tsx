@@ -1739,7 +1739,9 @@ export default function GanttPage() {
     else planned.set(friIso, { rev: val, cost: 0 })
   })
   const planBaseline = activeBaseline ? plannedByWeek(activeBaseline.entries, fridays) : null
-  const workStartIso = entries.flatMap(e => e.segments).filter(s => s.startDate).map(s => s.startDate).sort()[0]
+  // First scheduled work — across leaf claims too (a split category's bars live on its type lines, not its
+  // own cleared segments), so the fortnight invoice cycle anchors even when every category is split.
+  const workStartIso = entries.flatMap(e => entryClaimSegments(e)).filter(c => c.seg.startDate).map(c => c.seg.startDate).sort()[0]
   const invoiceFriIso: string | null = (() => {
     if (!workStartIso) return null
     const fri = snapToFriday(new Date(`${workStartIso}T00:00:00`))
@@ -1846,7 +1848,7 @@ export default function GanttPage() {
             position: 'relative',
             borderLeft: colBorderLeft(i),
           }}
-          className={`border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border/25'} cursor-crosshair ${isCurrentWeek && !activeSegs.length ? 'bg-fg-card/20' : ''}`}
+          className={`gantt-cell border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border/25'} cursor-crosshair ${isCurrentWeek && !activeSegs.length ? 'bg-fg-card/20' : ''}`}
           onMouseDown={() => handleCellMouseDown(category, i, subtaskId)}
           onMouseEnter={() => handleCellMouseEnter(category, i, subtaskId)}
         >
@@ -1974,6 +1976,10 @@ export default function GanttPage() {
         .gantt-print-only { display: block !important; }
         .gantt-scroll { overflow: visible !important; max-height: none !important; border: none !important; }
         .gantt-scroll th, .gantt-scroll td { position: static !important; }
+        /* Keep the bar/milestone cells as positioning contexts so the absolutely-placed bars still render. */
+        .gantt-scroll td.gantt-cell { position: relative !important; }
+        /* Print background colours (bars, INV badge) — browsers drop them by default. */
+        .gantt-scroll, .gantt-scroll * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         .gantt-print-nofinance .gantt-finance { display: none !important; }
         @page { size: A3 landscape; margin: 8mm; }
       }`}</style>
@@ -2624,7 +2630,7 @@ export default function GanttPage() {
                           width: CELL_W, minWidth: CELL_W, padding: 0, position: 'relative',
                           borderLeft: colBorderLeft(i),
                         }}
-                        className={`border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border/25'}`}
+                        className={`gantt-cell border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border/25'}`}
                       >
                         {isTodayCol && (
                           <div className="absolute inset-y-0 left-0 w-0.5 bg-red-500/50 z-10 pointer-events-none" />
