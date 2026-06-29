@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase'
+import { notify } from './broadcast'
 import {
   loadProposals,
   saveProposal,
@@ -491,20 +492,23 @@ export async function deleteWeeklyRevenueAsync(id: string): Promise<void> {
 // ── GANTT ────────────────────────────────────────────────────────────────────
 
 /**
- * Persist a project's Gantt entries to localStorage AND Supabase. The Gantt is otherwise the one
- * internal dataset that never reaches the DB (no per-record upsert, not in the login bulk-sync),
- * so without this it lives only in the browser. Mirrors saveGanttEntries' replace-the-project
- * semantics: wipe this project's fg_gantt rows, then insert the current set.
+ * Persist a project's Gantt entries to localStorage AND Supabase, and announce a 'gantt' change so
+ * other tabs/devices live-refresh (newest-wins via liveSync). Every entry is stamped with one shared
+ * `updatedAt` so the local cache and the DB row agree (a saver won't see its own realtime echo as
+ * "newer"). Uses upsert-on-id + prune (NOT delete-all-then-insert): per-row identity is preserved, so
+ * realtime emits a DELETE only for a genuinely removed category, and there's never a window where the
+ * project has zero rows (the old delete+insert could wipe the schedule if it died between the two).
  */
 export async function upsertGanttEntries(projectId: string, entries: GanttEntry[]): Promise<void> {
-  saveGanttEntries(projectId, entries)   // localStorage (immediate)
+  const stamp = new Date().toISOString()
+  const stamped = entries.map(e => ({ ...e, updatedAt: stamp }))
+  saveGanttEntries(projectId, stamped)   // localStorage (immediate)
+  notify({ key: 'gantt' })               // live-refresh sibling tabs (other devices go via liveSync)
   if (!isSupabaseConfigured() || !supabase) return
   // EMPTY-CLOBBER GUARD: an empty set is almost always "not loaded yet" (a device that never opened
-  // this project), never an intentional full clear — so don't run the delete, which would wipe the
-  // project's remote bars written by another device.
-  if (entries.length === 0) return
-  await supabase.from('fg_gantt').delete().eq('project_id', projectId)
-  const rows = entries.map(e => ({
+  // this project), never an intentional full clear — so don't touch the project's remote rows.
+  if (stamped.length === 0) return
+  const rows = stamped.map(e => ({
     id: e.id,
     project_id: projectId,
     estimate_id: e.estimateId || null,
@@ -515,8 +519,15 @@ export async function upsertGanttEntries(projectId: string, entries: GanttEntry[
     segments: e.segments ?? [],
     subtasks: e.subtasks ?? [],
     notes: e.notes ?? null,
+    updated_at: stamp,
   }))
-  await supabase.from('fg_gantt').insert(rows)
+  const { error } = await supabase.from('fg_gantt').upsert(rows, { onConflict: 'id' })
+  if (error) { console.error('[Formation] gantt upsert (Supabase) error:', error.message); return }
+  // Prune categories removed on this device: this project's remote rows whose id is no longer present.
+  const keep = new Set(stamped.map(e => e.id))
+  const { data: existing } = await supabase.from('fg_gantt').select('id').eq('project_id', projectId)
+  const removed = (existing ?? []).map(r => r.id as string).filter(rid => !keep.has(rid))
+  if (removed.length) await supabase.from('fg_gantt').delete().in('id', removed)
 }
 
 /**
@@ -1106,5 +1117,6 @@ function mapGanttEntry(row: Record<string, unknown>): GanttEntry {
     segments: (row.segments as GanttEntry['segments']) || [],
     subtasks: (row.subtasks as GanttEntry['subtasks']) || [],
     notes: (row.notes as string | null) || undefined,
+    updatedAt: row.updated_at as string | undefined,
   }
 }

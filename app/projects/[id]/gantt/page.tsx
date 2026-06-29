@@ -28,6 +28,7 @@ import { normalizedPcts, rebalancedPcts, datedPeriodCount } from '@/lib/ganttAll
 import { labourWorkingDays } from '@/lib/ganttSchedule'
 import { mapSubtaskTree, findSubtaskInTree, removeSubtaskFromTree, addChildSubtask, flattenSubtasks } from '@/lib/ganttSubtasks'
 import { plannedByWeek, entryClaimSegments, claimLeafSegments } from '@/lib/ganttForecast'
+import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import type { Project, Estimate, GanttEntry, GanttSegment, GanttSubtask, WeeklyRevenue } from '@/types'
 import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react'
 
@@ -591,6 +592,16 @@ export default function GanttPage() {
   const hasUnsavedChangesRef = useRef(false)
   const latestEntriesRef = useRef<GanttEntry[]>([])
   latestEntriesRef.current = entries
+
+  // Live cross-device: when the realtime sync (or another tab) pulls a newer Gantt for ANY project,
+  // re-read THIS project's entries so a schedule saved on another device appears here within ~1s. Never
+  // adopt mid-edit (would clobber unsaved work) — defer to the next flush/save instead. The callback is
+  // captured at mount, so it reads `hasUnsavedChangesRef` (a ref) and the stable route `id`.
+  const pendingRemoteRefreshRef = useRef(false)
+  useCrossTabRefresh(['gantt'], () => {
+    if (hasUnsavedChangesRef.current) { pendingRemoteRefreshRef.current = true; return }
+    setEntries(loadGanttEntries(id))
+  })
 
   // Drawing state
   const [drawing, setDrawing] = useState<{
@@ -1433,6 +1444,9 @@ export default function GanttPage() {
     void upsertGanttEntries(id, toSave)   // localStorage (immediate) + Supabase (background)
     const n = syncForecast(entries)       // build the revenue forecast in the same action
     hasUnsavedChangesRef.current = false   // persisted — nothing for flush to re-save
+    // A remote refresh that arrived mid-edit was deferred — now safe to adopt (our save merged into the
+    // same 'fg_gantt' store, so this re-read keeps our just-saved version under newest-wins).
+    if (pendingRemoteRefreshRef.current) { pendingRemoteRefreshRef.current = false; setEntries(loadGanttEntries(id)) }
     setSuccessMsg(`Saved — timeline + revenue forecast (${n} forecast week${n === 1 ? '' : 's'})`)
     setTimeout(() => setSuccessMsg(''), 3000)
   }

@@ -364,6 +364,7 @@ export interface GanttEntry {
   segments: GanttSegment[]   // multiple segments (work periods) per category
   subtasks?: GanttSubtask[]  // optional sub-rows under this category
   notes?: string
+  updatedAt?: string         // stamped on every save — drives cross-device newest-wins (see liveSync)
 }
 
 // ── DESIGN PROJECTS ───────────────────────────────────────────────────────────

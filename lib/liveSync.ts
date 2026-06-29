@@ -17,10 +17,9 @@
 // useCrossTabRefresh consumers re-read from storage.
 
 import { supabase, isSupabaseConfigured } from './supabase'
-import { getEstimates, getProjects, getProposals, getRevenue } from './storageAsync'
+import { getEstimates, getProjects, getProposals, getRevenue, getAllGanttEntries } from './storageAsync'
 import { notify, notifyThisTab, type StorageEvent } from './broadcast'
-
-type Keyed = { id: string; updatedAt?: string }
+import { mergeKeyed, type Keyed } from './mergeKeyed'
 
 interface Dataset {
   table: string
@@ -36,15 +35,10 @@ const DATASETS: Dataset[] = [
   { table: 'fg_projects', lsKey: 'fg_projects', bcKey: 'projects', getRemote: getProjects as () => Promise<Keyed[]> },
   { table: 'fg_proposals', lsKey: 'fg_proposals', bcKey: 'proposals', getRemote: getProposals as () => Promise<Keyed[]> },
   { table: 'fg_revenue', lsKey: 'fg_revenue', bcKey: 'revenue', getRemote: getRevenue as () => Promise<Keyed[]> },
+  // Gantt stores every project's entries in one flat 'fg_gantt' array keyed by entry id, so it fits the
+  // per-row newest-wins merge directly. upsertGanttEntries stamps updatedAt + notifies, so it qualifies.
+  { table: 'fg_gantt', lsKey: 'fg_gantt', bcKey: 'gantt', getRemote: getAllGanttEntries as () => Promise<Keyed[]> },
 ]
-
-function isNewer(remote?: string, local?: string): boolean {
-  if (!remote) return false
-  if (!local) return true
-  const pr = Date.parse(remote)
-  const pl = Date.parse(local)
-  return Number.isFinite(pr) && Number.isFinite(pl) ? pr > pl : false
-}
 
 function readLocal(lsKey: string): Keyed[] {
   try {
@@ -57,17 +51,8 @@ function readLocal(lsKey: string): Keyed[] {
 
 /** Merge remote rows into localStorage with newest-wins, preserving local-only rows. */
 function mergeRemote(lsKey: string, remote: Keyed[]): boolean {
-  const byId = new Map(readLocal(lsKey).map(r => [r.id, r]))
-  let changed = false
-  for (const r of remote) {
-    if (!r || !r.id) continue
-    const local = byId.get(r.id)
-    if (!local || isNewer(r.updatedAt, local.updatedAt)) {
-      byId.set(r.id, r)
-      changed = true
-    }
-  }
-  if (changed) localStorage.setItem(lsKey, JSON.stringify(Array.from(byId.values())))
+  const { merged, changed } = mergeKeyed(readLocal(lsKey), remote)
+  if (changed) localStorage.setItem(lsKey, JSON.stringify(merged))
   return changed
 }
 
