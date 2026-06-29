@@ -17,7 +17,10 @@
 // useCrossTabRefresh consumers re-read from storage.
 
 import { supabase, isSupabaseConfigured } from './supabase'
-import { getEstimates, getProjects, getProposals, getRevenue, getAllGanttEntries } from './storageAsync'
+import {
+  getEstimates, getProjects, getProposals, getRevenue, getAllGanttEntries,
+  getActuals, getPaymentStages, getProgressClaims, getSubcontractors, getDesignProjects,
+} from './storageAsync'
 import { notify, notifyThisTab, type StorageEvent } from './broadcast'
 import { mergeKeyed, type Keyed } from './mergeKeyed'
 
@@ -38,6 +41,14 @@ const DATASETS: Dataset[] = [
   // Gantt stores every project's entries in one flat 'fg_gantt' array keyed by entry id, so it fits the
   // per-row newest-wins merge directly. upsertGanttEntries stamps updatedAt + notifies, so it qualifies.
   { table: 'fg_gantt', lsKey: 'fg_gantt', bcKey: 'gantt', getRemote: getAllGanttEntries as () => Promise<Keyed[]> },
+  // The remaining internal datasets: each is one flat localStorage array keyed by id, its saver stamps
+  // updatedAt + notifies, and its getter returns rows carrying updatedAt (blob datasets carry it inside
+  // the blob). That's everything the per-row newest-wins merge needs.
+  { table: 'fg_actuals', lsKey: 'fg_actuals', bcKey: 'actuals', getRemote: getActuals as () => Promise<Keyed[]> },
+  { table: 'fg_payment_stages', lsKey: 'fg_payment_stages', bcKey: 'payment_stages', getRemote: getPaymentStages as () => Promise<Keyed[]> },
+  { table: 'fg_progress_claims', lsKey: 'fg_progress_claims', bcKey: 'progress_claims', getRemote: getProgressClaims as () => Promise<Keyed[]> },
+  { table: 'fg_subcontractors', lsKey: 'fg_subcontractors', bcKey: 'subcontractors', getRemote: getSubcontractors as () => Promise<Keyed[]> },
+  { table: 'fg_design_projects', lsKey: 'fg_design_projects', bcKey: 'design_projects', getRemote: getDesignProjects as () => Promise<Keyed[]> },
 ]
 
 function readLocal(lsKey: string): Keyed[] {

@@ -309,12 +309,16 @@ export function deleteProgressPaymentStagesByProject(projectId: string): void {
 
 // Design Projects
 export function saveDesignProject(project: DesignProject): void {
+  // Stamp updatedAt on every save so cross-device newest-wins works (see liveSync); notify so an open
+  // design-tracker view refreshes.
+  const stamped = { ...project, updatedAt: new Date().toISOString() }
   const all = loadDesignProjects()
-  const idx = all.findIndex(p => p.id === project.id)
-  if (idx >= 0) all[idx] = project
-  else all.push(project)
+  const idx = all.findIndex(p => p.id === stamped.id)
+  if (idx >= 0) all[idx] = stamped
+  else all.push(stamped)
   localStorage.setItem('fg_design_projects', JSON.stringify(all))
   backupToIndexedDB('fg_design_projects', loadDesignProjects())
+  notify({ key: 'design_projects' })
 }
 
 export function loadDesignProjects(): DesignProject[] {
@@ -360,12 +364,16 @@ export function buildDesignProjectFromProposal(proposal: DesignProposal): Design
 
 // Progress Claims
 export function saveProgressClaim(claim: ProgressClaim): void {
+  // Stamp updatedAt (carried inside the jsonb blob, which getProgressClaims reads back) so cross-device
+  // newest-wins works; notify so an open claims view refreshes.
+  const stamped = { ...claim, updatedAt: new Date().toISOString() }
   const all = loadProgressClaims()
-  const idx = all.findIndex(c => c.id === claim.id)
-  if (idx >= 0) all[idx] = claim
-  else all.push(claim)
+  const idx = all.findIndex(c => c.id === stamped.id)
+  if (idx >= 0) all[idx] = stamped
+  else all.push(stamped)
   localStorage.setItem('fg_progress_claims', JSON.stringify(all))
   backupToIndexedDB('fg_progress_claims', all)
+  notify({ key: 'progress_claims' })
 }
 
 export function loadProgressClaims(projectId?: string): ProgressClaim[] {
@@ -652,11 +660,15 @@ export function loadSubcontractors(projectId?: string): SubcontractorPackage[] {
 }
 
 export function saveSubcontractor(pkg: SubcontractorPackage): void {
+  // Stamp updatedAt (carried inside the jsonb blob, which getSubcontractors reads back) so cross-device
+  // newest-wins works; notify so an open subcontractors view refreshes.
+  const stamped = { ...pkg, updatedAt: new Date().toISOString() }
   const all = loadSubcontractors()
-  const idx = all.findIndex(s => s.id === pkg.id)
-  if (idx >= 0) all[idx] = pkg; else all.push(pkg)
+  const idx = all.findIndex(s => s.id === stamped.id)
+  if (idx >= 0) all[idx] = stamped; else all.push(stamped)
   localStorage.setItem('fg_subcontractors', JSON.stringify(all))
   backupToIndexedDB('fg_subcontractors', all)
+  notify({ key: 'subcontractors' })
 }
 
 export function deleteSubcontractor(id: string): void {

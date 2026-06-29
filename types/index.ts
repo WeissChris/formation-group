@@ -74,6 +74,7 @@ export interface SubcontractorPackage {
   sourceEstimateId?: string      // set when seeded from an estimate's subcontractor lines
   sourceLineItemIds?: string[]
   createdAt: string
+  updatedAt?: string             // stamped on every save — drives cross-device newest-wins (see liveSync)
 }
 
 export interface ProjectBaseline {
@@ -446,6 +447,7 @@ export interface ProgressClaim {
   createdAt: string
   sentAt?: string
   paidAt?: string
+  updatedAt?: string             // stamped on every save — drives cross-device newest-wins (see liveSync)
 }
 
 // ── TAKEOFF ───────────────────────────────────────────────────────────────────

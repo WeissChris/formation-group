@@ -24,8 +24,10 @@ import {
   deleteProgressPaymentStage,
   loadWeeklyActuals,
   saveWeeklyActual,
+  loadSubcontractors,
   saveSubcontractor,
   deleteSubcontractor,
+  loadProgressClaims,
   saveProgressClaim,
   deleteProgressClaim,
 } from './storage'
@@ -586,13 +588,16 @@ export async function getSubcontractors(): Promise<SubcontractorPackage[]> {
 }
 
 export async function upsertSubcontractor(pkg: SubcontractorPackage): Promise<void> {
-  saveSubcontractor(pkg) // localStorage (immediate)
+  saveSubcontractor(pkg) // localStorage (this also stamps updatedAt) + notify
   if (isSupabaseConfigured() && supabase) {
+    // Re-read so the blob we push carries the freshly-stamped updatedAt (getSubcontractors reads it
+    // back), keeping the DB blob and the local copy on the same stamp for newest-wins.
+    const fresh = loadSubcontractors().find(s => s.id === pkg.id) ?? pkg
     const { error } = await supabase.from('fg_subcontractors').upsert({
-      id: pkg.id,
-      project_id: pkg.projectId,
-      data: pkg,
-      updated_at: new Date().toISOString(),
+      id: fresh.id,
+      project_id: fresh.projectId,
+      data: fresh,
+      updated_at: fresh.updatedAt ?? new Date().toISOString(),
     })
     if (error) console.error('[Formation] subcontractor upsert (Supabase) error:', error.message)
   }
@@ -624,13 +629,16 @@ export async function getProgressClaims(): Promise<ProgressClaim[]> {
 }
 
 export async function upsertProgressClaim(claim: ProgressClaim): Promise<void> {
-  saveProgressClaim(claim) // localStorage (immediate)
+  saveProgressClaim(claim) // localStorage (this also stamps updatedAt) + notify
   if (isSupabaseConfigured() && supabase) {
+    // Re-read so the blob we push carries the freshly-stamped updatedAt (getProgressClaims reads it
+    // back), keeping the DB blob and the local copy on the same stamp for newest-wins.
+    const fresh = loadProgressClaims().find(c => c.id === claim.id) ?? claim
     const { error } = await supabase.from('fg_progress_claims').upsert({
-      id: claim.id,
-      project_id: claim.projectId,
-      data: claim,
-      updated_at: new Date().toISOString(),
+      id: fresh.id,
+      project_id: fresh.projectId,
+      data: fresh,
+      updated_at: fresh.updatedAt ?? new Date().toISOString(),
     })
     if (error) console.error('[Formation] progress claim upsert (Supabase) error:', error.message)
   }
