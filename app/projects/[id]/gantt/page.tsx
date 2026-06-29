@@ -2027,7 +2027,8 @@ export default function GanttPage() {
       <div className="hidden gantt-print-only mb-4">
         <p className="text-[11px] tracking-[0.2em] uppercase text-fg-heading font-medium">Formation Landscapes</p>
         <h1 className="text-xl font-light text-fg-heading mt-1">{project.name} — Programme</h1>
-        <p className="text-xs text-fg-muted mt-0.5">Revenue &amp; schedule · {new Date().toLocaleDateString()}</p>
+        {/* "Revenue & schedule · date" subtitle is internal only — the client version drops it entirely. */}
+        {!clientPrint && <p className="text-xs text-fg-muted mt-0.5">Revenue &amp; schedule · {new Date().toLocaleDateString()}</p>}
       </div>
 
       {/* Breadcrumb */}
