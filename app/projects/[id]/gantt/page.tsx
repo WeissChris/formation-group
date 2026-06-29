@@ -676,12 +676,28 @@ export default function GanttPage() {
   // Whether the PDF/print includes financial figures (Andrew: export with the option to include or exclude
   // financials). Off → a class on <body> hides every .gantt-finance element in the print stylesheet.
   const [printFinancials, setPrintFinancials] = useState(true)
+  // Client-facing mode: a high-level PDF — every category collapsed to one solid bar, no financials, no
+  // editing controls. Drives the render (collapse + solid rollup bars) so it's set before window.print().
+  const [clientPrint, setClientPrint] = useState(false)
   const doPrint = () => {
     if (typeof document === 'undefined') return
     if (!printFinancials) document.body.classList.add('gantt-print-nofinance')
     const cleanup = () => { document.body.classList.remove('gantt-print-nofinance'); window.removeEventListener('afterprint', cleanup) }
     window.addEventListener('afterprint', cleanup)
     window.print()
+  }
+  const doClientPrint = () => {
+    if (typeof document === 'undefined') return
+    setClientPrint(true)
+    document.body.classList.add('gantt-print-client', 'gantt-print-nofinance')
+    const cleanup = () => {
+      setClientPrint(false)
+      document.body.classList.remove('gantt-print-client', 'gantt-print-nofinance')
+      window.removeEventListener('afterprint', cleanup)
+    }
+    window.addEventListener('afterprint', cleanup)
+    // Let the collapse + solid-bar re-render commit before opening the print dialog.
+    setTimeout(() => window.print(), 150)
   }
 
   // Zoom (column width multiplier) + the scroll container, so we can land the initial view on "today".
@@ -1895,7 +1911,13 @@ export default function GanttPage() {
 
             // Parent timeframe-summary bar (Andrew §3): a distinct top-half band, no $, no interaction.
             if (seg.id.endsWith('-rollup')) {
-              return (
+              // Client PDF: a solid, full-height bar for a clean high-level read. On screen / internal: a
+              // thin top-half band that signals "this is a roll-up summary, not a claimable bar".
+              return clientPrint ? (
+                <div key={seg.id} className="absolute inset-y-1 pointer-events-none" title={`${category} — timeframe`}
+                  style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, background: '#8A8580',
+                    borderRadius: isStart && isEnd ? 3 : isStart ? '3px 0 0 3px' : isEnd ? '0 3px 3px 0' : 0 }} />
+              ) : (
                 <div key={seg.id} className="absolute pointer-events-none" title={`${category} — timeframe`}
                   style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, top: 2, height: 10,
                     background: '#8A858033', borderTop: '2px solid #8A8580',
@@ -1981,6 +2003,9 @@ export default function GanttPage() {
         /* Print background colours (bars, INV badge) — browsers drop them by default. */
         .gantt-scroll, .gantt-scroll * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         .gantt-print-nofinance .gantt-finance { display: none !important; }
+        /* Client-facing PDF: drop the editing controls + the day-of-week sub-row for a clean high-level read. */
+        .gantt-print-client .gantt-edit { display: none !important; }
+        .gantt-print-client .gantt-dow { visibility: hidden !important; }
         @page { size: A3 landscape; margin: 8mm; }
       }`}</style>
       <div className="hidden gantt-print-only mb-4">
@@ -2129,15 +2154,20 @@ export default function GanttPage() {
           )}
           <span className="inline-flex items-stretch border border-fg-border">
             <button onClick={doPrint}
-              title="Print or Save as PDF — hides the controls, expands the full programme, branded"
+              title="Internal PDF — the full detailed programme (subtasks, financials per the $ toggle)"
               className="px-4 py-2 text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading transition-colors">
-              Print / PDF
+              Internal PDF
             </button>
-            <label title="Include the dollar figures in the PDF (uncheck for a schedule-only programme)"
+            <label title="Include the dollar figures in the internal PDF (uncheck for a schedule-only programme)"
               className="flex items-center gap-1.5 px-2 border-l border-fg-border text-[10px] font-light tracking-wide uppercase text-fg-muted cursor-pointer hover:text-fg-heading">
               <input type="checkbox" checked={printFinancials} onChange={e => setPrintFinancials(e.target.checked)} className="accent-fg-heading" />
               $
             </label>
+            <button onClick={doClientPrint}
+              title="Client-facing PDF — high level: every category as one bar, no financials, no controls"
+              className="px-4 py-2 border-l border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading transition-colors">
+              Client PDF
+            </button>
           </span>
           <div className="relative">
             <button onClick={() => setBaselineMenuOpen(o => !o)}
@@ -2371,7 +2401,7 @@ export default function GanttPage() {
 
               {/* Day-of-week sub-header (days view only) */}
               {timeView === 'days' && (
-                <tr style={{ height: H_DOW }}>
+                <tr className="gantt-dow" style={{ height: H_DOW }}>
                   <th colSpan={2} style={{ width: fixedColsWidth, ...stickyCorner(2, topDow) }} className="bg-fg-bg border-b border-r border-fg-border" />
                   {workingDays.map((d, i) => {
                     return (
@@ -2392,7 +2422,7 @@ export default function GanttPage() {
               {/* Date row */}
               <tr>
                 <th className="bg-fg-bg border-b border-r border-fg-border px-3 py-2 text-left text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_CATEGORY, ...stickyCorner(0, topDate) }}>Category</th>
-                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-right text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_BUDGET, ...stickyCorner(1, topDate) }}>Budget / Cost</th>
+                <th className="bg-fg-bg border-b border-r border-fg-border px-2 py-2 text-right text-[10px] font-light tracking-wide uppercase text-fg-muted" style={{ width: COL_BUDGET, ...stickyCorner(1, topDate) }}><span className="gantt-finance">Budget / Cost</span></th>
                 {columns.map((col, i) => {
                   const iso = toISODate(col)
                   const isCurrentWeek = timeView === 'weeks' ? iso === currentWeekIso : iso === today
@@ -2420,7 +2450,7 @@ export default function GanttPage() {
                 const segs = entry.segments
                 const subtasks = entry.subtasks ?? []
                 const split = isCategorySplit(entry)
-                const isCollapsed = collapsedCategories.has(cat.category)
+                const isCollapsed = clientPrint || collapsedCategories.has(cat.category)   // client PDF = all collapsed
                 const hasSubtasks = subtasks.length > 0
                 // The parent shows a timeframe-summary bar spanning all its subtasks' dates when it's COLLAPSED
                 // (condensed read) or SPLIT into M/L/S lines (parent has no own bars — Andrew §3). The summary
@@ -2469,9 +2499,9 @@ export default function GanttPage() {
                             onDragStart={() => setDragCat(cat.category)}
                             onDragEnd={() => setDragCat(null)}
                             title="Drag to reorder"
-                            className="cursor-grab active:cursor-grabbing text-fg-muted/30 hover:text-fg-heading leading-none text-[12px] select-none flex-shrink-0 mt-px">⠿</span>
+                            className="gantt-edit cursor-grab active:cursor-grabbing text-fg-muted/30 hover:text-fg-heading leading-none text-[12px] select-none flex-shrink-0 mt-px">⠿</span>
                           {hasSubtasks && (
-                            <button onClick={() => toggleCollapse(cat.category)} className="text-fg-muted hover:text-fg-heading transition-colors flex-shrink-0 mt-px">
+                            <button onClick={() => toggleCollapse(cat.category)} className="gantt-edit text-fg-muted hover:text-fg-heading transition-colors flex-shrink-0 mt-px">
                               {isCollapsed
                                 ? <ChevronRight className="w-3 h-3" />
                                 : <ChevronDown className="w-3 h-3" />
@@ -2495,11 +2525,11 @@ export default function GanttPage() {
                               onChange={e => setCategoryDescription(cat.category, e.target.value)}
                               placeholder="+ description"
                               title={descriptions[cat.category] || 'Add a description for this category'}
-                              className="bg-transparent border-none outline-none text-[10px] font-light italic text-fg-muted/60 placeholder:text-fg-muted/25 hover:text-fg-heading focus:text-fg-heading w-full min-w-0 truncate"
+                              className={`bg-transparent border-none outline-none text-[10px] font-light italic text-fg-muted/60 placeholder:text-fg-muted/25 hover:text-fg-heading focus:text-fg-heading w-full min-w-0 truncate ${descriptions[cat.category] ? '' : 'print:hidden'} gantt-edit`}
                             />
                           </div>
                           {/* Far-right (by the totals): + add subtask (always there), split / M·L·S on hover */}
-                          <div className="flex-shrink-0 flex flex-col items-end gap-0.5 mt-px">
+                          <div className="gantt-edit flex-shrink-0 flex flex-col items-end gap-0.5 mt-px">
                             <button onClick={() => handleAddSubtask(cat.category)} title="Add subtask row"
                               className="text-fg-muted/40 hover:text-fg-heading transition-colors">
                               <Plus className="w-3.5 h-3.5" />
