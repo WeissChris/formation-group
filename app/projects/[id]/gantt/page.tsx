@@ -2037,6 +2037,7 @@ export default function GanttPage() {
             padding: 0,
             position: 'relative',
             borderLeft: colBorderLeft(i),
+            background: '#FCFBF9',   // light near-white grid so bars + text pop (Instagantt-like)
           }}
           className={`gantt-cell border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border/25'} cursor-crosshair ${isCurrentWeek && !activeSegs.length ? 'bg-fg-card/20' : ''}`}
           onMouseDown={() => handleCellMouseDown(category, i, subtaskId)}
@@ -2089,14 +2090,14 @@ export default function GanttPage() {
               // thin top-half band that signals "this is a roll-up summary, not a claimable bar".
               return clientPrint ? (
                 <div key={seg.id} className="absolute inset-y-1 pointer-events-none" title={`${category} — timeframe`}
-                  style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, background: '#8A8580',
+                  style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : -1, background: '#8A8580',
                     borderRadius: isStart && isEnd ? 3 : isStart ? '3px 0 0 3px' : isEnd ? '0 3px 3px 0' : 0 }} />
               ) : (
                 // Slim, vertically-centred summary line with darker end grips (Instagantt style). Grab
                 // anywhere to slide the whole section.
                 <div key={seg.id} className="absolute" title={`${category} — drag to shift the whole category`}
                   onMouseDown={e => handleRollupMouseDown(e, entry, i)}
-                  style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, top: '50%', transform: 'translateY(-50%)', height: 4,
+                  style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : -1, top: '50%', transform: 'translateY(-50%)', height: 4,
                     background: sectionColour(category),
                     borderRadius: isStart && isEnd ? 2 : isStart ? '2px 0 0 2px' : isEnd ? '0 2px 2px 0' : 0,
                     cursor: (moving?.rollup && moving.entryId === entry.id) ? 'grabbing' : 'grab' }}>
@@ -2112,7 +2113,8 @@ export default function GanttPage() {
                 className="absolute inset-y-1 flex flex-col items-start justify-center overflow-hidden"
                 style={{
                   left: isStart ? 2 : 0,
-                  right: isEnd ? 2 : 0,
+                  // bleed 1px over the per-cell border on inner edges so the bar reads as one solid block
+                  right: isEnd ? 2 : -1,
                   background: colour,
                   borderRadius: isStart && isEnd ? 3 : isStart ? '3px 0 0 3px' : isEnd ? '0 3px 3px 0' : 0,
                   cursor: (moving?.segId === seg.id) ? 'grabbing' : 'grab',
@@ -2160,7 +2162,7 @@ export default function GanttPage() {
               subtask (Instagantt style: every bar reads without cross-referencing the left column). */}
           {i === trailingIdx && trailingLabel && (
             <div className="absolute inset-y-0 left-1.5 z-10 flex items-center pointer-events-none">
-              <span title={trailingLabel} className={`inline-block max-w-[150px] truncate ${isSubtask ? 'text-[10px] font-light text-fg-muted' : 'text-[11px] font-medium text-fg-heading/90 tracking-tight'}`}>{trailingLabel}</span>
+              <span title={trailingLabel} className={`inline-block max-w-[150px] truncate ${isSubtask ? 'text-[10px] font-normal text-fg-heading/75' : 'text-[11px] font-semibold text-fg-heading tracking-tight'}`}>{trailingLabel}</span>
             </div>
           )}
         </td>
