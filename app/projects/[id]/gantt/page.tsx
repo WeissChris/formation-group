@@ -2553,7 +2553,7 @@ export default function GanttPage() {
       )}
 
       {estimate && categories.length > 0 && (
-        <div ref={gridScrollRef} className="gantt-scroll border border-fg-border" style={{ userSelect: 'none', maxHeight: 'calc(100vh - 230px)', width: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'auto' }}>
+        <div ref={gridScrollRef} className="gantt-scroll border border-fg-border" style={{ userSelect: 'none', maxHeight: 'calc(100vh - 230px)', width: '100%', minWidth: 0, maxWidth: '100vw', overflowX: 'auto', overflowY: 'auto' }}>
           <table className="border-collapse" style={{ minWidth: tableWidth, width: tableWidth }}>
             {/* ── Headers ── */}
             <thead>
