@@ -103,21 +103,21 @@ describe('getMarginSummary', () => {
     expect(excavation.meetsTarget).toBe(false) // 28.6% < 40%
 
     expect(plumbing.crewType).toBe('Subcontractor')
-    expect(plumbing.targetMargin).toBe(0.34)
+    expect(plumbing.targetMargin).toBe(0.30)   // subcontracted items: min 30% per the spreadsheet rules
     expect(plumbing.marginPercent).toBeCloseTo((2680 - 2000) / 2680, 4)
-    expect(plumbing.meetsTarget).toBe(false)
+    expect(plumbing.meetsTarget).toBe(false)   // 25.4% still < 30%
   })
 
   it('uses cost-weighted blended target for mixed-crew categories', () => {
-    // 1000 formation cost (target 0.40) + 1000 subcontractor cost (target 0.34)
-    // blended target = 0.5 × 0.40 + 0.5 × 0.34 = 0.37
+    // 1000 formation cost (target 0.40) + 1000 subcontractor cost (target 0.30)
+    // blended target = 0.5 × 0.40 + 0.5 × 0.30 = 0.35
     const e = estimate([
       line({ id: 'a', category: 'Hardscape', total: 1000, revenue: 1400, crewType: 'Formation' }),
       line({ id: 'b', category: 'Hardscape', total: 1000, revenue: 1340, crewType: 'Subcontractor' }),
     ])
     const summary = getMarginSummary(e)
     expect(summary[0].crewType).toBe('Mixed')
-    expect(summary[0].targetMargin).toBeCloseTo(0.37, 4)
+    expect(summary[0].targetMargin).toBeCloseTo(0.35, 4)
   })
 
   it('returns marginPercent as a 0-1 ratio, not 0-100 percent', () => {

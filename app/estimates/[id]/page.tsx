@@ -9,7 +9,7 @@ import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract, activeLineItems, estimateLabourHours, lineContractValue, itemsContractValue } from '@/lib/estimateCalculations'
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
-import { getAllLibraryItems, getCategories, defaultMarkupForType } from '@/lib/itemLibrary'
+import { getAllLibraryItems, getCategories, defaultMarkupForType, TARGET_MARGINS } from '@/lib/itemLibrary'
 import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData } from '@/types'
 import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch, Copy, Eye, EyeOff, Check } from 'lucide-react'
 import TakeoffTab from '@/components/TakeoffTab'
@@ -165,8 +165,8 @@ function MarginSidebar({ estimate }: { estimate: Estimate }) {
       {/* Formation vs Sub split */}
       <div className="grid grid-cols-2 gap-2">
         {[
-          { label: 'Formation', cost: totals.formationCost, revenue: totals.formationRevenue, margin: totals.formationMargin, target: 0.40 },
-          { label: 'Subcontractor', cost: totals.subCost, revenue: totals.subRevenue, margin: totals.subMargin, target: 0.34 },
+          { label: 'Formation', cost: totals.formationCost, revenue: totals.formationRevenue, margin: totals.formationMargin, target: TARGET_MARGINS.Formation },
+          { label: 'Subcontractor', cost: totals.subCost, revenue: totals.subRevenue, margin: totals.subMargin, target: TARGET_MARGINS.Subcontractor },
         ].map(col => (
           <div key={col.label} className="bg-fg-darker/50 p-2.5 min-w-0">
             <p className="text-2xs font-semibold uppercase text-white/70 mb-2 truncate" title={col.label}>{col.label}</p>

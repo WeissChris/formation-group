@@ -87,9 +87,11 @@ export function getCategories(): string[] {
   return Array.from(new Set(all.map(i => i.category))).sort()
 }
 
+// Minimum margin the checker holds each line/category to (single source — drives getMarginSummary +
+// the estimate Margin Checker cards). Per the source spreadsheet rules: subcontracted items min 30%.
 export const TARGET_MARGINS = {
   Formation: 0.40,
-  Subcontractor: 0.34,
+  Subcontractor: 0.30,
 }
 
 // Default MARKUP % auto-applied to a line item by its type (Chris's per-type defaults). Note this
