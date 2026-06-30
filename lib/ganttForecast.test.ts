@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { GanttEntry } from '@/types'
-import { plannedByWeek, claimLeafSegments } from './ganttForecast'
+import { plannedByWeek, claimLeafSegments, entrySegments } from './ganttForecast'
 
 // Three consecutive week-ending Fridays.
 const fridays = ['2026-08-07', '2026-08-14', '2026-08-21'].map(d => new Date(`${d}T00:00:00`))
@@ -50,6 +50,35 @@ describe('plannedByWeek', () => {
       subtasks: [{ id: 'note', label: 'note', segments: [] }],   // no claim
     })], fridays)
     expect(sum(m)).toBeCloseTo(9000)
+  })
+})
+
+describe('entrySegments (single-source segment list for non-revenue readers)', () => {
+  it('returns the own bar for an unsplit category', () => {
+    const segs = entrySegments(entry({ segments: [seg('2026-08-07', '2026-08-21', 3, 9000, 4000)] }))
+    expect(segs.map(s => s.endDate)).toEqual(['2026-08-21'])
+    expect(segs.reduce((a, s) => a + s.costAllocation, 0)).toBe(4000)
+  })
+
+  it('returns the split type-line bars (NOT the empty own segments) for a split category', () => {
+    // The master-programme / foreman / actuals bug: a split category clears its own segments, so reading
+    // entry.segments alone is empty. entrySegments must surface the type-line leaves instead.
+    const segs = entrySegments(entry({
+      segments: [],
+      subtasks: [
+        { id: 'lab', label: 'Labour', costType: 'labour', segments: [seg('2026-08-07', '2026-08-14', 2, 6000, 3000)] },
+        { id: 'mat', label: 'Materials', costType: 'material', segments: [seg('2026-08-14', '2026-08-21', 2, 4000, 2500)] },
+      ],
+    }))
+    expect(segs.map(s => s.endDate).sort()).toEqual(['2026-08-14', '2026-08-21'])
+    expect(segs.reduce((a, s) => a + s.costAllocation, 0)).toBe(5500)
+  })
+
+  it('is empty when a split category has no scheduled bars yet', () => {
+    expect(entrySegments(entry({
+      segments: [],
+      subtasks: [{ id: 'lab', label: 'Labour', costType: 'labour', segments: [] }],
+    }))).toEqual([])
   })
 })
 

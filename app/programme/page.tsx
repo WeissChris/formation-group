@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { loadProjects, loadGanttEntries } from '@/lib/storage'
 import { getAllGanttMilestones } from '@/lib/storageAsync'
 import { formatCurrency, SHORT_MONTH_NAMES, generateId, toISODate } from '@/lib/utils'
+import { entrySegments } from '@/lib/ganttForecast'
 import type { Project, GanttEntry } from '@/types'
 import EntityBadge from '@/components/EntityBadge'
 import { scheduleStatus, healthColour, healthBg, getForecastCompletion } from '@/lib/projectHealth'
@@ -229,7 +230,10 @@ export default function ProgrammePage() {
               type SegRow = { startDate: string; endDate: string; colour: string; label?: string }
               const segRows: SegRow[] = []
               entries.forEach(entry => {
-                entry.segments.forEach(seg => {
+                // entrySegments (not entry.segments) so SPLIT categories — whose bars live on the type
+                // lines — still draw. Reading entry.segments alone left split projects showing milestones
+                // only, no bars.
+                entrySegments(entry).forEach(seg => {
                   if (seg.startDate && seg.endDate) {
                     segRows.push({
                       startDate: seg.startDate,

@@ -13,6 +13,7 @@ import {
 } from '@/lib/storage'
 import { getProjects } from '@/lib/storageAsync'
 import { formatCurrency, generateId, snapToFriday, toISODate, formatDayMonth } from '@/lib/utils'
+import { entrySegments } from '@/lib/ganttForecast'
 import type { Project, GanttEntry, GanttSegment, WeeklyActual, WeeklyRevenue } from '@/types'
 import { Check } from 'lucide-react'
 
@@ -33,7 +34,7 @@ function getWeeksRemaining(ganttEntries: GanttEntry[]): number {
   const today = new Date()
   let latestEnd = today
   for (const e of ganttEntries) {
-    for (const s of e.segments) {
+    for (const s of entrySegments(e)) {   // split categories carry their bars on the type lines
       if (s.endDate) {
         const d = new Date(s.endDate)
         if (d > latestEnd) latestEnd = d
@@ -46,7 +47,7 @@ function getWeeksRemaining(ganttEntries: GanttEntry[]): number {
 
 // For a given category + week, find all active segments and sum their weekly cost allocation
 function getBudgetedCostForWeek(entry: GanttEntry, weekIso: string): number {
-  return entry.segments.reduce((sum, seg) => {
+  return entrySegments(entry).reduce((sum, seg) => {
     if (!seg.startDate || !seg.endDate || seg.weekCount <= 0) return sum
     if (weekIso >= seg.startDate && weekIso <= seg.endDate) {
       return sum + seg.costAllocation / seg.weekCount
@@ -120,7 +121,7 @@ export default function ActualsPage() {
   const buildRows = useCallback((weekIso: string, gantt: GanttEntry[], actuals: WeeklyActual[], rev: WeeklyRevenue[]): RowState[] => {
     // Show entries that have at least one segment active this week, or all entries if none active
     const activeEntries = gantt.filter(e =>
-      e.segments.some(s => s.startDate && s.endDate && weekIso >= s.startDate && weekIso <= s.endDate)
+      entrySegments(e).some(s => s.startDate && s.endDate && weekIso >= s.startDate && weekIso <= s.endDate)
     )
     const entries = activeEntries.length > 0 ? activeEntries : gantt
 
@@ -132,7 +133,7 @@ export default function ActualsPage() {
       const budgetWeek = budgetFromGantt > 0 ? budgetFromGantt : budgetFromRev
 
       const existing = actuals.find(a => a.projectId === entry.projectId && a.category === entry.category && a.weekEnding === weekIso)
-      const activeSegs = entry.segments.filter(s => s.startDate && s.endDate && weekIso >= s.startDate && weekIso <= s.endDate)
+      const activeSegs = entrySegments(entry).filter(s => s.startDate && s.endDate && weekIso >= s.startDate && weekIso <= s.endDate)
 
       return {
         category: entry.category,

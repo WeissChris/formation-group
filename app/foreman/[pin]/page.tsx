@@ -9,6 +9,7 @@ import {
   insertForemanActual,
 } from '@/lib/publicData'
 import { toISODate, snapToFriday, formatCurrency } from '@/lib/utils'
+import { entrySegments } from '@/lib/ganttForecast'
 import type { Project, GanttEntry, GanttSegment, WeeklyActual } from '@/types'
 import { RefreshCw, Calendar, DollarSign, ClipboardList } from 'lucide-react'
 
@@ -30,7 +31,7 @@ function getProjectFridays(entries: GanttEntry[]): Date[] {
   let minDate: Date | null = null
   let maxDate: Date | null = null
   for (const entry of entries) {
-    for (const seg of entry.segments) {
+    for (const seg of entrySegments(entry)) {   // split categories carry their bars on the type lines
       const start = new Date(seg.startDate)
       const end = new Date(seg.endDate)
       if (!minDate || start < minDate) minDate = start
@@ -154,7 +155,7 @@ export default function ForemanPage() {
 
   // Categories active this week (for log tab)
   const activeThisWeek = ganttEntries.filter(entry =>
-    entry.segments.some(seg => isWeekInSegment(currentFridayDate, seg))
+    entrySegments(entry).some(seg => isWeekInSegment(currentFridayDate, seg))
   )
 
   // For budget tab: compute spent per category
@@ -269,7 +270,7 @@ export default function ForemanPage() {
                       </div>
                       {/* Week cells */}
                       {fridays.map((friday, fi) => {
-                        const isActive = entry.segments.some(seg => isWeekInSegment(friday, seg))
+                        const isActive = entrySegments(entry).some(seg => isWeekInSegment(friday, seg))
                         const isCurrent = toISODate(friday) === toISODate(currentFridayDate)
                         return (
                           <div

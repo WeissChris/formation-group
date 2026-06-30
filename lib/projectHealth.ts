@@ -1,4 +1,5 @@
 import type { Project, Estimate, GanttEntry, WeeklyActual } from '@/types'
+import { entrySegments } from './ganttForecast'
 
 export type HealthStatus = 'green' | 'amber' | 'red'
 
@@ -52,7 +53,7 @@ export function getForecastCompletion(project: Project, ganttEntries?: GanttEntr
   if (ganttEntries && ganttEntries.length > 0) {
     let latestMs = -Infinity
     for (const entry of ganttEntries) {
-      for (const seg of entry.segments) {
+      for (const seg of entrySegments(entry)) {   // include split type-line bars, not just own segments
         if (!seg.endDate) continue
         const ms = new Date(seg.endDate).getTime()
         if (!isNaN(ms) && ms > latestMs) latestMs = ms

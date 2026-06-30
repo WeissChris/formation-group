@@ -35,6 +35,16 @@ export function entryClaimSegments(entry: GanttEntry): { costType?: CostTypeKey;
   return [...own, ...leaves]
 }
 
+// Every dated/costed segment an entry contributes to a schedule, from the single source: the category's
+// own bar PLUS its split type-line / subtask leaves. Read this (NOT entry.segments) anywhere outside the
+// Gantt editor that needs an entry's bars, dates or cost — a split category clears its own segments, so
+// reading entry.segments alone makes it look empty (the "split project shows no bars / no work" bug on
+// the master programme, foreman portal, actuals and project health). Same single-source rule as the
+// revenue readers, for non-revenue consumers.
+export function entrySegments(entry: GanttEntry): GanttSegment[] {
+  return entryClaimSegments(entry).map(c => c.seg)
+}
+
 // Planned revenue + cost per week (keyed by the week's Friday ISO). A segment contributes
 // revenueAllocation/weekCount to every week it overlaps (Mon–Fri of that week), so it works in both weeks
 // and days view and against a baseline snapshot. Used for the fortnightly cycle + inline invoice totals.
