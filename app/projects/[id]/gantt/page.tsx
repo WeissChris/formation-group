@@ -1608,6 +1608,16 @@ export default function GanttPage() {
     }
   }, [flushGantt])
 
+  // Autosave: persist ~1.2s after the last edit (local + Supabase), matching the estimate page, so a
+  // crash/interruption mid-session doesn't lose work — not just on navigate-away. flushGantt no-ops when
+  // not dirty, so the initial load and remote-sync adoptions (which don't set the dirty flag) don't fire
+  // a save. A drag keeps resetting the timer, so it saves once the drag settles, never mid-drag.
+  useEffect(() => {
+    if (!hasUnsavedChangesRef.current) return
+    const h = setTimeout(flushGantt, 1200)
+    return () => clearTimeout(h)
+  }, [entries, flushGantt])
+
   // ── Seed timeline from the estimate ─────────────────────────────────────────
   // Drops one starter bar per category (budget fully allocated), staggered in sequence, so the
   // user begins from a draft programme instead of drawing every bar by hand. Only fills EMPTY
