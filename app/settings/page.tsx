@@ -349,7 +349,10 @@ export default function SettingsPage() {
               <div className="flex items-center gap-2 min-w-0">
                 <div className={`w-2 h-2 rounded-full shrink-0 ${st.connected ? 'bg-green-500' : 'bg-gray-300'}`} />
                 <span className="text-xs text-fg-heading whitespace-nowrap">{org.label}</span>
-                <span className="text-xs text-fg-muted truncate">{st.connected ? `· ${st.tenantName || 'Connected'}` : '· Not connected'}</span>
+                <span className={`text-2xs font-medium uppercase tracking-wide shrink-0 ${st.connected ? 'text-green-600' : 'text-fg-muted/60'}`}>
+                  {st.connected ? 'Connected' : 'Not connected'}
+                </span>
+                {st.connected && st.tenantName && <span className="text-xs text-fg-muted truncate">· {st.tenantName}</span>}
               </div>
               {st.connected ? (
                 <button
