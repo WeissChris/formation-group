@@ -2037,7 +2037,8 @@ export default function GanttPage() {
             padding: 0,
             position: 'relative',
             borderLeft: colBorderLeft(i),
-            background: '#FCFBF9',   // light near-white grid so bars + text pop (Instagantt-like)
+            // white grid canvas so bars + text pop (Instagantt-like); keep a faint current-week column tint
+            background: isCurrentWeek && !activeSegs.length ? '#F1EEEA' : '#FFFFFF',
           }}
           className={`gantt-cell border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border/25'} cursor-crosshair ${isCurrentWeek && !activeSegs.length ? 'bg-fg-card/20' : ''}`}
           onMouseDown={() => handleCellMouseDown(category, i, subtaskId)}
@@ -2178,7 +2179,11 @@ export default function GanttPage() {
     >
       {/* Print / PDF: hide the chrome, un-stick + expand the grid so the whole programme prints, brand it.
           Use the browser's "Save as PDF" from the print dialog for a branded PDF. */}
-      <style>{`@media print {
+      <style>{`
+      /* Gantt grid canvas is white (not the app's warm beige) so bars + text stand out — Instagantt-like.
+         Only the bg-fg-bg cells/headers are whitened; the current-week bg-fg-card tint is left intact. */
+      .gantt-scroll .bg-fg-bg { background-color: #ffffff !important; }
+      @media print {
         .gantt-no-print { display: none !important; }
         .gantt-print-only { display: block !important; }
         .gantt-scroll { overflow: visible !important; max-height: none !important; border: none !important; }
