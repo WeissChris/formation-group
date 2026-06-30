@@ -2553,8 +2553,12 @@ export default function GanttPage() {
       )}
 
       {estimate && categories.length > 0 && (
-        <div ref={gridScrollRef} className="gantt-scroll border border-fg-border" style={{ userSelect: 'none', maxHeight: 'calc(100vh - 230px)', width: '100%', minWidth: 0, maxWidth: '100vw', overflowX: 'auto', overflowY: 'auto' }}>
-          <table className="border-collapse" style={{ minWidth: tableWidth, width: tableWidth }}>
+        <div ref={gridScrollRef} className="gantt-scroll border border-fg-border" style={{ userSelect: 'none', maxHeight: 'calc(100vh - 230px)', maxWidth: '100vw', overflowX: 'auto', overflowY: 'auto' }}>
+          {/* Block sizer with an explicit min-width FORCES the parent's overflow-x to scroll — a
+              border-collapse auto-layout table sets its own width as a soft suggestion and shrinks to fit
+              instead (the no-horizontal-scroll bug). Mirrors the working Master Programme grid. */}
+          <div style={{ minWidth: tableWidth, width: tableWidth }}>
+          <table className="border-collapse" style={{ width: '100%' }}>
             {/* ── Headers ── */}
             <thead>
               {/* Weekly cash flow — above the dates (Andrew), sticky at the top of the grid */}
@@ -2929,6 +2933,7 @@ export default function GanttPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
