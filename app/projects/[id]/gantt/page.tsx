@@ -45,8 +45,8 @@ const LOOKBACK_WEEKS = 1      // grid starts one week before today (no wall of e
 // Andrew's zoom scale: 100% default, then ~25% steps each way (25/50/75/100/125/150/200).
 const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2] as const
 const DAYS_VIEW_WEEKS = 26   // Days view renders this many weeks of working-day columns (was 12 — too short for multi-month jobs)
-const COL_CATEGORY = 200
-const COL_BUDGET = 124
+const COL_CATEGORY = 248   // wider so category names breathe (less wrapping)
+const COL_BUDGET = 150     // wider so the cost breakdown isn't cramped
 
 // Cost-type palette for the per-task cost split + project totals strip.
 const COST_TYPE_META = {
@@ -2711,7 +2711,7 @@ export default function GanttPage() {
                       onDragOver={dragCat ? (e => e.preventDefault()) : undefined}
                       onDrop={dragCat ? (() => { reorderCategoryBefore(dragCat, cat.category); setDragCat(null) }) : undefined}>
                       {/* Category label — grab handle far left (reorder), + add-subtask far right (by totals) */}
-                      <td className="border-r border-fg-border bg-fg-bg pl-1 pr-1.5 py-1.5 text-xs font-light text-fg-heading align-middle" style={{ width: COL_CATEGORY, ...stickyL(0) }}>
+                      <td className="border-r border-fg-border bg-fg-bg pl-1 pr-1.5 py-2 text-xs font-medium text-fg-heading align-middle" style={{ width: COL_CATEGORY, ...stickyL(0) }}>
                         <div className="flex items-start gap-1">
                           {/* Far-left drag handle (BuildXact-style) — drag to reorder; replaces the up/down arrows */}
                           <span draggable
@@ -2765,7 +2765,7 @@ export default function GanttPage() {
                       </td>
                       {/* Budget — revenue + an inline, compact cost split. Single-letter type tags with
                           tooltips keep it to ~1 line. (Crew + Start/Duration columns removed — Andrew.) */}
-                      <td className="border-r border-fg-border bg-fg-bg px-2 py-1.5 text-right text-[11px] font-light text-fg-muted tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(1) }}>
+                      <td className="border-r border-fg-border bg-fg-bg px-2 py-2 text-right text-[11px] font-normal text-fg-heading/90 tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(1) }}>
                         <div className="gantt-finance">
                           <div className="text-fg-heading" title={showRevenue ? 'Contract revenue' : 'Budgeted cost'}>{formatCurrency(showRevenue ? cat.budgetedRevenue : cat.budgetedCost)}</div>
                           {/* Live category roll-up (Andrew iter6) — sum of every leaf claim under this category,
@@ -2773,13 +2773,13 @@ export default function GanttPage() {
                           {split && (() => {
                             const segs = entryClaimSegments(entry)
                             const claimed = segs.reduce((s, c) => s + (showRevenue ? (c.seg.revenueAllocation || 0) : (c.seg.costAllocation || 0)), 0)
-                            return <div className="text-[9px] text-fg-muted/70" title="Claimed so far (rolled up from all nested lines)">claimed {formatCurrency(claimed)}</div>
+                            return <div className="text-[9px] text-fg-muted" title="Claimed so far (rolled up from all nested lines)">claimed {formatCurrency(claimed)}</div>
                           })()}
                           <div className="mt-px flex flex-wrap justify-end gap-x-1.5 gap-y-0 text-[9px] leading-tight">
                             {COST_TYPE_KEYS.map(k => cat.cost[k] > 0 ? (
                               <span key={k} className="whitespace-nowrap" title={`${COST_TYPE_META[k].label}: ${formatCurrency(cat.cost[k])}${k === 'labour' ? ` · ${Math.round(cat.cost[k] / STD_LABOUR_RATE)}h` : ''}`}>
                                 <span style={{ color: COST_TYPE_META[k].colour }}>{COST_TYPE_META[k].label[0]}</span>
-                                <span className="text-fg-muted/60"> {fmtK(cat.cost[k])}</span>
+                                <span className="text-fg-heading/70"> {fmtK(cat.cost[k])}</span>
                               </span>
                             ) : null)}
                           </div>
@@ -2795,7 +2795,7 @@ export default function GanttPage() {
                     {/* ── Subtask rows (flattened tree; indent = nesting depth) ── */}
                     {!isCollapsed && flattenSubtasks(subtasks).map(({ st: subtask, depth }) => (
                       <tr key={subtask.id} className="border-b border-fg-border/20 group/sub" style={{ height: 25 }}>
-                        <td className="border-r border-fg-border bg-fg-bg pr-2 py-1.5 text-[11px] font-light text-fg-muted whitespace-nowrap align-middle" style={{ width: COL_CATEGORY, paddingLeft: 20 + depth * 16, ...stickyL(0) }}>
+                        <td className="border-r border-fg-border bg-fg-bg pr-2 py-1.5 text-[11px] font-normal text-fg-heading/85 whitespace-nowrap align-middle" style={{ width: COL_CATEGORY, paddingLeft: 20 + depth * 16, ...stickyL(0) }}>
                           <div className="flex items-center gap-1">
                             {subtask.costType
                               ? <span className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: COST_TYPE_META[subtask.costType].colour }} />
@@ -2803,7 +2803,7 @@ export default function GanttPage() {
                             <input
                               value={subtask.label}
                               onChange={e => handleRenameSubtask(cat.category, subtask.id, e.target.value)}
-                              className="bg-transparent border-none outline-none text-[11px] font-light text-fg-muted w-full min-w-0 hover:text-fg-heading focus:text-fg-heading"
+                              className="bg-transparent border-none outline-none text-[11px] font-normal text-fg-heading/85 w-full min-w-0 hover:text-fg-heading focus:text-fg-heading"
                             />
                             <div className="opacity-0 group-hover/sub:opacity-100 flex items-center gap-0.5 flex-shrink-0 transition-all">
                               <button
@@ -2823,7 +2823,7 @@ export default function GanttPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="border-r border-fg-border bg-fg-bg px-2 text-right text-[10px] font-light text-fg-muted/70 tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(1) }}>
+                        <td className="border-r border-fg-border bg-fg-bg px-2 text-right text-[10px] font-normal text-fg-heading/75 tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(1) }}>
                           {(() => {
                             // Live roll-up (Andrew iter6 Phase 2): the line's value = the sum of its leaf
                             // claims, recomputed every render. Untyped subtasks count as Labour. Explicit
