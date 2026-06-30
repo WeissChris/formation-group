@@ -15,6 +15,10 @@ describe('workingDaysBetween', () => {
     expect(workingDaysBetween('', '2026-06-19')).toBe(0)
     expect(workingDaysBetween('2026-06-19', '')).toBe(0)
   })
+  it('drops VIC public holidays (King\'s Birthday Mon 2026-06-08)', () => {
+    expect(workingDaysBetween('2026-06-08', '2026-06-12')).toBe(4)   // Mon–Fri minus the Monday holiday
+    expect(workingDaysBetween('2026-06-09', '2026-06-12')).toBe(4)   // Tue–Fri, no holiday
+  })
 })
 
 describe('labourWorkingDays', () => {
@@ -34,5 +38,14 @@ describe('labourWorkingDays', () => {
   })
   it('is 0 for empty dates', () => {
     expect(labourWorkingDays('', '')).toBe(0)
+  })
+  it('drops a public holiday from a weeks-view bar (week containing King\'s Birthday)', () => {
+    // 1-week bar ending Fri 2026-06-12: its Mon (06-08) is King's Birthday, so 5 → 4.
+    expect(labourWorkingDays('2026-06-12', '2026-06-12')).toBe(4)
+    // The clear week after (Fri 06-19) is unaffected.
+    expect(labourWorkingDays('2026-06-19', '2026-06-19')).toBe(5)
+  })
+  it('drops a public holiday from a days-view bar that spans it', () => {
+    expect(labourWorkingDays('2026-06-08', '2026-06-12', 'days')).toBe(4)  // Mon–Fri minus the Monday holiday
   })
 })
