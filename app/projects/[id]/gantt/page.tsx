@@ -633,6 +633,9 @@ export default function GanttPage() {
     anchorColIdx: number
     originalStart: string
     originalEnd: string
+    // Set when dragging the category's roll-up summary bar: shift EVERY segment (own bar + all subtask
+    // leaves) by the same offset from their snapshot, so the whole category slides together.
+    rollup?: { segs: { id: string; start: string; end: string }[]; spanStart: string; spanEnd: string }
   } | null>(null)
 
   // Resizing state — dragging a bar's left (start) or right (end) edge to extend/shorten it.
@@ -1101,6 +1104,25 @@ export default function GanttPage() {
 
       const offset = colIdx - moving.anchorColIdx
 
+      // Roll-up drag: slide the whole category. Clamp the offset by the group's full span (so nothing
+      // leaves the window), then shift every snapshotted segment from its original by that offset.
+      if (moving.rollup) {
+        const r = moving.rollup
+        const sIdx = colIndexForDate(r.spanStart)
+        const eIdx = colIndexForDate(r.spanEnd)
+        const clamped = (sIdx >= 0 && eIdx >= 0) ? Math.max(-sIdx, Math.min(colCount - 1 - eIdx, offset)) : offset
+        const shifted = new Map<string, { s: string; e: string }>()
+        for (const sg of r.segs) {
+          const si = colIndexForDate(sg.start), ei = colIndexForDate(sg.end)
+          if (si >= 0 && ei >= 0) shifted.set(sg.id, { s: dateForColIdx(si + clamped), e: dateForColIdx(ei + clamped) })
+        }
+        const shiftSeg = (s: GanttSegment): GanttSegment => { const n = shifted.get(s.id); return n ? { ...s, startDate: n.s, endDate: n.e } : s }
+        const mapAll = (sts: GanttSubtask[]): GanttSubtask[] =>
+          sts.map(st => ({ ...st, segments: st.segments.map(shiftSeg), ...(st.subtasks?.length ? { subtasks: mapAll(st.subtasks) } : {}) }))
+        updateEntry({ ...entry, segments: entry.segments.map(shiftSeg), subtasks: mapAll(entry.subtasks ?? []) })
+        return
+      }
+
       // Calculate new dates by shifting. Clamp the OFFSET (not each end on its own) so the bar keeps its
       // length when dragged against either edge of the window — clamping ends independently let one end
       // hit the boundary while the other kept moving, squashing the bar. Off-window bars (start/end past
@@ -1185,6 +1207,19 @@ export default function GanttPage() {
       originalStart: seg.startDate,
       originalEnd: seg.endDate,
     })
+  }
+
+  // Grab the category's roll-up summary bar to slide the whole category (own bar + every subtask leaf)
+  // by the same offset — e.g. push a delayed start forward a few days.
+  const handleRollupMouseDown = (e: React.MouseEvent, entry: GanttEntry, colIdx: number) => {
+    e.stopPropagation()
+    const segs: { id: string; start: string; end: string }[] = []
+    for (const s of entry.segments) if (s.startDate && s.endDate) segs.push({ id: s.id, start: s.startDate, end: s.endDate })
+    for (const { st } of flattenSubtasks(entry.subtasks ?? [])) for (const s of st.segments) if (s.startDate && s.endDate) segs.push({ id: s.id, start: s.startDate, end: s.endDate })
+    if (segs.length === 0) return
+    const spanStart = segs.map(s => s.start).sort()[0]
+    const spanEnd = segs.map(s => s.end).sort().slice(-1)[0]
+    setMoving({ entryId: entry.id, segId: `${entry.id}-rollup`, anchorColIdx: colIdx, originalStart: spanStart, originalEnd: spanEnd, rollup: { segs, spanStart, spanEnd } })
   }
 
   // Drag a bar's start/end edge to extend or shorten it (Instagantt-style). Stops propagation so it
@@ -2017,10 +2052,12 @@ export default function GanttPage() {
                   style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, background: '#8A8580',
                     borderRadius: isStart && isEnd ? 3 : isStart ? '3px 0 0 3px' : isEnd ? '0 3px 3px 0' : 0 }} />
               ) : (
-                <div key={seg.id} className="absolute pointer-events-none" title={`${category} — timeframe`}
+                <div key={seg.id} className="absolute" title={`${category} — drag to shift the whole category`}
+                  onMouseDown={e => handleRollupMouseDown(e, entry, i)}
                   style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, top: 2, height: 10,
                     background: '#8A858033', borderTop: '2px solid #8A8580',
-                    borderRadius: isStart && isEnd ? 2 : isStart ? '2px 0 0 2px' : isEnd ? '0 2px 2px 0' : 0 }} />
+                    borderRadius: isStart && isEnd ? 2 : isStart ? '2px 0 0 2px' : isEnd ? '0 2px 2px 0' : 0,
+                    cursor: (moving?.rollup && moving.entryId === entry.id) ? 'grabbing' : 'grab' }} />
               )
             }
 
