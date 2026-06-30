@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react'
 import { useParams, useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -40,8 +40,11 @@ import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react
 // 30 weeks in weeks view and 10 weeks (50 working days) in days view on a typical screen (Andrew).
 const CELL_W_WEEKS = 36
 const CELL_W_DAYS = 16   // narrow day columns (Instagantt-like); bar labels overflow to the right, so this is safe
-const WEEK_COUNT = 52
-const LOOKBACK_WEEKS = 6      // weeks of grid BEFORE today you can scroll back to (the initial view still lands 1 week behind today)
+const LOOKBACK_WEEKS = 6      // BASE weeks of grid before today (the initial view lands 1 week behind today)
+const MIN_FORWARD_WEEKS = 60  // BASE weeks of grid after today (always scrollable forward)
+const MAX_FORWARD_WEEKS = 312 // cap on the auto-extend-to-scheduled-work horizon (~6yr)
+const GROW_CHUNK_WEEKS = 13   // weeks added each time you scroll to an edge (a quarter)
+const MAX_EXTRA_WEEKS = 520   // cap on on-demand growth each direction (~10yr) so the DOM can't run away
 // Andrew's zoom scale: 100% default, then ~25% steps each way (25/50/75/100/125/150/200).
 const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2] as const
 const DAYS_VIEW_WEEKS = 26   // Days view renders this many weeks of working-day columns (was 12 — too short for multi-month jobs)
@@ -762,23 +765,33 @@ export default function GanttPage() {
   const [zoom, setZoom] = useState(1)
   const gridScrollRef = useRef<HTMLDivElement | null>(null)
   const scrolledToToday = useRef(false)
+  // Infinite-ish scroll: the window grows on demand when you reach either edge. extraBack/extraFwd are
+  // the extra weeks added each direction; refs guard against re-entrancy + keep the view stable when we
+  // prepend columns (prepending shifts content right, so we compensate scrollLeft).
+  const [extraBack, setExtraBack] = useState(0)
+  const [extraFwd, setExtraFwd] = useState(0)
+  const growingRef = useRef(false)
+  const prevExtraBackRef = useRef(0)
 
-  // Render enough weeks to reach the project's last scheduled date (Andrew iter3: full-lifespan horizon),
-  // floored at WEEK_COUNT and capped at 156 (3yr). Covers bars, nested subtasks and milestones.
-  const horizonWeeks = (() => {
+  // Scroll window = (lookback before today) + (forward after today). The forward span reaches the last
+  // scheduled date (floored at MIN_FORWARD_WEEKS, capped at MAX_FORWARD_WEEKS). Both edges then grow on
+  // demand (extraBack/extraFwd) as you scroll to them, so the timeline is effectively infinite.
+  const effLookback = LOOKBACK_WEEKS + extraBack
+  const forwardWeeks = (() => {
     let latest = ''
     for (const e of entries) {
       for (const s of e.segments) if (s.endDate && s.endDate > latest) latest = s.endDate
       for (const { st } of flattenSubtasks(e.subtasks ?? [])) for (const s of st.segments) if (s.endDate && s.endDate > latest) latest = s.endDate
     }
     for (const m of milestones) if (m.date && m.date > latest) latest = m.date
-    if (!latest) return WEEK_COUNT
-    const firstCol = new Date(); firstCol.setDate(firstCol.getDate() - LOOKBACK_WEEKS * 7)
-    const weeks = Math.ceil((new Date(`${latest}T00:00:00`).getTime() - firstCol.getTime()) / (7 * 86400000)) + 4
-    return Math.min(156, Math.max(WEEK_COUNT, weeks))
+    if (!latest) return MIN_FORWARD_WEEKS + extraFwd
+    const today0 = new Date()
+    const weeks = Math.ceil((new Date(`${latest}T00:00:00`).getTime() - today0.getTime()) / (7 * 86400000)) + 4
+    return Math.min(MAX_FORWARD_WEEKS, Math.max(MIN_FORWARD_WEEKS, weeks)) + extraFwd
   })()
+  const totalWeeks = effLookback + forwardWeeks
   const fridays = (() => {
-    const all = getNextFridays(horizonWeeks, LOOKBACK_WEEKS)
+    const all = getNextFridays(totalWeeks, effLookback)
     if (!clientPrint) return all
     // Client PDF: trim to the active work range — cut the empty weeks before the first bar and after the
     // last, so the programme reads zoomed-in on what matters.
@@ -795,7 +808,7 @@ export default function GanttPage() {
     return trimmed.length ? trimmed : all
   })()
   const workingDays = getWorkingDays(fridays)
-  const currentWeekIso = fridays[LOOKBACK_WEEKS] ? toISODate(fridays[LOOKBACK_WEEKS]) : (fridays[0] ? toISODate(fridays[0]) : '')
+  const currentWeekIso = fridays[effLookback] ? toISODate(fridays[effLookback]) : (fridays[0] ? toISODate(fridays[0]) : '')
   const today = toISODate(new Date())
 
   const CELL_W = Math.round((timeView === 'days' ? CELL_W_DAYS : CELL_W_WEEKS) * zoom)
@@ -813,6 +826,33 @@ export default function GanttPage() {
     gridScrollRef.current.scrollLeft = Math.max(0, colsBeforeView * CELL_W)
     scrolledToToday.current = true
   }, [colCount, timeView, CELL_W])
+
+  // Infinite scroll: grow the window a quarter at a time when you reach either edge. The big chunk
+  // (vs the small edge threshold) means one grow moves you clear of the edge, so it can't loop.
+  const handleGridScroll = useCallback(() => {
+    const el = gridScrollRef.current
+    if (!el || !scrolledToToday.current || growingRef.current) return
+    const edge = CELL_W * 8
+    if (el.scrollLeft < edge && extraBack < MAX_EXTRA_WEEKS) {
+      growingRef.current = true
+      setExtraBack(b => Math.min(MAX_EXTRA_WEEKS, b + GROW_CHUNK_WEEKS))
+    } else if (el.scrollWidth - el.scrollLeft - el.clientWidth < edge && extraFwd < MAX_EXTRA_WEEKS) {
+      growingRef.current = true
+      setExtraFwd(f => Math.min(MAX_EXTRA_WEEKS, f + GROW_CHUNK_WEEKS))
+    }
+  }, [CELL_W, extraBack, extraFwd])
+
+  // Prepending past weeks shifts everything right — add the exact delta back to scrollLeft so the view
+  // stays put. Forward growth needs no compensation. Either way, clear the re-entrancy guard.
+  useLayoutEffect(() => {
+    const backDelta = extraBack - prevExtraBackRef.current
+    prevExtraBackRef.current = extraBack
+    if (backDelta > 0 && gridScrollRef.current) {
+      const addedCols = timeView === 'days' ? backDelta * 5 : backDelta
+      gridScrollRef.current.scrollLeft += addedCols * CELL_W
+    }
+    growingRef.current = false
+  }, [extraBack, extraFwd, timeView, CELL_W])
 
   useEffect(() => {
     let cancelled = false
@@ -2540,7 +2580,7 @@ export default function GanttPage() {
       )}
 
       {estimate && categories.length > 0 && (
-        <div ref={gridScrollRef} className="gantt-scroll overflow-auto border border-fg-border" style={{ userSelect: 'none', maxHeight: 'calc(100vh - 230px)' }}>
+        <div ref={gridScrollRef} onScroll={handleGridScroll} className="gantt-scroll overflow-auto border border-fg-border" style={{ userSelect: 'none', maxHeight: 'calc(100vh - 230px)' }}>
           <table className="border-collapse" style={{ minWidth: tableWidth, width: tableWidth }}>
             {/* ── Headers ── */}
             <thead>
