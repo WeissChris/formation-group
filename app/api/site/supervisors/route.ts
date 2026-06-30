@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 
 export const runtime = 'nodejs'
+// This GET reads no cookies/request data, so Next would statically cache it (it cached an empty list at
+// build time, before any passcode was set). Force dynamic so it always reflects the live DB.
+export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/site/supervisors -> [{ id, name }] for supervisors who have a passcode set (i.e. can log in).
