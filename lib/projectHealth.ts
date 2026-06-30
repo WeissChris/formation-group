@@ -83,6 +83,26 @@ export function getForecastCompletion(project: Project, ganttEntries?: GanttEntr
   return project.plannedCompletion
 }
 
+/**
+ * Resolve the project's start date FROM the Gantt: the earliest scheduled start across all entries
+ * (incl. split type-line bars), else fall back to the stored `project.startDate`. Mirror of
+ * getForecastCompletion for the start edge, so the project summary reflects the chart automatically.
+ */
+export function getForecastStart(project: Project, ganttEntries?: GanttEntry[]): string | undefined {
+  if (ganttEntries && ganttEntries.length > 0) {
+    let earliestMs = Infinity
+    for (const entry of ganttEntries) {
+      for (const seg of entrySegments(entry)) {
+        if (!seg.startDate) continue
+        const ms = new Date(seg.startDate).getTime()
+        if (!isNaN(ms) && ms < earliestMs) earliestMs = ms
+      }
+    }
+    if (earliestMs !== Infinity) return new Date(earliestMs).toISOString().slice(0, 10)
+  }
+  return project.startDate
+}
+
 export function calcProjectHealth(
   project: Project,
   estimates: Estimate[],

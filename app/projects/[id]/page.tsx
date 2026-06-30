@@ -18,7 +18,7 @@ import type { Project, Estimate, WeeklyRevenue, GanttEntry, WeeklyActual, Progre
 import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, PROGRESSION_WARNINGS, buildChecklist, defaultStageForStatus } from '@/lib/stageConfig'
 import type { ProjectScope } from '@/types'
 import type { ProjectStage } from '@/types'
-import { calcProjectHealth, scheduleStatus, healthColour, healthBg, healthBorder, getForecastCompletion } from '@/lib/projectHealth'
+import { calcProjectHealth, scheduleStatus, healthColour, healthBg, healthBorder, getForecastCompletion, getForecastStart } from '@/lib/projectHealth'
 import FinancialOperations from '@/components/FinancialOperations'
 import EntityBadge from '@/components/EntityBadge'
 import { Pencil, Trash2, ChevronRight, Plus, ExternalLink, Copy, Check, X } from 'lucide-react'
@@ -1312,11 +1312,11 @@ export default function ProjectDetailPage() {
             <div className="grid grid-cols-3 gap-6">
               <div>
                 <p className="text-2xs text-fg-muted tracking-wide uppercase mb-1">Start Date</p>
-                <p className="text-sm font-light text-fg-heading">{formatProjectDate(project.startDate)}</p>
+                <p className="text-sm font-light text-fg-heading">{formatProjectDate(getForecastStart(project, ganttEntries) || '') || 'TBC'}</p>
               </div>
               <div>
                 <p className="text-2xs text-fg-muted tracking-wide uppercase mb-1">Target Completion</p>
-                <p className="text-sm font-light text-fg-heading">{formatProjectDate(project.plannedCompletion)}</p>
+                <p className="text-sm font-light text-fg-heading">{formatProjectDate(getForecastCompletion(project, ganttEntries) || '') || 'TBC'}</p>
               </div>
               <div>
                 <p className="text-2xs text-fg-muted tracking-wide uppercase mb-1">Entity</p>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getForecastCompletion, scheduleStatus, calcProjectHealth, getTargetMarginPct, projectGpGoalPct } from './projectHealth'
+import { getForecastCompletion, getForecastStart, scheduleStatus, calcProjectHealth, getTargetMarginPct, projectGpGoalPct } from './projectHealth'
 import type { Project, GanttEntry, ProjectBaseline } from '@/types'
 
 function project(overrides: Partial<Project> = {}): Project {
@@ -99,6 +99,27 @@ describe('getForecastCompletion', () => {
       { id: 'a', startDate: '2026-01-02', endDate: '', weekCount: 0, revenueAllocation: 0, costAllocation: 0 },
     ]})]
     expect(getForecastCompletion(p, entries)).toBe('2026-06-30')
+  })
+})
+
+describe('getForecastStart', () => {
+  it('derives the earliest Gantt segment start across all entries', () => {
+    const p = project({ startDate: '2026-06-30' })
+    const entries = [
+      ganttEntry({ segments: [
+        { id: 'b', startDate: '2026-03-06', endDate: '2026-07-10', weekCount: 19, revenueAllocation: 0, costAllocation: 0 },
+      ]}),
+      ganttEntry({ id: 'g2', segments: [
+        { id: 'a', startDate: '2026-01-02', endDate: '2026-02-27', weekCount: 8, revenueAllocation: 0, costAllocation: 0 },
+      ]}),
+    ]
+    expect(getForecastStart(p, entries)).toBe('2026-01-02')
+  })
+
+  it('falls back to project.startDate with no gantt', () => {
+    const p = project({ startDate: '2026-06-30' })
+    expect(getForecastStart(p, [])).toBe('2026-06-30')
+    expect(getForecastStart(p)).toBe('2026-06-30')
   })
 })
 

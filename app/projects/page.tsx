@@ -7,7 +7,7 @@ import { loadProjects, loadGanttEntries, saveProject, loadSupervisors } from '@/
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getProjects, getSupervisors, upsertProject } from '@/lib/storageAsync'
 import { STAGE_LABELS, STAGE_COLOURS } from '@/lib/stageConfig'
-import { scheduleStatus, healthColour, healthBg, getForecastCompletion } from '@/lib/projectHealth'
+import { scheduleStatus, healthColour, healthBg, getForecastCompletion, getForecastStart } from '@/lib/projectHealth'
 import { supervisorColourByName, UNASSIGNED_COLOUR } from '@/lib/supervisors'
 import type { ProjectStage, GanttEntry, Supervisor } from '@/types'
 import { formatCurrency } from '@/lib/utils'
@@ -252,11 +252,11 @@ function ProjectsInner() {
                         </div>
                       )
                     }
-                    // No baseline — show simple date
+                    // No baseline — show start -> completion, both derived from the chart entries.
                     return (
                       <div className="text-xs font-light text-fg-muted">
-                        <p>{formatProjectDate(p.startDate)}</p>
-                        <p>→ {formatProjectDate(p.plannedCompletion) || 'TBC'}</p>
+                        <p>{formatProjectDate(getForecastStart(p, pGantt) || '') || 'TBC'}</p>
+                        <p>→ {formatProjectDate(getForecastCompletion(p, pGantt) || '') || 'TBC'}</p>
                       </div>
                     )
                   })()}
