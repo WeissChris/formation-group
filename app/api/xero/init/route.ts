@@ -34,14 +34,16 @@ export async function GET(request: NextRequest) {
   // with the entity so the callback can route the tokens. The whole string is still CSRF-checked.
   const state = `${entity}.${randomBytes(32).toString('hex')}`
 
-  // Accounting-only scopes — proven by the cost feed and enabled in the Xero app config. The XCC
-  // account list + cost feed need only these.
-  // PAYROLL (paused labour-hours feature): the per-job hours pull needs
-  // `payroll.timesheets.read payroll.settings.read`, but those must FIRST be enabled in the Xero
-  // developer app config (developer.xero.com -> Configuration). Requesting a scope the app config
-  // doesn't have makes the WHOLE authorize fail with invalid_scope, so the connect silently bounces
-  // back with no token (the symptom we hit). Re-add them here once the app config has them.
-  const scope = 'accounting.settings.read accounting.invoices accounting.banktransactions.read accounting.reports.profitandloss.read offline_access'
+  // Accounting-only scopes — proven by the cost feed. The XCC account list + cost feed need only these.
+  const accountingScope = 'accounting.settings.read accounting.invoices accounting.banktransactions.read accounting.reports.profitandloss.read offline_access'
+  // PAYROLL (labour-hours feature) is OPT-IN via ?payroll=1, so the normal connect stays accounting-only
+  // and can't be broken by a payroll scope the Xero app config doesn't have (requesting a scope the app
+  // lacks fails the WHOLE authorize with invalid_scope). Use ?payroll=1 to test/grant the AU Payroll
+  // timesheet read; if it connects, payroll is available and we make it the default.
+  const wantsPayroll = new URL(request.url).searchParams.get('payroll') === '1' && entity === 'formation'
+  const scope = wantsPayroll
+    ? `${accountingScope} payroll.timesheets.read payroll.settings.read`
+    : accountingScope
 
   const params = new URLSearchParams({
     response_type: 'code',
