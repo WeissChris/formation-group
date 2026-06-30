@@ -13,7 +13,7 @@ import {
 } from '@/lib/storage'
 import { getProjects, reconcileVariations, upsertProject, deleteProjectAsync, upsertSubcontractor, deleteSubcontractorAsync } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
-import { getEstimateTotals, variationContractValue } from '@/lib/estimateCalculations'
+import { getEstimateTotals, variationContractValue, estimateLabourHours, activeLineItems, STD_LABOUR_RATE } from '@/lib/estimateCalculations'
 import type { Project, Estimate, WeeklyRevenue, GanttEntry, WeeklyActual, ProgressClaim, ProgressPaymentStage, SubcontractorPackage, SubcontractorClaim } from '@/types'
 import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, PROGRESSION_WARNINGS, buildChecklist, defaultStageForStatus } from '@/lib/stageConfig'
 import type { ProjectScope } from '@/types'
@@ -403,6 +403,23 @@ function ProjectFinancialPosition({
   const isOverInvoiced = wipRatio > 100
   const isOverBudget = costRatio > 100
 
+  // Labour hours: allowed (accepted estimates incl. variations) vs used to date. Labour is always priced
+  // at STD_LABOUR_RATE, so the estimate hours (labour$/rate) and actual hours (actual labour$/rate) share
+  // one basis and compare cleanly.
+  const allowedLabourHours = estimates
+    .filter(e => e.status === 'accepted')
+    .reduce((sum, e) => sum + estimateLabourHours(activeLineItems(e)), 0)
+  const usedLabourCost = actuals.reduce((sum, a) => sum + a.labourCost, 0)
+  const usedLabourHours = usedLabourCost / STD_LABOUR_RATE
+  const remainingLabourHours = allowedLabourHours - usedLabourHours
+  const allowedLabourCost = allowedLabourHours * STD_LABOUR_RATE
+  const labourHoursPct = allowedLabourHours > 0 ? (usedLabourHours / allowedLabourHours) * 100 : 0
+  const labourOver = labourHoursPct > 100
+  const labourBarPct = Math.min(100, labourHoursPct)
+  // Early warning: hours burning faster than billing (consumed % running well ahead of invoiced %).
+  const labourAheadOfBilling = allowedLabourHours > 0 && totalInvoiced > 0 && labourHoursPct > wipRatio + 10
+  const fmtHrs = (h: number) => `${Math.round(h).toLocaleString()} hrs`
+
   const hasData = estimates.length > 0 || ganttEntries.length > 0
 
   if (!hasData) {
@@ -706,6 +723,69 @@ function ProjectFinancialPosition({
           </div>
         </div>
       </div>
+
+      {/* Labour */}
+      {allowedLabourHours > 0 && (
+        <div>
+          <h3 className="text-xs font-light tracking-widest uppercase text-fg-muted mb-3">Labour</h3>
+          <div className="grid grid-cols-2 gap-3">
+            {/* Hours */}
+            <div className="bg-fg-bg border border-fg-border rounded-sm p-4">
+              <p className="text-2xs text-fg-muted tracking-wide uppercase mb-3">Hours</p>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm font-light">
+                  <span className="text-fg-muted">Allowed (estimate)</span>
+                  <span className="text-fg-heading tabular-nums">{fmtHrs(allowedLabourHours)}</span>
+                </div>
+                <div className="flex justify-between text-sm font-light">
+                  <span className="text-fg-muted">Used to date</span>
+                  <span className="text-fg-heading tabular-nums">{fmtHrs(usedLabourHours)}</span>
+                </div>
+                <div className="flex justify-between text-sm font-light border-t border-fg-border pt-2">
+                  <span className="text-fg-muted">Remaining</span>
+                  <span className={`tabular-nums ${remainingLabourHours < 0 ? 'text-red-400' : 'text-fg-heading'}`}>{fmtHrs(remainingLabourHours)}</span>
+                </div>
+              </div>
+            </div>
+            {/* Labour cost */}
+            <div className="bg-fg-bg border border-fg-border rounded-sm p-4">
+              <p className="text-2xs text-fg-muted tracking-wide uppercase mb-3">Labour Cost</p>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm font-light">
+                  <span className="text-fg-muted">Allowed</span>
+                  <span className="text-fg-heading">{formatCurrency(allowedLabourCost)}</span>
+                </div>
+                <div className="flex justify-between text-sm font-light">
+                  <span className="text-fg-muted">Used to date</span>
+                  <span className="text-fg-heading">{formatCurrency(usedLabourCost)}</span>
+                </div>
+                <div className="flex justify-between text-sm font-light border-t border-fg-border pt-2">
+                  <span className="text-fg-muted">Variance</span>
+                  <span className={allowedLabourCost - usedLabourCost >= 0 ? 'text-emerald-400' : 'text-red-400'}>{formatCurrency(allowedLabourCost - usedLabourCost)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          {/* Hours consumed bar */}
+          <div className="mt-4">
+            <div className="flex justify-between text-xs font-light text-fg-muted mb-1">
+              <span>Labour hours used vs allowed</span>
+              <span className={labourOver ? 'text-red-400' : ''}>{labourHoursPct.toFixed(1)}%{labourOver ? ' · OVER' : ''}</span>
+            </div>
+            <div className="h-1.5 bg-fg-border rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${labourOver ? 'bg-red-400/60' : labourBarPct > 90 ? 'bg-amber-400/60' : 'bg-emerald-400/60'}`}
+                style={{ width: `${labourBarPct}%` }}
+              />
+            </div>
+            {labourAheadOfBilling && (
+              <p className="text-2xs text-amber-500 mt-1.5">
+                Labour ahead of billing — {labourHoursPct.toFixed(0)}% of hours used vs {wipRatio.toFixed(0)}% invoiced.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* WIP / Completion */}
       <div>
