@@ -38,10 +38,10 @@ import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react
 // ── constants ─────────────────────────────────────────────────────────────────
 // Base column widths at 100% zoom, calibrated so the grid (after the ~324px fixed columns) shows roughly
 // 30 weeks in weeks view and 10 weeks (50 working days) in days view on a typical screen (Andrew).
-const CELL_W_WEEKS = 39
-const CELL_W_DAYS = 23
+const CELL_W_WEEKS = 36
+const CELL_W_DAYS = 16   // narrow day columns (Instagantt-like); bar labels overflow to the right, so this is safe
 const WEEK_COUNT = 52
-const LOOKBACK_WEEKS = 4      // weeks shown BEFORE today so you can scroll back from "today"
+const LOOKBACK_WEEKS = 1      // grid starts one week before today (no wall of empty pre-today columns)
 // Andrew's zoom scale: 100% default, then ~25% steps each way (25/50/75/100/125/150/200).
 const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2] as const
 const DAYS_VIEW_WEEKS = 26   // Days view renders this many weeks of working-day columns (was 12 — too short for multi-month jobs)
@@ -2174,7 +2174,7 @@ export default function GanttPage() {
               subtask (Instagantt style: every bar reads without cross-referencing the left column). */}
           {i === trailingIdx && trailingLabel && (
             <div className="absolute inset-y-0 left-1.5 z-10 flex items-center pointer-events-none">
-              <span title={trailingLabel} className={`inline-block max-w-[150px] truncate ${isSubtask ? 'text-[10px] font-normal text-fg-heading/75' : 'text-[11px] font-semibold text-fg-heading tracking-tight'}`}>{trailingLabel}</span>
+              <span title={trailingLabel} className={`inline-block max-w-[170px] truncate ${isSubtask ? 'text-[11px] font-normal text-fg-heading/85' : 'text-[12px] font-normal text-fg-heading'}`}>{trailingLabel}</span>
             </div>
           )}
         </td>
