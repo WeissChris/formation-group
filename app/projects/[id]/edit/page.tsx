@@ -18,7 +18,10 @@ export default function EditProjectPage() {
   const [form, setForm] = useState({
     name: '',
     clientName: '',
+    clientPhone: '',
+    clientEmail: '',
     address: '',
+    siteAccessNotes: '',
     contractValue: '',
     targetMarginPct: '',
     startDate: '',
@@ -47,7 +50,10 @@ export default function EditProjectPage() {
       setForm({
         name: p.name ?? '',
         clientName: p.clientName ?? '',
+        clientPhone: p.clientPhone ?? '',
+        clientEmail: p.clientEmail ?? '',
         address: p.address ?? '',
+        siteAccessNotes: p.siteAccessNotes ?? '',
         contractValue: p.contractValue != null ? String(p.contractValue) : '',
         targetMarginPct: p.targetMarginPct != null ? String(p.targetMarginPct) : '40',
         startDate: p.startDate ?? '',
@@ -80,7 +86,10 @@ export default function EditProjectPage() {
       ...project,
       name: form.name.toUpperCase(),
       clientName: form.clientName,
+      clientPhone: form.clientPhone.trim() || undefined,
+      clientEmail: form.clientEmail.trim() || undefined,
       address: form.address,
+      siteAccessNotes: form.siteAccessNotes.trim() || undefined,
       contractValue: parseFloat(form.contractValue.replace(/[^0-9.]/g, '')) || 0,
       targetMarginPct: parseFloat(form.targetMarginPct) || 40,
       startDate: form.startDate,
@@ -129,6 +138,23 @@ export default function EditProjectPage() {
           </div>
 
           <Field label="Address" value={form.address} onChange={v => set('address', v)} placeholder="16 Samara Rd, Burnside" />
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Client Phone" value={form.clientPhone} onChange={v => set('clientPhone', v)} placeholder="0412 345 678" />
+            <Field label="Client Email" value={form.clientEmail} onChange={v => set('clientEmail', v)} placeholder="client@example.com" />
+          </div>
+
+          <div>
+            <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Site Access Notes</label>
+            <textarea
+              value={form.siteAccessNotes}
+              onChange={e => set('siteAccessNotes', e.target.value)}
+              rows={2}
+              placeholder="Gate code, parking, where to dump, dog on site..."
+              className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-none placeholder-[#8A8580] max-h-24"
+            />
+            <p className="text-2xs font-light text-fg-muted/50 mt-1">Shown to the site supervisor in the /site cockpit.</p>
+          </div>
 
           <div className="grid grid-cols-3 gap-4">
             <Field label="Contract Value ($)" value={form.contractValue} onChange={v => set('contractValue', v)} error={errors.contractValue} placeholder="450000" />

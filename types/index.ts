@@ -15,6 +15,9 @@ export interface Project {
   name: string
   address: string
   clientName: string
+  clientPhone?: string       // site supervisor cockpit + general contact (added for /site)
+  clientEmail?: string       // site supervisor cockpit + general contact (added for /site)
+  siteAccessNotes?: string   // gate codes, parking, dog on site, dump location — shown in /site
   status: 'planning' | 'active' | 'complete' | 'invoiced'
   contractValue: number
   startDate: string
@@ -59,6 +62,9 @@ export interface Supervisor {
   id: string
   name: string
   colour: string             // hex, e.g. #6BA5C8
+  // scrypt hash (`scrypt$salt$hash`) of the supervisor's /site login passcode. Server-only — set/reset
+  // by the admin in Settings, NEVER sent to the client. Absent = no passcode set yet (cannot log in).
+  passcodeHash?: string
   updatedAt?: string         // stamped on save — drives cross-device newest-wins (see liveSync)
 }
 

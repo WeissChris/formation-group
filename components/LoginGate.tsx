@@ -18,7 +18,9 @@ import { startLiveSync } from '@/lib/liveSync'
 import { upsertProject, upsertProposal, upsertEstimate, upsertRevenue, upsertDesignProject, upsertPaymentStage, upsertActual } from '@/lib/storageAsync'
 
 // Routes that are publicly accessible without auth
-const PUBLIC_PATHS = ['/proposal/', '/foreman/', '/variation/']
+// '/site' is the supervisor cockpit — it has its OWN login (per-supervisor passcode) so it must skip
+// the admin gate, exactly like the public token/PIN routes.
+const PUBLIC_PATHS = ['/proposal/', '/foreman/', '/variation/', '/site']
 
 export default function LoginGate({ children }: { children: ReactNode }) {
   const pathname = usePathname()
