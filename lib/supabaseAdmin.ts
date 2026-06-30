@@ -10,8 +10,10 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+// .trim() defends against a trailing newline/space pasted into the Vercel env UI — an untrimmed
+// service key fails auth, so every server-side admin read (e.g. Xero token storage) silently breaks.
+const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim()
+const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
 
 export const supabaseAdmin: SupabaseClient | null = (url && serviceKey)
   ? createClient(url, serviceKey, {
