@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getForecastCompletion, scheduleStatus, calcProjectHealth, getTargetMarginPct } from './projectHealth'
+import { getForecastCompletion, scheduleStatus, calcProjectHealth, getTargetMarginPct, projectGpGoalPct } from './projectHealth'
 import type { Project, GanttEntry, ProjectBaseline } from '@/types'
 
 function project(overrides: Partial<Project> = {}): Project {
@@ -36,21 +36,35 @@ function ganttEntry(overrides: Partial<GanttEntry> & { segments?: GanttEntry['se
   }
 }
 
-describe('getTargetMarginPct (blended by subbie mix)', () => {
-  it('falls back to 40% with no override and no cost mix', () => {
+describe('projectGpGoalPct (banded by subbie revenue share)', () => {
+  it('maps the published bands', () => {
+    expect(projectGpGoalPct(0.10)).toBe(42)   // <20%
+    expect(projectGpGoalPct(0.19)).toBe(42)
+    expect(projectGpGoalPct(0.20)).toBe(41)    // 20-25
+    expect(projectGpGoalPct(0.24)).toBe(41)
+    expect(projectGpGoalPct(0.25)).toBe(40)    // 25-30
+    expect(projectGpGoalPct(0.30)).toBe(39)    // 30-35
+    expect(projectGpGoalPct(0.35)).toBe(38)    // 35-40 (lower-bound inclusive)
+    expect(projectGpGoalPct(0.39)).toBe(38)
+  })
+  it('keeps dropping 1% per 5% band above 40%, floored at 30%', () => {
+    expect(projectGpGoalPct(0.40)).toBe(37)
+    expect(projectGpGoalPct(0.45)).toBe(36)
+    expect(projectGpGoalPct(0.75)).toBe(30)    // 41 - 11 = 30
+    expect(projectGpGoalPct(0.95)).toBe(30)    // floored
+  })
+})
+
+describe('getTargetMarginPct (banded by subbie revenue share)', () => {
+  it('falls back to 40% with no override and no revenue mix', () => {
     expect(getTargetMarginPct(project())).toBe(40)
   })
-  it('honours an explicit per-project override over the blend', () => {
-    expect(getTargetMarginPct(project({ targetMarginPct: 33 }), { formationCost: 1000, subCost: 1000 })).toBe(33)
+  it('honours an explicit per-project override over the band', () => {
+    expect(getTargetMarginPct(project({ targetMarginPct: 33 }), { formationRevenue: 1000, subRevenue: 1000 })).toBe(33)
   })
-  it('blends 40/30 cost-weighted: all-Formation -> 40, all-sub -> 30, 50/50 -> 35', () => {
-    expect(getTargetMarginPct(project(), { formationCost: 1000, subCost: 0 })).toBe(40)
-    expect(getTargetMarginPct(project(), { formationCost: 0, subCost: 1000 })).toBe(30)
-    expect(getTargetMarginPct(project(), { formationCost: 1000, subCost: 1000 })).toBe(35)
-  })
-  it('a subbie-heavy job (~39% subby cost) targets ~36%, not 40% (the Joubert case)', () => {
-    // FORMATION cost 76,847 + SUBCONTRACTOR cost 49,200 -> ~36.1% blended target, so 39% GP is on track.
-    expect(getTargetMarginPct(project(), { formationCost: 76847, subCost: 49200 })).toBeCloseTo(36.1, 1)
+  it('a subbie-heavy job (~35% subby revenue) targets 38%, not 40% (the Joubert case)', () => {
+    // FORMATION revenue 133,536 + SUBCONTRACTOR revenue 72,964 -> ~35.3% subby share -> 35-40 band -> 38%.
+    expect(getTargetMarginPct(project(), { formationRevenue: 133536, subRevenue: 72964 })).toBe(38)
   })
 })
 

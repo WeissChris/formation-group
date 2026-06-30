@@ -1,6 +1,6 @@
 import type { Project, Estimate, GanttEntry, WeeklyActual } from '@/types'
 import { entrySegments } from './ganttForecast'
-import { blendedTargetMargin, getEstimateTotals } from './estimateCalculations'
+import { getEstimateTotals } from './estimateCalculations'
 
 export type HealthStatus = 'green' | 'amber' | 'red'
 
@@ -28,22 +28,33 @@ const DAYS_AMBER_THRESHOLD = 7    // 1 week slip → amber
 const DAYS_RED_THRESHOLD = 21     // 3 week slip → red
 
 /**
+/**
+ * Project GP goal (%) by subcontractor share of REVENUE — the banded rule (subbie-heavy jobs run lower):
+ *   <20% -> 42, 20-25 -> 41, 25-30 -> 40, 30-35 -> 39, 35-40 -> 38, then -1 per further 5%, floored at 30.
+ * Bands are lower-bound inclusive (exactly 35% sits in the 35-40 band -> 38).
+ */
+export function projectGpGoalPct(subRevenueShare: number): number {
+  if (subRevenueShare < 0.20) return 42
+  // +1e-9 so float error (0.25-0.20 = 0.04999...) doesn't drop a value sitting exactly on a band edge.
+  const band = Math.floor((subRevenueShare - 0.20) / 0.05 + 1e-9)   // 0 for [20,25), 1 for [25,30), ...
+  return Math.max(30, 41 - band)
+}
+
+/**
  * Resolve the project's target gross margin (as a percentage).
  *
  * Precedence:
  *   1. `project.targetMarginPct` — explicit manual override, always wins.
- *   2. Blended target from the cost mix — subbie-heavy jobs run a lower margin (subbie items target
- *      30%, Formation 40%), so a flat 40% wrongly flags them. Cost-weight the two targets by the
- *      Formation vs Subcontractor cost split (e.g. ~39% subby cost -> ~36% target, not 40%).
- *   3. Legacy 40% when no override and no cost mix is supplied.
+ *   2. The banded GP goal (projectGpGoalPct) keyed off the subcontractor share of revenue — subbie-heavy
+ *      jobs run a lower margin, so a flat 40% wrongly flags them (e.g. ~35% subby revenue -> 38% goal).
+ *   3. Legacy 40% when no override and no revenue mix is supplied.
  *
- * Pass `mix` (Formation/Subcontractor cost split, e.g. from getEstimateTotals) to get the blend.
+ * Pass `mix` (Formation/Subcontractor revenue split, e.g. from getEstimateTotals) to get the band.
  */
-export function getTargetMarginPct(project: Project, mix?: { formationCost: number; subCost: number }): number {
+export function getTargetMarginPct(project: Project, mix?: { formationRevenue: number; subRevenue: number }): number {
   if (project.targetMarginPct != null) return project.targetMarginPct
-  if (mix && mix.formationCost + mix.subCost > 0) {
-    return Math.round(blendedTargetMargin(mix.formationCost, mix.subCost) * 1000) / 10   // 1dp percent
-  }
+  const totalRev = mix ? mix.formationRevenue + mix.subRevenue : 0
+  if (totalRev > 0) return projectGpGoalPct(mix!.subRevenue / totalRev)
   return 40
 }
 
