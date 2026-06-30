@@ -14,5 +14,7 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: Request) {
   const entity = new URL(request.url).searchParams.get('entity') === 'lume' ? 'lume' : 'formation'
   const status = await getStatus(entity)
-  return NextResponse.json(status)
+  // Explicit no-store so neither the browser nor Vercel's edge serves a stale "connected" after a
+  // disconnect/reconnect (force-dynamic only governs Next's render cache, not the CDN response cache).
+  return NextResponse.json(status, { headers: { 'Cache-Control': 'no-store, max-age=0' } })
 }

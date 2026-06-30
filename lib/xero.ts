@@ -35,7 +35,9 @@ export async function getXeroAuthUrl(entity: 'formation' | 'lume' = 'formation')
 /** Fetch an entity's Xero connection status. Safe for the client — exposes only metadata. */
 export async function getXeroStatus(entity: 'formation' | 'lume' = 'formation'): Promise<XeroStatus> {
   try {
-    const resp = await fetch(`/api/xero/status?entity=${entity}`, { cache: 'no-store' })
+    // `_` cache-buster makes the URL unique per call so no edge/browser cache can serve a stale
+    // "connected" after a disconnect/reconnect (the status row was showing as connected post-disconnect).
+    const resp = await fetch(`/api/xero/status?entity=${entity}&_=${Date.now()}`, { cache: 'no-store' })
     if (!resp.ok) return { connected: false, configured: false }
     return await resp.json()
   } catch {
