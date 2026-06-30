@@ -53,16 +53,25 @@ keep the stages joined up rather than as isolated tools.
 - **Leaf-claim roll-up**: claims live on leaf nodes; a node with children is a pure roll-up of
   them (no double-count). `entryClaimSegments(entry)` is the **single source** for all revenue —
   it returns the category's own bar plus the leaf claims of the subtask tree.
-- **CRITICAL INVARIANT**: every place that totals gantt revenue MUST go through
+- **CRITICAL INVARIANT (revenue)**: every place that totals gantt revenue MUST go through
   `entryClaimSegments` — never sum `entry.segments` alone. Readers that depend on it: the weekly
   cash-flow strip, the fortnight/INV totals (`plannedByWeek`), the persisted forecast
   (`syncForecast`), the scheduled-accuracy total, and the invoice-cycle anchor (`workStartIso`).
   Every "split category shows $0 / no INV" bug has been a reader that forgot the leaf claims.
   `lib/ganttForecast.test.ts` locks this — extend it when you add a reader.
+- **SAME INVARIANT (schedule/dates/cost)**: any reader OUTSIDE the Gantt editor that needs an
+  entry's bars, dates or cost MUST go through `entrySegments(entry)` (own bar + split type-line
+  leaves), never `entry.segments` alone — a split category clears its own segments, so reading
+  them shows nothing. Readers: the Master Programme bars, `projectHealth.getForecastCompletion`
+  (-> `scheduleStatus`), the foreman portal week grid, the actuals page. **Categories now default
+  to split** (every fresh category is auto-split on load), so this bites EVERY project, not just
+  hand-split ones. Same test file locks it.
 
 ### Current state (all shipped)
 - **Days view default.** Drag-to-reorder categories (grab handle, far left). Long names wrap.
-- Auto Mat/Lab/Sub split; nested subtasks; discipline picker in the modal.
+- Mat/Lab/Sub split is the **default** — untouched categories auto-split on load (manual splits,
+  schedules and un-splits are left alone); the "Split M/L/S" button re-splits after an un-split.
+  Nested subtasks; discipline picker in the modal.
 - Weekly cash-flow by source (M / L / S) + week total + yellow **fortnight INV** badge,
   anchored on the 2nd Friday after the first scheduled work, repeating across the horizon
   (Days view: one cell per week, two-column layout; Weeks view: stacked).
@@ -75,5 +84,6 @@ keep the stages joined up rather than as isolated tools.
 
 ## Gotchas
 - Recurring drift class: a writer (forecast/cash-flow) updated but a parallel reader missed —
-  symptom is silent $0. Check ALL readers go through `entryClaimSegments`.
+  symptom is silent $0 (revenue) or an empty bar/grid (schedule). Check ALL readers go through
+  `entryClaimSegments` (revenue) or `entrySegments` (schedule/dates/cost) — never `entry.segments`.
 - The page blocks screenshots; don't try to verify visuals yourself — build/test, then ask Chris.
