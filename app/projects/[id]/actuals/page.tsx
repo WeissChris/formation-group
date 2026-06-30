@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -8,10 +8,9 @@ import {
   loadGanttEntries,
   loadWeeklyActuals,
   loadWeeklyRevenue,
-  saveWeeklyActual,
   saveProject,
 } from '@/lib/storage'
-import { getProjects } from '@/lib/storageAsync'
+import { getProjects, upsertActual } from '@/lib/storageAsync'
 import { formatCurrency, generateId, snapToFriday, toISODate, formatDayMonth } from '@/lib/utils'
 import { entrySegments } from '@/lib/ganttForecast'
 import type { Project, GanttEntry, GanttSegment, WeeklyActual, WeeklyRevenue } from '@/types'
@@ -153,29 +152,62 @@ export default function ActualsPage() {
     setRows(buildRows(selectedWeek, ganttEntries, allActuals, revEntries))
   }, [selectedWeek, ganttEntries, allActuals, revEntries, buildRows])
 
+  // Latest rows/week via refs so the persist callbacks stay stable; `dirtyRef` marks a real user edit so
+  // autosave doesn't fire on the buildRows rebuild (week change / data load).
+  const dirtyRef = useRef(false)
+  const latestRowsRef = useRef<RowState[]>(rows)
+  latestRowsRef.current = rows
+  const selectedWeekRef = useRef(selectedWeek)
+  selectedWeekRef.current = selectedWeek
+
   const updateRow = (category: string, field: 'supplyCost' | 'labourCost' | 'notes', value: string) => {
+    dirtyRef.current = true
     setRows(prev => prev.map(r => r.category === category ? { ...r, [field]: value } : r))
   }
 
-  const handleSave = () => {
-    for (const row of rows) {
+  // Persist the week's edits (local + Supabase via upsertActual). Shared by autosave, the navigate flush
+  // and the manual Save. Backfills each new row's id so a later save updates the same row (no duplicate),
+  // and does NOT rebuild rows, so it never disrupts what you're typing.
+  const flushActuals = useCallback(() => {
+    if (!dirtyRef.current) return
+    dirtyRef.current = false
+    const week = selectedWeekRef.current
+    const newIds: Record<string, string> = {}
+    for (const row of latestRowsRef.current) {
       const supply = parseFloat(row.supplyCost) || 0
       const labour = parseFloat(row.labourCost) || 0
       if (supply === 0 && labour === 0 && !row.existingId) continue
-
-      const actual: WeeklyActual = {
-        id: row.existingId ?? generateId(),
-        projectId: id,
-        category: row.category,
-        weekEnding: selectedWeek,
-        supplyCost: supply,
-        labourCost: labour,
-        notes: row.notes,
-      }
-      saveWeeklyActual(actual)
+      const aid = row.existingId ?? generateId()
+      void upsertActual({ id: aid, projectId: id, category: row.category, weekEnding: week, supplyCost: supply, labourCost: labour, notes: row.notes })
+      if (!row.existingId) newIds[row.category] = aid
     }
-    const fresh = loadWeeklyActuals(id)
-    setAllActuals(fresh)
+    if (Object.keys(newIds).length) {
+      setRows(prev => prev.map(r => (!r.existingId && newIds[r.category]) ? { ...r, existingId: newIds[r.category] } : r))
+    }
+  }, [id])
+
+  // Autosave ~1.2s after the last edit.
+  useEffect(() => {
+    if (!dirtyRef.current) return
+    const h = setTimeout(flushActuals, 1200)
+    return () => clearTimeout(h)
+  }, [rows, flushActuals])
+
+  // Flush on navigate-away / tab close / unmount so unsaved actuals aren't lost.
+  useEffect(() => {
+    window.addEventListener('beforeunload', flushActuals)
+    window.addEventListener('pagehide', flushActuals)
+    return () => {
+      window.removeEventListener('beforeunload', flushActuals)
+      window.removeEventListener('pagehide', flushActuals)
+      flushActuals()
+    }
+  }, [flushActuals])
+
+  const handleSave = () => {
+    dirtyRef.current = true
+    flushActuals()
+    setAllActuals(loadWeeklyActuals(id))
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
@@ -247,7 +279,8 @@ export default function ActualsPage() {
         <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted whitespace-nowrap">Week Ending</label>
         <select
           value={selectedWeek}
-          onChange={e => setSelectedWeek(e.target.value)}
+          // Persist the current week's edits before switching (the refs still point at this week here).
+          onChange={e => { flushActuals(); setSelectedWeek(e.target.value) }}
           className="px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading transition-colors appearance-none"
         >
           {fridays.map(f => {
