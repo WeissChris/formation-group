@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   loadProjects,
@@ -612,6 +612,11 @@ function MilestonePopover({ milestone, onUpdate, onDelete, onClose, anchorRef }:
 
 export default function GanttPage() {
   const params = useParams()
+  // When the supervisor cockpit mounts this exact editor at /site/[id]/schedule, hide the office
+  // breadcrumb. Detected via the path (not a prop) so the route's default-export signature stays
+  // Next-compatible. Persistence is redirected to /api/site separately by lib/storageAsync's site mode.
+  const sitePathname = usePathname()
+  const siteMode = !!sitePathname && sitePathname.startsWith('/site')
   const router = useRouter()
   const id = params.id as string
 
@@ -2205,14 +2210,21 @@ export default function GanttPage() {
         {!clientPrint && <p className="text-xs text-fg-muted mt-0.5">Revenue &amp; schedule · {new Date().toLocaleDateString()}</p>}
       </div>
 
-      {/* Breadcrumb */}
-      <div className="gantt-no-print flex items-center gap-2 mb-8 text-xs font-light text-fg-muted">
-        <Link href="/projects" className="hover:text-fg-heading transition-colors">Projects</Link>
-        <span>/</span>
-        <Link href={`/projects/${id}`} className="hover:text-fg-heading transition-colors">{project.name}</Link>
-        <span>/</span>
-        <span className="text-fg-heading">Gantt</span>
-      </div>
+      {/* Breadcrumb (office only — the cockpit has its own nav) */}
+      {!siteMode && (
+        <div className="gantt-no-print flex items-center gap-2 mb-8 text-xs font-light text-fg-muted">
+          <Link href="/projects" className="hover:text-fg-heading transition-colors">Projects</Link>
+          <span>/</span>
+          <Link href={`/projects/${id}`} className="hover:text-fg-heading transition-colors">{project.name}</Link>
+          <span>/</span>
+          <span className="text-fg-heading">Gantt</span>
+        </div>
+      )}
+      {siteMode && (
+        <div className="gantt-no-print mb-6 text-xs">
+          <Link href={`/site/${id}`} className="text-fg-muted hover:text-fg-heading transition-colors">&larr; Back to project</Link>
+        </div>
+      )}
 
       {/* Header */}
       <div className="gantt-no-print flex items-start justify-between mb-8 flex-wrap gap-4">

@@ -47,7 +47,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
   if (!project) return <Centered><p className="text-sm text-fg-muted">Loading...</p></Centered>
 
   return (
-    <div className="max-w-2xl mx-auto px-4 pb-24">
+    <div className="max-w-2xl lg:max-w-4xl mx-auto px-4 pb-24">
       <header className="sticky top-0 bg-white z-10 pt-4 pb-2 border-b border-fg-border/60">
         <Link href="/site" className="text-xs text-fg-muted">&larr; My projects</Link>
         <h1 className="text-xl font-light leading-tight mt-1">{project.name}</h1>
@@ -65,7 +65,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
 
       <div className="mt-4">
         {tab === 'week' && <ThisWeek gantt={gantt} />}
-        {tab === 'schedule' && <Schedule gantt={gantt} />}
+        {tab === 'schedule' && <Schedule gantt={gantt} projectId={project.id} />}
         {tab === 'subbies' && <Subbies projectId={project.id} />}
         {tab === 'plans' && <Plans />}
         {tab === 'client' && <ClientAndSite project={project} />}
@@ -124,7 +124,7 @@ function ThisWeek({ gantt }: { gantt: GanttEntry[] }) {
 }
 
 // ── Schedule (read-only summary; full editing is the next build step) ──────────────
-function Schedule({ gantt }: { gantt: GanttEntry[] }) {
+function Schedule({ gantt, projectId }: { gantt: GanttEntry[]; projectId: string }) {
   const rows = gantt.map(e => {
     const segs = entrySegments(e).filter(s => s.startDate && s.endDate)
     if (!segs.length) return null
@@ -136,9 +136,11 @@ function Schedule({ gantt }: { gantt: GanttEntry[] }) {
 
   return (
     <section>
-      <div className="rounded-lg bg-fg-card/40 px-3 py-2 text-xs text-fg-muted mb-3">
-        Live schedule editing opens here. Best done on a laptop or tablet in landscape.
-      </div>
+      <Link href={`/site/${projectId}/schedule`}
+        className="block rounded-lg bg-fg-heading text-white px-4 py-3 text-sm font-medium text-center mb-2">
+        Open editable schedule
+      </Link>
+      <p className="text-xs text-fg-muted text-center mb-4">Best on a laptop or tablet in landscape. Your changes update the office forecast.</p>
       {rows.length === 0 ? (
         <p className="text-sm text-fg-muted py-6 text-center">No schedule set yet.</p>
       ) : (

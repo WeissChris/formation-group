@@ -99,7 +99,7 @@ function MyProjects({ me, onSignOut }: { me: { supervisorId: string; name: strin
   const signOut = async () => { await siteLogout(); onSignOut() }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 pb-16">
+    <div className="max-w-2xl lg:max-w-4xl mx-auto px-4 pb-16">
       <header className="flex items-center justify-between py-4 sticky top-0 bg-white border-b border-fg-border/60 z-10">
         <div>
           <p className="text-[10px] tracking-[0.2em] uppercase text-fg-muted">My projects</p>

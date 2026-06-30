@@ -508,11 +508,29 @@ export async function deleteWeeklyRevenueAsync(id: string): Promise<void> {
  * realtime emits a DELETE only for a genuinely removed category, and there's never a window where the
  * project has zero rows (the old delete+insert could wipe the schedule if it died between the two).
  */
+// ── /SITE PERSISTENCE MODE ─────────────────────────────────────────────────────
+// Inside the supervisor cockpit (/site) the user has no admin Supabase write grant, so the gantt's
+// three remote writes (entries, forecast revenue, milestones) POST to the session-scoped /api/site
+// routes instead of hitting Supabase directly. localStorage writes are unchanged. Set by the /site
+// schedule route while the gantt is mounted; null everywhere else, so the office path is untouched.
+let ganttSiteProjectId: string | null = null
+export function setGanttSiteMode(projectId: string | null): void { ganttSiteProjectId = projectId }
+async function postSite(path: string, body: unknown): Promise<void> {
+  try {
+    await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  } catch (e) { console.error('[Formation] /site write failed:', path, e) }
+}
+
 export async function upsertGanttEntries(projectId: string, entries: GanttEntry[]): Promise<void> {
   const stamp = new Date().toISOString()
   const stamped = entries.map(e => ({ ...e, updatedAt: stamp }))
   saveGanttEntries(projectId, stamped)   // localStorage (immediate)
   notify({ key: 'gantt' })               // live-refresh sibling tabs (other devices go via liveSync)
+  if (ganttSiteProjectId === projectId) {
+    if (stamped.length === 0) return     // same empty-clobber guard as the office path
+    await postSite(`/api/site/projects/${projectId}/gantt`, { entries: stamped })
+    return
+  }
   if (!isSupabaseConfigured() || !supabase) return
   // EMPTY-CLOBBER GUARD: an empty set is almost always "not loaded yet" (a device that never opened
   // this project), never an intentional full clear — so don't touch the project's remote rows.
@@ -546,6 +564,10 @@ export async function upsertGanttEntries(projectId: string, entries: GanttEntry[
  * doesn't leave stale rows in the DB. Manual/deposit rows (not tagged) are untouched.
  */
 export async function replaceGanttRevenueRemote(projectId: string, rows: WeeklyRevenue[]): Promise<void> {
+  if (ganttSiteProjectId === projectId) {
+    await postSite(`/api/site/projects/${projectId}/revenue`, { rows })
+    return
+  }
   if (!isSupabaseConfigured() || !supabase) return
   // Match the LOCAL predicate exactly (deleteGanttGeneratedRevenueByProject: trim().endsWith('(Gantt)')).
   // A bare `.like('notes', '%(Gantt)')` is end-anchored, so a Gantt row with a trailing space
@@ -720,6 +742,10 @@ export async function upsertGanttMilestones(projectId: string, milestones: Miles
   if (typeof window !== 'undefined') {
     try { localStorage.setItem(ganttMilestonesKey(projectId), JSON.stringify(milestones)) } catch { /* ignore */ }
   }
+  if (ganttSiteProjectId === projectId) {
+    await postSite(`/api/site/projects/${projectId}/milestones`, { milestones })
+    return
+  }
   if (isSupabaseConfigured() && supabase) {
     const { error } = await supabase.from('fg_gantt_milestones').upsert({
       project_id: projectId,
@@ -741,7 +767,7 @@ export async function getAllGanttMilestones(): Promise<{ projectId: string; mile
 
 // ── MAPPERS ──────────────────────────────────────────────────────────────────
 
-function mapProject(row: Record<string, unknown>): Project {
+export function mapProject(row: Record<string, unknown>): Project {
   return {
     id: row.id as string,
     entity: row.entity as Project['entity'],
@@ -808,7 +834,7 @@ function mapProposal(row: Record<string, unknown>): DesignProposal {
   }
 }
 
-function mapEstimate(row: Record<string, unknown>): Estimate {
+export function mapEstimate(row: Record<string, unknown>): Estimate {
   return {
     id: row.id as string,
     projectId: row.project_id as string,
@@ -845,7 +871,7 @@ function mapEstimate(row: Record<string, unknown>): Estimate {
   }
 }
 
-function mapRevenue(row: Record<string, unknown>): WeeklyRevenue {
+export function mapRevenue(row: Record<string, unknown>): WeeklyRevenue {
   return {
     id: row.id as string,
     projectId: row.project_id as string,
@@ -1164,7 +1190,7 @@ function mapActual(row: Record<string, unknown>): WeeklyActual {
   }
 }
 
-function mapGanttEntry(row: Record<string, unknown>): GanttEntry {
+export function mapGanttEntry(row: Record<string, unknown>): GanttEntry {
   return {
     id: row.id as string,
     projectId: row.project_id as string,
