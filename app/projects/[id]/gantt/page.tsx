@@ -807,14 +807,24 @@ export default function GanttPage() {
   // Land the initial horizontal scroll on "today" (a few weeks of history sit to its left). Once only,
   // so zooming/re-rendering doesn't fight the user's scroll position.
   useEffect(() => {
-    if (scrolledToToday.current || !gridScrollRef.current || colCount === 0) return
+    if (scrolledToToday.current || colCount === 0) return
     // Land the left edge TWO WEEKS before today (the rest of the lookback weeks sit further left, scrollable).
     const colsBeforeView = timeView === 'days' ? (LOOKBACK_WEEKS - 2) * 5 : (LOOKBACK_WEEKS - 2)
     const target = Math.max(0, colsBeforeView * CELL_W)
-    // Defer to the next frame: setting scrollLeft before the (large) table has laid out clamps it to 0,
-    // which is the "opens on the far-left empty weeks" symptom.
-    requestAnimationFrame(() => { if (gridScrollRef.current) gridScrollRef.current.scrollLeft = target })
-    scrolledToToday.current = true
+    // Retry until the table has actually laid out (scrollWidth > clientWidth). Setting scrollLeft before
+    // then clamps to 0 — the "opens on the far-left empty weeks" symptom.
+    let tries = 0
+    const tryScroll = () => {
+      const el = gridScrollRef.current
+      if (!el || scrolledToToday.current) return
+      if (el.scrollWidth > el.clientWidth + 1) {
+        el.scrollLeft = target
+        scrolledToToday.current = true
+      } else if (tries++ < 30) {
+        setTimeout(tryScroll, 50)
+      }
+    }
+    tryScroll()
   }, [colCount, timeView, CELL_W])
 
   useEffect(() => {
@@ -2543,7 +2553,7 @@ export default function GanttPage() {
       )}
 
       {estimate && categories.length > 0 && (
-        <div ref={gridScrollRef} className="gantt-scroll overflow-auto border border-fg-border" style={{ userSelect: 'none', maxHeight: 'calc(100vh - 230px)' }}>
+        <div ref={gridScrollRef} className="gantt-scroll border border-fg-border" style={{ userSelect: 'none', maxHeight: 'calc(100vh - 230px)', width: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'auto' }}>
           <table className="border-collapse" style={{ minWidth: tableWidth, width: tableWidth }}>
             {/* ── Headers ── */}
             <thead>
