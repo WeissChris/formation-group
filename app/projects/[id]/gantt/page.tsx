@@ -170,6 +170,15 @@ function subtaskBarColour(crewType: 'Formation' | 'Subcontractor'): string {
   return crewType === 'Formation' ? '#ABA89880' : '#CFC2B080'
 }
 
+// A stable, distinct colour per category — drives the colour-coded summary (roll-up) bar so each section
+// reads at a glance, like Instagantt. Hash the name into a fixed palette (deterministic across renders).
+const CATEGORY_PALETTE = ['#6B8FB5', '#C39A57', '#7FA876', '#B57676', '#9182BE', '#C08A5A', '#56998F', '#BA6B95', '#74839E', '#9A9A52']
+function categoryColour(category: string): string {
+  let h = 0
+  for (let i = 0; i < category.length; i++) h = (h * 31 + category.charCodeAt(i)) >>> 0
+  return CATEGORY_PALETTE[h % CATEGORY_PALETTE.length]
+}
+
 // Should this category be persisted (localStorage + Supabase)? Yes if it carries any real work: a drawn
 // bar, OR subtask structure the user deliberately added (a split, or manual subtasks like "Cabinet
 // install") even before its bars are drawn. Without the subtask clause a split-but-unscheduled category
@@ -2064,9 +2073,9 @@ export default function GanttPage() {
               ) : (
                 <div key={seg.id} className="absolute" title={`${category} — drag to shift the whole category`}
                   onMouseDown={e => handleRollupMouseDown(e, entry, i)}
-                  style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, top: 2, height: 10,
-                    background: '#8A858033', borderTop: '2px solid #8A8580',
-                    borderRadius: isStart && isEnd ? 2 : isStart ? '2px 0 0 2px' : isEnd ? '0 2px 2px 0' : 0,
+                  style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, top: 4, height: 7,
+                    background: categoryColour(category),
+                    borderRadius: isStart && isEnd ? 3 : isStart ? '3px 0 0 3px' : isEnd ? '0 3px 3px 0' : 0,
                     cursor: (moving?.rollup && moving.entryId === entry.id) ? 'grabbing' : 'grab' }} />
               )
             }
@@ -2120,10 +2129,11 @@ export default function GanttPage() {
           {!activeSegs.length && (
             <div className="absolute inset-0 hover:bg-fg-border/15 transition-colors" />
           )}
-          {/* Trailing category description on the RHS of the grid line (Andrew). */}
+          {/* Bar label on the RHS of the grid line — the section name on a roll-up, the line name on a
+              subtask (Instagantt style: every bar reads without cross-referencing the left column). */}
           {i === trailingIdx && trailingLabel && (
-            <div className="absolute inset-y-0 left-1 z-10 flex items-center pointer-events-none whitespace-nowrap">
-              <span className="text-[10px] font-light italic text-fg-muted/70">{trailingLabel}</span>
+            <div className="absolute inset-y-0 left-1.5 z-10 flex items-center pointer-events-none whitespace-nowrap">
+              <span className={isSubtask ? 'text-[10px] font-light text-fg-muted' : 'text-[11px] font-medium text-fg-heading/90 tracking-tight'}>{trailingLabel}</span>
             </div>
           )}
         </td>
@@ -2721,7 +2731,8 @@ export default function GanttPage() {
                         </div>
                       </td>
                       {/* Segment cells — collapsed rows roll the subtask span into a summary bar */}
-                      {renderSegmentCells(entry, collapsedRollup, cat.category, cat.crewType, undefined, false, descriptions[cat.category],
+                      {renderSegmentCells(entry, collapsedRollup, cat.category, cat.crewType, undefined, false,
+                        descriptions[cat.category] ? `${cat.category} · ${descriptions[cat.category]}` : cat.category,
                         loadedBaselineId ? activeBaseline?.entries.find(e => e.category === cat.category)?.segments : undefined)}
                     </tr>
 
@@ -2779,7 +2790,7 @@ export default function GanttPage() {
                             )
                           })()}
                         </td>
-                        {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true, undefined, undefined, subtask.costType ? COST_TYPE_META[subtask.costType].colour : undefined)}
+                        {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true, subtask.label || undefined, undefined, subtask.costType ? COST_TYPE_META[subtask.costType].colour : undefined)}
                       </tr>
                     ))}
                   </>
