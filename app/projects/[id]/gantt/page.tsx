@@ -857,6 +857,12 @@ export default function GanttPage() {
     const ia = categoryOrder.indexOf(a.category); const ib = categoryOrder.indexOf(b.category)
     return (ia < 0 ? 1e9 + rawCategories.indexOf(a) : ia) - (ib < 0 ? 1e9 + rawCategories.indexOf(b) : ib)
   })
+  // Sequential (by display order) colour per category so neighbouring sections never collide — drives the
+  // colour-coded summary bar AND every task bar in the section, so a section reads as one cohesive block
+  // (Instagantt-style). The discipline (Materials/Labour/Sub) is carried by the bar's label, not its colour.
+  const categoryColourMap: Record<string, string> = {}
+  categories.forEach((c, i) => { categoryColourMap[c.category] = CATEGORY_PALETTE[i % CATEGORY_PALETTE.length] })
+  const sectionColour = (cat: string) => categoryColourMap[cat] || categoryColour(cat)
   const persistCategoryOrder = (order: string[]) => {
     setCategoryOrder(order)
     try { localStorage.setItem(`fg_gantt_order_${id}`, JSON.stringify(order)) } catch { /* ignore */ }
@@ -2074,7 +2080,7 @@ export default function GanttPage() {
                 <div key={seg.id} className="absolute" title={`${category} — drag to shift the whole category`}
                   onMouseDown={e => handleRollupMouseDown(e, entry, i)}
                   style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, top: 4, height: 7,
-                    background: categoryColour(category),
+                    background: sectionColour(category),
                     borderRadius: isStart && isEnd ? 3 : isStart ? '3px 0 0 3px' : isEnd ? '0 3px 3px 0' : 0,
                     cursor: (moving?.rollup && moving.entryId === entry.id) ? 'grabbing' : 'grab' }} />
               )
@@ -2733,7 +2739,8 @@ export default function GanttPage() {
                       {/* Segment cells — collapsed rows roll the subtask span into a summary bar */}
                       {renderSegmentCells(entry, collapsedRollup, cat.category, cat.crewType, undefined, false,
                         descriptions[cat.category] ? `${cat.category} · ${descriptions[cat.category]}` : cat.category,
-                        loadedBaselineId ? activeBaseline?.entries.find(e => e.category === cat.category)?.segments : undefined)}
+                        loadedBaselineId ? activeBaseline?.entries.find(e => e.category === cat.category)?.segments : undefined,
+                        sectionColour(cat.category))}
                     </tr>
 
                     {/* ── Subtask rows (flattened tree; indent = nesting depth) ── */}
@@ -2790,7 +2797,7 @@ export default function GanttPage() {
                             )
                           })()}
                         </td>
-                        {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true, subtask.label || undefined, undefined, subtask.costType ? COST_TYPE_META[subtask.costType].colour : undefined)}
+                        {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true, subtask.label || undefined, undefined, sectionColour(cat.category))}
                       </tr>
                     ))}
                   </>
