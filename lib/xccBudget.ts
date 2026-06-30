@@ -99,33 +99,47 @@ export function buildPhasedBudget(lineItems: BudgetLineItem[], ganttEntries: Gan
   return { budget, months, unallocatedCost }
 }
 
-/** Short month label for a 'YYYY-MM' key, e.g. '2025-07' -> 'Jul-25'. */
-export function monthLabel(key: string): string {
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** Xero budget-import month header for a 'YYYY-MM' key, e.g. '2025-07' -> 'Jul-2025'. */
+export function xeroMonthHeader(key: string): string {
   const [y, m] = key.split('-').map(Number)
-  const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-  return `${names[(m || 1) - 1]}-${String(y).slice(2)}`
+  return `${MONTH_NAMES[(m || 1) - 1]}-${y}`
+}
+
+/** Contiguous YYYY-MM keys from the earliest to the latest of `months` (Xero budgets want every period). */
+export function contiguousMonths(months: string[]): string[] {
+  if (months.length === 0) return []
+  const sorted = [...months].sort()
+  const end = sorted[sorted.length - 1]
+  let [y, m] = sorted[0].split('-').map(Number)
+  const out: string[] = []
+  for (let guard = 0; guard < 600; guard++) {
+    const key = `${y}-${String(m).padStart(2, '0')}`
+    out.push(key)
+    if (key === end) break
+    if (++m > 12) { m = 1; y++ }
+  }
+  return out
 }
 
 /**
- * Render the phased budget as CSV: one row per cost account, a column per month, plus a Total. `name`
- * resolves an account code to its Xero name. NOTE: this is a readable accounts x months layout that
- * matches Xero's Budget Summary; the exact Budget Manager *import* template may differ (column headers /
- * account identifier) and should be confirmed against a downloaded Xero template before relying on a
- * one-click import.
+ * Render the phased budget in Xero Budget Manager's IMPORT format (confirmed against a downloaded
+ * Formation template): header `*Account,Mon-YYYY,...`; one row per account as `Name (Code)` with a
+ * 4-decimal amount per month (0 when none); no Total column (Xero computes it); account labels with
+ * commas are quoted. `name` resolves an account code to its Xero name. Months are filled contiguously
+ * from the first to the last with cost, so every period in the span has a column.
  */
 export function phasedBudgetToCsv(b: PhasedBudget, name: (code: string) => string): string {
   const esc = (s: string) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-  const header = ['Account', ...b.months.map(monthLabel), 'Total']
+  const months = contiguousMonths(b.months)
+  const lines = [['*Account', ...months.map(xeroMonthHeader)].join(',')]
   const rows = Object.entries(b.budget)
-    .map(([code, months]) => {
-      const cells = b.months.map(mk => months[mk] || 0)
-      const total = cells.reduce((s, v) => s + v, 0)
-      return { name: name(code), cells, total }
-    })
-    .sort((a, z) => z.total - a.total)
-  const lines = [header.map(esc).join(',')]
+    .map(([code, mc]) => ({ label: `${name(code)} (${code})`, mc }))
+    .sort((a, z) => a.label.localeCompare(z.label))
   for (const r of rows) {
-    lines.push([esc(r.name), ...r.cells.map(v => v.toFixed(2)), r.total.toFixed(2)].join(','))
+    const cells = months.map(mk => { const v = r.mc[mk] || 0; return v === 0 ? '0' : v.toFixed(4) })
+    lines.push([esc(r.label), ...cells].join(','))
   }
   return lines.join('\n')
 }

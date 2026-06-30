@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { GanttEntry } from '@/types'
-import { buildPhasedBudget, monthLabel, type BudgetLineItem } from './xccBudget'
+import { buildPhasedBudget, xeroMonthHeader, contiguousMonths, phasedBudgetToCsv, type BudgetLineItem } from './xccBudget'
 
 const seg = (start: string, end: string, weeks: number, cost: number) =>
   ({ id: `${start}-${cost}`, startDate: start, endDate: end, weekCount: weeks, revenueAllocation: 0, costAllocation: cost })
@@ -62,9 +62,30 @@ describe('buildPhasedBudget', () => {
   })
 })
 
-describe('monthLabel', () => {
-  it('formats a YYYY-MM key', () => {
-    expect(monthLabel('2025-07')).toBe('Jul-25')
-    expect(monthLabel('2026-06')).toBe('Jun-26')
+describe('xeroMonthHeader / contiguousMonths', () => {
+  it('formats a YYYY-MM key as Xero wants it', () => {
+    expect(xeroMonthHeader('2025-07')).toBe('Jul-2025')
+    expect(xeroMonthHeader('2026-06')).toBe('Jun-2026')
+  })
+  it('fills the months contiguously across a span (incl. a gap and a year boundary)', () => {
+    expect(contiguousMonths(['2025-11', '2026-02'])).toEqual(['2025-11', '2025-12', '2026-01', '2026-02'])
+    expect(contiguousMonths([])).toEqual([])
+  })
+})
+
+describe('phasedBudgetToCsv (Xero Budget Manager import format)', () => {
+  it('emits *Account header, Name (Code) rows, 4dp amounts / 0, no Total', () => {
+    const gantt = [entry({ category: 'Decking', segments: [seg('2026-01-30', '2026-02-20', 4, 4000)] })]
+    const b = buildPhasedBudget([li({ category: 'Decking', type: 'Material', total: 2000, xeroCategory: '51311' })], gantt, '2026-01')
+    const csv = phasedBudgetToCsv(b, code => code === '51311' ? 'Concrete' : code)
+    const [header, row] = csv.split('\n')
+    expect(header).toBe('*Account,Jan-2026,Feb-2026')
+    expect(row).toBe('Concrete (51311),500.0000,1500.0000')
+  })
+
+  it('quotes account labels containing commas', () => {
+    const b = buildPhasedBudget([li({ category: 'X', type: 'Material', total: 100, xeroCategory: '63100' })], [], '2025-04')
+    const csv = phasedBudgetToCsv(b, () => 'Accommodation, Travel & Entertainment')
+    expect(csv.split('\n')[1]).toBe('"Accommodation, Travel & Entertainment (63100)",100.0000')
   })
 })
