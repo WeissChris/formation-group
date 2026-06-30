@@ -28,6 +28,8 @@ import { normalizedPcts, rebalancedPcts, datedPeriodCount } from '@/lib/ganttAll
 import { labourWorkingDays } from '@/lib/ganttSchedule'
 import { mapSubtaskTree, findSubtaskInTree, removeSubtaskFromTree, addChildSubtask, flattenSubtasks } from '@/lib/ganttSubtasks'
 import { plannedByWeek, entryClaimSegments, claimLeafSegments } from '@/lib/ganttForecast'
+import { buildPhasedBudget, phasedBudgetToCsv } from '@/lib/xccBudget'
+import { loadCachedXeroAccounts } from '@/lib/xero'
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import type { Project, Estimate, GanttEntry, GanttSegment, GanttSubtask, WeeklyRevenue } from '@/types'
 import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react'
@@ -1320,6 +1322,28 @@ export default function GanttPage() {
     categories.forEach(c => handleSplitCategory(c.category))
   }
 
+  // Export a month-by-month project budget (cost by Xero cost code, phased by THIS Gantt) as a CSV for
+  // Xero Budget Manager. Includes accepted variations; unscheduled categories land in the start month.
+  const handleBudgetCsv = () => {
+    if (!project) return
+    const lines = [estimate, ...variations].filter(Boolean).flatMap(e => e!.lineItems)
+    const startMonth = (project.startDate || new Date().toISOString().slice(0, 10)).slice(0, 7)
+    const phased = buildPhasedBudget(lines, entries, startMonth)
+    const accts = loadCachedXeroAccounts()
+    const csv = phasedBudgetToCsv(phased, code => accts.find(a => a.code === code)?.name || code)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `budget-${(project.name || 'project').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`
+    document.body.appendChild(a); a.click(); a.remove()
+    URL.revokeObjectURL(url)
+    setSuccessMsg(phased.unallocatedCost > 0
+      ? `Budget CSV exported — ${formatCurrency(phased.unallocatedCost)} of cost has no XCC and was left out.`
+      : 'Budget CSV exported.')
+    setTimeout(() => setSuccessMsg(''), 4000)
+  }
+
   // Default to a Materials/Labour/Sub split (Chris): once the initial load settles, split every category
   // the user hasn't touched yet (no bar drawn, no subtasks) so fresh categories start itemised without
   // pressing "Split M/L/S". Runs once per mount; categories already split, scheduled, or hand-structured
@@ -2226,6 +2250,13 @@ export default function GanttPage() {
               title="Split every category into separate Materials / Labour / Subcontractor lines, each with its own schedule (budgets are preserved). Re-runnable; already-split categories are skipped."
               className="px-4 py-2 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading hover:border-fg-heading transition-colors">
               Split M/L/S
+            </button>
+          )}
+          {estimate && categories.length > 0 && (
+            <button onClick={handleBudgetCsv}
+              title="Export a month-by-month project budget (cost by Xero cost code, phased by this Gantt) as a CSV for Xero Budget Manager"
+              className="px-4 py-2 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading hover:border-fg-heading transition-colors">
+              Budget CSV
             </button>
           )}
           <span className="inline-flex items-stretch border border-fg-border">
