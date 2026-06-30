@@ -13,7 +13,7 @@ import {
 } from '@/lib/storage'
 import { getProjects, reconcileVariations, upsertProject, deleteProjectAsync, upsertSubcontractor, deleteSubcontractorAsync } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
-import { getEstimateTotals, variationContractValue, estimateLabourHours, activeLineItems, STD_LABOUR_RATE } from '@/lib/estimateCalculations'
+import { getEstimateTotals, variationContractValue, estimateLabourHours, activeLineItems, STD_LABOUR_RATE, costBreakdown } from '@/lib/estimateCalculations'
 import type { Project, Estimate, WeeklyRevenue, GanttEntry, WeeklyActual, ProgressClaim, ProgressPaymentStage, SubcontractorPackage, SubcontractorClaim } from '@/types'
 import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, PROGRESSION_WARNINGS, buildChecklist, defaultStageForStatus } from '@/lib/stageConfig'
 import type { ProjectScope } from '@/types'
@@ -302,6 +302,7 @@ interface PositionProps {
   actuals: WeeklyActual[]
   revenueEntries: WeeklyRevenue[]
   progressClaims: ProgressClaim[]
+  subcontractors: SubcontractorPackage[]
   onAddEstimate: () => void
   onSetupGantt: () => void
 }
@@ -338,7 +339,7 @@ function GanttAutoRedirect({ projectId, ganttEntries }: { projectId: string; gan
 }
 
 function ProjectFinancialPosition({
-  project, estimates, ganttEntries, actuals, revenueEntries, progressClaims, onAddEstimate, onSetupGantt,
+  project, estimates, ganttEntries, actuals, revenueEntries, progressClaims, subcontractors, onAddEstimate, onSetupGantt,
 }: PositionProps) {
   const contractValue = project.contractValue || 0
 
@@ -419,6 +420,48 @@ function ProjectFinancialPosition({
   // Early warning: hours burning faster than billing (consumed % running well ahead of invoiced %).
   const labourAheadOfBilling = allowedLabourHours > 0 && totalInvoiced > 0 && labourHoursPct > wipRatio + 10
   const fmtHrs = (h: number) => `${Math.round(h).toLocaleString()} hrs`
+
+  // Metric 1 — earned-hours productivity: % complete (invoiced) earns a share of the allowed hours;
+  // earned ÷ used is a productivity factor (>=1 good, <1 burning hours faster than progress).
+  const pctComplete = wipRatio
+  const earnedHours = (pctComplete / 100) * allowedLabourHours
+  const productivityFactor = usedLabourHours > 0 ? earnedHours / usedLabourHours : null
+  const pfMeaningful = pctComplete >= 5 && usedLabourHours > 0
+
+  // Metric 2 — projected hours at completion: extrapolate the burn-vs-progress rate. Needs enough
+  // progress to be stable, so gated at 10% billed.
+  const projectedHours = pctComplete >= 10 ? usedLabourHours / (pctComplete / 100) : null
+  const projectedVsAllowed = projectedHours !== null ? projectedHours - allowedLabourHours : null
+
+  // Metric 3 — weekly labour burn (recent 4 active weeks) + weeks of allowance left at that rate.
+  const labourWeeks = Object.entries(
+    actuals.reduce<Record<string, number>>((acc, a) => {
+      if (a.labourCost > 0) acc[a.weekEnding] = (acc[a.weekEnding] || 0) + a.labourCost
+      return acc
+    }, {}),
+  ).map(([week, cost]) => ({ week, hours: cost / STD_LABOUR_RATE })).sort((x, y) => x.week.localeCompare(y.week))
+  const recentWeeks = labourWeeks.slice(-4)
+  const recentBurnHours = recentWeeks.length > 0 ? recentWeeks.reduce((s, w) => s + w.hours, 0) / recentWeeks.length : 0
+  const weeksOfAllowanceLeft = recentBurnHours > 0 ? remainingLabourHours / recentBurnHours : null
+
+  // Metric 4 — cost variance by source: budget (estimate cost split) vs actual (Cost Tracker labour +
+  // supply; subcontractor from claims on the Subcontractors tab).
+  const budgetBd = estimates.filter(e => e.status === 'accepted').reduce(
+    (b, e) => { const c = costBreakdown(activeLineItems(e)); return { labour: b.labour + c.labour, material: b.material + c.material, subcontractor: b.subcontractor + c.subcontractor, equipment: b.equipment + c.equipment } },
+    { labour: 0, material: 0, subcontractor: 0, equipment: 0 },
+  )
+  const actualSupply = actuals.reduce((s, a) => s + a.supplyCost, 0)
+  const subbieInvoiced = subcontractors.reduce((s, p) => s + (p.invoicedToDate || 0), 0)
+  const costSources = [
+    { label: 'Labour', budget: budgetBd.labour, actual: usedLabourCost },
+    { label: 'Materials & equipment', budget: budgetBd.material + budgetBd.equipment, actual: actualSupply },
+    { label: 'Subcontractor', budget: budgetBd.subcontractor, actual: subbieInvoiced },
+  ]
+
+  // Metric 5 — subcontractor committed (approved + variations) vs invoiced/claimed to date.
+  const subbieCommitted = subcontractors.reduce((s, p) => s + (p.approvedValue || 0) + (p.variations || 0), 0)
+  const subbieRemaining = subbieCommitted - subbieInvoiced
+  const hasSubbie = subcontractors.length > 0
 
   const hasData = estimates.length > 0 || ganttEntries.length > 0
 
@@ -784,6 +827,100 @@ function ProjectFinancialPosition({
               </p>
             )}
           </div>
+
+          {/* Derived labour insights: productivity · projected hours · weekly burn */}
+          <div className="grid grid-cols-3 gap-3 mt-4">
+            <div className="bg-fg-bg border border-fg-border rounded-sm p-3">
+              <p className="text-2xs text-fg-muted uppercase tracking-wide mb-1">Productivity</p>
+              {pfMeaningful && productivityFactor !== null ? (
+                <>
+                  <p className={`text-base font-light tabular-nums ${productivityFactor >= 1 ? 'text-emerald-400' : productivityFactor >= 0.85 ? 'text-amber-400' : 'text-red-400'}`}>{productivityFactor.toFixed(2)}</p>
+                  <p className="text-2xs text-fg-muted/60">earned ÷ used hrs · {pctComplete.toFixed(0)}% billed</p>
+                </>
+              ) : (
+                <p className="text-sm font-light text-fg-muted/40">— <span className="text-2xs">needs progress</span></p>
+              )}
+            </div>
+            <div className="bg-fg-bg border border-fg-border rounded-sm p-3">
+              <p className="text-2xs text-fg-muted uppercase tracking-wide mb-1">Projected hours</p>
+              {projectedHours !== null && projectedVsAllowed !== null ? (
+                <>
+                  <p className="text-base font-light tabular-nums text-fg-heading">{fmtHrs(projectedHours)}</p>
+                  <p className={`text-2xs ${projectedVsAllowed > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                    {projectedVsAllowed > 0 ? '+' : ''}{fmtHrs(projectedVsAllowed)} vs allowed
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm font-light text-fg-muted/40">— <span className="text-2xs">needs progress</span></p>
+              )}
+            </div>
+            <div className="bg-fg-bg border border-fg-border rounded-sm p-3">
+              <p className="text-2xs text-fg-muted uppercase tracking-wide mb-1">Weekly burn</p>
+              {recentBurnHours > 0 ? (
+                <>
+                  <p className="text-base font-light tabular-nums text-fg-heading">{Math.round(recentBurnHours).toLocaleString()} hrs/wk</p>
+                  <p className="text-2xs text-fg-muted/60">
+                    {weeksOfAllowanceLeft !== null && weeksOfAllowanceLeft >= 0 ? `~${Math.round(weeksOfAllowanceLeft)} wk of allowance left` : 'allowance exceeded'}
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm font-light text-fg-muted/40">— <span className="text-2xs">no labour logged</span></p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cost variance by source */}
+      {budgetCost > 0 && (
+        <div>
+          <h3 className="text-xs font-light tracking-widest uppercase text-fg-muted mb-3">Cost by Source</h3>
+          <div className="border border-fg-border">
+            <div className="grid grid-cols-4 px-4 py-2.5 bg-fg-card/20 border-b border-fg-border">
+              <span className="text-2xs font-medium tracking-architectural uppercase text-fg-muted">Source</span>
+              <span className="text-2xs text-fg-muted uppercase tracking-wide text-right">Budget</span>
+              <span className="text-2xs text-fg-muted uppercase tracking-wide text-right">Actual</span>
+              <span className="text-2xs text-fg-muted uppercase tracking-wide text-right">Variance</span>
+            </div>
+            {costSources.map(s => {
+              const v = s.budget - s.actual
+              return (
+                <div key={s.label} className="grid grid-cols-4 px-4 py-2.5 border-b border-fg-border/40 last:border-0 text-sm font-light">
+                  <span className="text-fg-muted">{s.label}</span>
+                  <span className="text-right text-fg-heading tabular-nums">{formatCurrency(s.budget)}</span>
+                  <span className="text-right text-fg-heading tabular-nums">{formatCurrency(s.actual)}</span>
+                  <span className={`text-right tabular-nums ${v >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{formatCurrency(v)}</span>
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-2xs text-fg-muted/50 mt-1.5">
+            Actuals: labour + materials from the Cost Tracker; subcontractor from claims on the Subcontractors tab.
+          </p>
+        </div>
+      )}
+
+      {/* Subcontractors */}
+      {hasSubbie && (
+        <div>
+          <h3 className="text-xs font-light tracking-widest uppercase text-fg-muted mb-3">Subcontractors</h3>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-fg-bg border border-fg-border rounded-sm p-4">
+              <p className="text-2xs text-fg-muted tracking-wide uppercase mb-1.5">Committed</p>
+              <p className="text-sm font-light text-fg-heading tabular-nums">{formatCurrency(subbieCommitted)}</p>
+              <p className="text-2xs text-fg-muted/50 mt-0.5">approved + variations</p>
+            </div>
+            <div className="bg-fg-bg border border-fg-border rounded-sm p-4">
+              <p className="text-2xs text-fg-muted tracking-wide uppercase mb-1.5">Invoiced / Claimed</p>
+              <p className="text-sm font-light text-fg-heading tabular-nums">{formatCurrency(subbieInvoiced)}</p>
+              <p className="text-2xs text-fg-muted/50 mt-0.5">{subbieCommitted > 0 ? `${((subbieInvoiced / subbieCommitted) * 100).toFixed(0)}% of committed` : '—'}</p>
+            </div>
+            <div className="bg-fg-bg border border-fg-border rounded-sm p-4">
+              <p className="text-2xs text-fg-muted tracking-wide uppercase mb-1.5">Remaining</p>
+              <p className={`text-sm font-light tabular-nums ${subbieRemaining < 0 ? 'text-red-400' : 'text-fg-heading'}`}>{formatCurrency(subbieRemaining)}</p>
+              <p className="text-2xs text-fg-muted/50 mt-0.5">{subbieRemaining < 0 ? 'over-claimed' : 'still to claim'}</p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -886,6 +1023,7 @@ export default function ProjectDetailPage() {
   const [actuals, setActuals] = useState<WeeklyActual[]>([])
   const [progressClaims, setProgressClaims] = useState<ProgressClaim[]>([])
   const [stages, setStages] = useState<ProgressPaymentStage[]>([])
+  const [subcontractors, setSubcontractors] = useState<SubcontractorPackage[]>([])
   // Seed from ?tab= so deep links from the dashboard Live Jobs row land on the right tab.
   // Falls back to 'overview' if no/invalid tab param.
   const tabFromUrl = searchParams?.get('tab') as TabId | null
@@ -930,6 +1068,7 @@ export default function ProjectDetailPage() {
       setActuals(loadWeeklyActuals(id))
       setProgressClaims(loadProgressClaims(id))
       setStages(loadProgressPaymentStages(id))
+      setSubcontractors(loadSubcontractors(id))
       // Pull any client variation approvals/rejections down from Supabase, then refresh the estimates.
       const changed = await reconcileVariations()
       if (changed > 0 && !cancelled) setEstimates(loadEstimates().filter(e => e.projectId === id))
@@ -1503,6 +1642,7 @@ export default function ProjectDetailPage() {
             actuals={actuals}
             revenueEntries={revenueEntries}
             progressClaims={progressClaims}
+            subcontractors={subcontractors}
             onAddEstimate={() => router.push(`/estimates/new?projectId=${id}`)}
             onSetupGantt={() => router.push(`/projects/${id}/gantt`)}
           />
