@@ -114,6 +114,37 @@ export async function createXeroDraftInvoice(body: {
   }
 }
 
+// ── Chart-of-Accounts cost codes (XCC) ───────────────────────────────────────
+// The cost accounts a line item is allocated to for the Xero project budget. Cached in localStorage so
+// the per-line dropdown renders instantly + still works while Xero is briefly unreachable or the estimate
+// is edited offline.
+
+export interface XeroAccountOption { code: string; name: string; type?: string }
+
+const XERO_ACCOUNTS_CACHE = 'fg_xero_accounts'
+
+/** Cached cost-account list (instant render; refreshed by getXeroAccounts). */
+export function loadCachedXeroAccounts(): XeroAccountOption[] {
+  if (typeof window === 'undefined') return []
+  try { return JSON.parse(localStorage.getItem(XERO_ACCOUNTS_CACHE) || '[]') } catch { return [] }
+}
+
+/** Fetch the live cost-account list from Xero and cache it; falls back to the cache on any failure. */
+export async function getXeroAccounts(): Promise<XeroAccountOption[]> {
+  try {
+    const resp = await fetch(`/api/xero/accounts?_=${Date.now()}`, { cache: 'no-store' })
+    if (!resp.ok) return loadCachedXeroAccounts()
+    const data = await resp.json()
+    const items: XeroAccountOption[] = Array.isArray(data.items) ? data.items : []
+    if (items.length && typeof window !== 'undefined') {
+      try { localStorage.setItem(XERO_ACCOUNTS_CACHE, JSON.stringify(items)) } catch { /* ignore */ }
+    }
+    return items.length ? items : loadCachedXeroAccounts()
+  } catch {
+    return loadCachedXeroAccounts()
+  }
+}
+
 export async function getXeroTrackingCategories(): Promise<unknown[]> {
   try {
     const resp = await fetch('/api/xero/tracking-categories', { cache: 'no-store' })

@@ -10,6 +10,7 @@ import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEst
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
 import { getAllLibraryItems, getCategories, defaultMarkupForType, TARGET_MARGINS } from '@/lib/itemLibrary'
+import { getXeroAccounts, loadCachedXeroAccounts, type XeroAccountOption } from '@/lib/xero'
 import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData } from '@/types'
 import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch, Copy, Eye, EyeOff, Check } from 'lucide-react'
 import TakeoffTab from '@/components/TakeoffTab'
@@ -328,6 +329,7 @@ function LineItemRow({
   onUnitsFocus,
   index = 0,
   inclMarkups = 0,
+  accounts = [],
 }: {
   item: EstimateLineItem
   categories: string[]
@@ -340,6 +342,7 @@ function LineItemRow({
   onUnitsFocus?: () => void
   index?: number
   inclMarkups?: number
+  accounts?: XeroAccountOption[]
 }) {
   const update = (patch: Partial<EstimateLineItem>) => {
     const updated = { ...item, ...patch }
@@ -382,6 +385,20 @@ function LineItemRow({
           className={`${inputCls} text-2xs text-fg-muted mt-0.5`}
           placeholder="Sub-category (Gantt posting)…"
         />
+        {/* XCC — the Xero cost code (chart-of-accounts account) this line is budgeted against. Amber
+            until allocated. Sourced live from Xero's cost accounts; the stored value is the account code. */}
+        <select
+          value={item.xeroCategory ?? ''}
+          onChange={e => update({ xeroCategory: e.target.value || undefined })}
+          title="Xero cost code (project budget)"
+          className={`mt-0.5 max-w-[180px] text-2xs bg-transparent border border-transparent hover:border-fg-border focus:border-fg-heading rounded-none outline-none transition-colors appearance-none ${item.xeroCategory ? 'text-fg-muted' : 'text-amber-600/80'}`}
+        >
+          <option value="">{accounts.length ? '⚠ XCC…' : '⚠ XCC (connect Xero)'}</option>
+          {accounts.map(a => <option key={a.code} value={a.code}>{a.name}</option>)}
+          {item.xeroCategory && !accounts.some(a => a.code === item.xeroCategory) && (
+            <option value={item.xeroCategory}>{item.xeroCategory}</option>
+          )}
+        </select>
         {(item.type === 'Subcontractor' || item.crewType === 'Subcontractor') && (
           <div className="mt-0.5 flex items-center gap-1.5 text-2xs px-1.5">
             <label className={`cursor-pointer inline-flex items-center gap-1 ${item.quoteFileName ? 'text-fg-muted' : 'text-amber-600'}`} title={item.quoteFileName ? 'Replace quote' : 'A subcontractor quote is required before going to contract'}>
@@ -620,6 +637,13 @@ export default function EstimateBuilderPage() {
   const id = params.id as string
 
   const [estimate, setEstimate] = useState<Estimate | null>(null)
+  // Xero cost-code (XCC) options for the per-line allocation dropdown: cached for instant render, then
+  // refreshed live from Xero's chart of accounts.
+  const [xeroAccounts, setXeroAccounts] = useState<XeroAccountOption[]>([])
+  useEffect(() => {
+    setXeroAccounts(loadCachedXeroAccounts())
+    void getXeroAccounts().then(setXeroAccounts)
+  }, [])
   const [showPicker, setShowPicker] = useState(false)
   const [pickerCategory, setPickerCategory] = useState<string | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -1654,6 +1678,7 @@ export default function EstimateBuilderPage() {
                               onMoveUp={() => moveLineItem(item.id, -1)}
                               onMoveDown={() => moveLineItem(item.id, 1)}
                               onUnitsFocus={() => setLastUnitsLineId(item.id)}
+                              accounts={xeroAccounts}
                             />
                           )
                         }
