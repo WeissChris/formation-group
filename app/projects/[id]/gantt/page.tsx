@@ -168,6 +168,16 @@ function subtaskBarColour(crewType: 'Formation' | 'Subcontractor'): string {
   return crewType === 'Formation' ? '#ABA89880' : '#CFC2B080'
 }
 
+// Should this category be persisted (localStorage + Supabase)? Yes if it carries any real work: a drawn
+// bar, OR subtask structure the user deliberately added (a split, or manual subtasks like "Cabinet
+// install") even before its bars are drawn. Without the subtask clause a split-but-unscheduled category
+// is silently dropped on every save — it never reaches localStorage or the cloud, so its subtasks vanish
+// and can't sync to another device (the "Outdoor kitchen subtasks don't appear" bug). Splitting/adding
+// subtasks is opt-in, so this never persists untouched estimate categories.
+function entryWorthPersisting(e: GanttEntry): boolean {
+  return e.segments.length > 0 || (e.subtasks?.length ?? 0) > 0
+}
+
 function daysBetweenIso(aIso: string, bIso: string): number {
   if (!aIso || !bIso) return 0
   return Math.round((new Date(bIso).getTime() - new Date(aIso).getTime()) / 86400000)
@@ -1440,7 +1450,7 @@ export default function GanttPage() {
   }, [project, id])
 
   const handleSave = () => {
-    const toSave = entries.filter(e => e.segments.length > 0 || flattenSubtasks(e.subtasks ?? []).some(({ st }) => st.segments.length > 0))
+    const toSave = entries.filter(entryWorthPersisting)
     void upsertGanttEntries(id, toSave)   // localStorage (immediate) + Supabase (background)
     const n = syncForecast(entries)       // build the revenue forecast in the same action
     hasUnsavedChangesRef.current = false   // persisted — nothing for flush to re-save
@@ -1489,7 +1499,7 @@ export default function GanttPage() {
   const flushGantt = useCallback(() => {
     if (!hasUnsavedChangesRef.current) return
     hasUnsavedChangesRef.current = false
-    const toSave = latestEntriesRef.current.filter(e => e.segments.length > 0 || flattenSubtasks(e.subtasks ?? []).some(({ st }) => st.segments.length > 0))
+    const toSave = latestEntriesRef.current.filter(entryWorthPersisting)
     void upsertGanttEntries(id, toSave)
     syncForecast(latestEntriesRef.current)   // keep the forecast in step on navigate-away too
   }, [id, syncForecast])
@@ -1564,7 +1574,7 @@ export default function GanttPage() {
     // the first click (not only after the scope is touched).
     const seededRecalc = next.map(e => recalcEntry(e))
     setEntries(seededRecalc)
-    void upsertGanttEntries(id, seededRecalc.filter(e => e.segments.length > 0 || flattenSubtasks(e.subtasks ?? []).some(({ st }) => st.segments.length > 0)))
+    void upsertGanttEntries(id, seededRecalc.filter(entryWorthPersisting))
     const fc = syncForecast(seededRecalc)   // seed the revenue forecast alongside the timeline
     hasUnsavedChangesRef.current = false   // persisted — nothing for flush to re-save
     setSuccessMsg(`Seeded ${seededCount} ${seededCount === 1 ? 'category' : 'categories'} + ${fc} forecast week${fc === 1 ? '' : 's'} — adjust each task's start + duration and re-save to update both`)
