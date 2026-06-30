@@ -104,12 +104,26 @@ export async function clearTokens(entity: XeroEntity = 'formation'): Promise<boo
   return !error
 }
 
+// In-flight refresh per entity. Xero ROTATES the refresh token on every refresh (the old one is
+// invalidated immediately), so two parallel refreshes race and the loser gets invalid_grant. Sharing
+// one promise coalesces a burst of calls (status poll + cost feed + accounts + probe) into a single
+// refresh within a warm instance; the re-read recovery below handles the cross-instance case.
+const refreshInFlight: Partial<Record<XeroEntity, Promise<XeroTokenRow | null>>> = {}
+
 /**
- * Refresh an entity's access token using Xero's token endpoint.
- * Preserves tenantId / tenantName from the existing row (Xero's refresh response doesn't include them).
- * On failure, returns null without modifying stored tokens.
+ * Refresh an entity's access token. Coalesces concurrent calls; on the rotation race re-reads the
+ * stored token and uses whatever another request already refreshed. NEVER deletes the row on failure —
+ * a racing/transient invalid_grant must not kill a good connection (that forced repeated reconnects).
  */
 async function refreshTokens(entity: XeroEntity): Promise<XeroTokenRow | null> {
+  const existing = refreshInFlight[entity]
+  if (existing) return existing
+  const p = doRefresh(entity).finally(() => { delete refreshInFlight[entity] })
+  refreshInFlight[entity] = p
+  return p
+}
+
+async function doRefresh(entity: XeroEntity): Promise<XeroTokenRow | null> {
   const prior = await getTokens(entity)
   if (!prior) return null
   // `.trim()` defends against trailing whitespace in env values — see init/callback for why.
@@ -129,14 +143,15 @@ async function refreshTokens(entity: XeroEntity): Promise<XeroTokenRow | null> {
     }),
   })
   if (!response.ok) {
-    // A dead/expired refresh token returns 400 invalid_grant — the connection can NEVER recover from
-    // it, so clear the row. Otherwise getStatus keeps reporting a green "connected" against a token
-    // that 401s every call (the cost feed, payroll probe, etc.), and the user has no signal to
-    // reconnect. Transient failures (5xx, network) keep the row so a blip doesn't force a needless
-    // reconnect.
+    // invalid_grant usually means another request/instance already refreshed and rotated the token, so
+    // OUR refresh token is now stale. Re-read: if a newer, still-valid token is stored, that refresh
+    // succeeded elsewhere — use it. Otherwise just return null (the row is preserved; the user can
+    // reconnect if it's genuinely dead). We deliberately do NOT clear here.
     if (response.status === 400) {
-      const body = await response.text().catch(() => '')
-      if (body.includes('invalid_grant')) await clearTokens(entity)
+      const latest = await getTokens(entity)
+      if (latest && latest.refreshToken !== prior.refreshToken && Date.now() < latest.expiresAt - 60_000) {
+        return latest
+      }
     }
     return null
   }
