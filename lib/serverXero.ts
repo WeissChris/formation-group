@@ -128,7 +128,18 @@ async function refreshTokens(entity: XeroEntity): Promise<XeroTokenRow | null> {
       refresh_token: prior.refreshToken,
     }),
   })
-  if (!response.ok) return null
+  if (!response.ok) {
+    // A dead/expired refresh token returns 400 invalid_grant — the connection can NEVER recover from
+    // it, so clear the row. Otherwise getStatus keeps reporting a green "connected" against a token
+    // that 401s every call (the cost feed, payroll probe, etc.), and the user has no signal to
+    // reconnect. Transient failures (5xx, network) keep the row so a blip doesn't force a needless
+    // reconnect.
+    if (response.status === 400) {
+      const body = await response.text().catch(() => '')
+      if (body.includes('invalid_grant')) await clearTokens(entity)
+    }
+    return null
+  }
   const data = await response.json()
 
   const next: XeroTokenRow = {
