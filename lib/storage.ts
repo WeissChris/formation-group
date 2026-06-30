@@ -1,4 +1,4 @@
-﻿import type { Project, WeeklyRevenue, DesignProposal, Estimate, GanttEntry, WeeklyActual, ProgressPaymentStage, DesignProject, ProgressClaim, TakeoffData, TakeoffTemplate, ProposalInvoiceStage, SubcontractorPackage } from '@/types'
+﻿import type { Project, WeeklyRevenue, DesignProposal, Estimate, GanttEntry, WeeklyActual, ProgressPaymentStage, DesignProject, ProgressClaim, TakeoffData, TakeoffTemplate, ProposalInvoiceStage, SubcontractorPackage, Supervisor } from '@/types'
 import { notify } from './broadcast'
 import { getProposalPhases, phasesTotal } from './proposalPhases'
 import { generateId } from './utils'
@@ -676,4 +676,27 @@ export function deleteSubcontractor(id: string): void {
   localStorage.setItem('fg_subcontractors', JSON.stringify(all))
   backupToIndexedDB('fg_subcontractors', all)
   notify({ key: 'subcontractors' })
+}
+
+// Supervisors (site supervisors / foremen with a Master-Programme colour)
+export function loadSupervisors(): Supervisor[] {
+  if (typeof window === 'undefined') return []
+  try { return JSON.parse(localStorage.getItem('fg_supervisors') || '[]') } catch { return [] }
+}
+
+export function saveSupervisor(sup: Supervisor): void {
+  const stamped = { ...sup, updatedAt: new Date().toISOString() }   // stamp -> cross-device newest-wins
+  const all = loadSupervisors()
+  const idx = all.findIndex(s => s.id === stamped.id)
+  if (idx >= 0) all[idx] = stamped; else all.push(stamped)
+  localStorage.setItem('fg_supervisors', JSON.stringify(all))
+  backupToIndexedDB('fg_supervisors', all)
+  notify({ key: 'supervisors' })
+}
+
+export function deleteSupervisor(id: string): void {
+  const all = loadSupervisors().filter(s => s.id !== id)
+  localStorage.setItem('fg_supervisors', JSON.stringify(all))
+  backupToIndexedDB('fg_supervisors', all)
+  notify({ key: 'supervisors' })
 }

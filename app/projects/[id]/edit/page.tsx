@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { upsertProject, getProjects } from '@/lib/storageAsync'
-import { loadProjects } from '@/lib/storage'
-import type { Project } from '@/types'
+import { upsertProject, getProjects, getSupervisors } from '@/lib/storageAsync'
+import { loadProjects, loadSupervisors } from '@/lib/storage'
+import type { Project, Supervisor } from '@/types'
 import Link from 'next/link'
 
 export default function EditProjectPage() {
@@ -13,6 +13,7 @@ export default function EditProjectPage() {
   const id = params.id as string
 
   const [project, setProject] = useState<Project | null>(null)
+  const [supervisors, setSupervisors] = useState<Supervisor[]>([])
   const [notFound, setNotFound] = useState(false)
   const [form, setForm] = useState({
     name: '',
@@ -27,6 +28,12 @@ export default function EditProjectPage() {
     notes: '',
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Supervisors for the dropdown (local first, then adopt the cloud copy).
+  useEffect(() => {
+    setSupervisors(loadSupervisors())
+    ;(async () => { try { setSupervisors(await getSupervisors()) } catch { /* keep local */ } })()
+  }, [])
 
   // Load the project (local first, Supabase fallback if this device hasn't cached it) and pre-fill.
   useEffect(() => {
@@ -146,7 +153,25 @@ export default function EditProjectPage() {
             <Field label="Planned Completion" value={form.plannedCompletion} onChange={v => set('plannedCompletion', v)} type="date" />
           </div>
 
-          <Field label="Foreman" value={form.foreman} onChange={v => set('foreman', v)} placeholder="e.g. Cameron" />
+          {supervisors.length > 0 ? (
+            <div>
+              <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Supervisor</label>
+              <select
+                value={form.foreman}
+                onChange={e => set('foreman', e.target.value)}
+                className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors appearance-none"
+              >
+                <option value="">— Unassigned —</option>
+                {supervisors.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                {form.foreman && !supervisors.some(s => s.name === form.foreman) && (
+                  <option value={form.foreman}>{form.foreman} (not in list)</option>
+                )}
+              </select>
+              <p className="text-2xs font-light text-fg-muted/50 mt-1">Manage supervisors and their Programme colours in Settings.</p>
+            </div>
+          ) : (
+            <Field label="Supervisor" value={form.foreman} onChange={v => set('foreman', v)} placeholder="e.g. Cameron" />
+          )}
 
           <div>
             <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Notes</label>

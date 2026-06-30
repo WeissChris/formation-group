@@ -30,6 +30,9 @@ import {
   loadProgressClaims,
   saveProgressClaim,
   deleteProgressClaim,
+  loadSupervisors,
+  saveSupervisor,
+  deleteSupervisor,
 } from './storage'
 import type {
   DesignProposal,
@@ -43,6 +46,7 @@ import type {
   TakeoffData,
   SubcontractorPackage,
   ProgressClaim,
+  Supervisor,
 } from '@/types'
 
 // Gantt milestones are defined structurally in the gantt/programme pages (not in @/types). The sync
@@ -613,6 +617,47 @@ export async function deleteSubcontractorAsync(id: string): Promise<void> {
   if (isSupabaseConfigured() && supabase) {
     const { error } = await supabase.from('fg_subcontractors').delete().eq('id', id)
     if (error) console.error('[Formation] subcontractor delete (Supabase) error:', error.message)
+  }
+}
+
+// ── SUPERVISORS ───────────────────────────────────────────────────────────────
+
+export async function getSupervisors(): Promise<Supervisor[]> {
+  if (isSupabaseConfigured() && supabase) {
+    const { data } = await supabase.from('fg_supervisors').select('*')
+    if (data) return data.map(mapSupervisor)
+  }
+  return loadSupervisors()
+}
+
+export async function upsertSupervisor(sup: Supervisor): Promise<void> {
+  saveSupervisor(sup) // localStorage (this also stamps updatedAt) + notify
+  if (isSupabaseConfigured() && supabase) {
+    const fresh = loadSupervisors().find(s => s.id === sup.id) ?? sup
+    const { error } = await supabase.from('fg_supervisors').upsert({
+      id: fresh.id,
+      name: fresh.name,
+      colour: fresh.colour,
+      updated_at: fresh.updatedAt ?? new Date().toISOString(),
+    })
+    if (error) console.error('[Formation] supervisor upsert (Supabase) error:', error.message)
+  }
+}
+
+export async function deleteSupervisorAsync(id: string): Promise<void> {
+  deleteSupervisor(id) // localStorage (runs synchronously before any await)
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_supervisors').delete().eq('id', id)
+    if (error) console.error('[Formation] supervisor delete (Supabase) error:', error.message)
+  }
+}
+
+function mapSupervisor(row: Record<string, unknown>): Supervisor {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    colour: row.colour as string,
+    updatedAt: row.updated_at as string | undefined,
   }
 }
 

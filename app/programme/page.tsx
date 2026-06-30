@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { loadProjects, loadGanttEntries } from '@/lib/storage'
-import { getAllGanttMilestones } from '@/lib/storageAsync'
+import { loadProjects, loadGanttEntries, loadSupervisors } from '@/lib/storage'
+import { getAllGanttMilestones, getSupervisors } from '@/lib/storageAsync'
 import { formatCurrency, SHORT_MONTH_NAMES, generateId, toISODate } from '@/lib/utils'
 import { entrySegments } from '@/lib/ganttForecast'
-import type { Project, GanttEntry } from '@/types'
+import { supervisorColourByName, UNASSIGNED_COLOUR } from '@/lib/supervisors'
+import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
+import type { Project, GanttEntry, Supervisor } from '@/types'
 import EntityBadge from '@/components/EntityBadge'
 import { scheduleStatus, healthColour, healthBg, getForecastCompletion } from '@/lib/projectHealth'
 import { isLiveProject } from '@/lib/stageConfig'
@@ -54,11 +56,14 @@ export default function ProgrammePage() {
   const [filterEntity, setFilterEntity] = useState<FilterEntity>('all')
   const [filterForeman, setFilterForeman] = useState('all')
   const [filterStatus, setFilterStatus] = useState<'active' | 'all'>('active')
+  const [supervisors, setSupervisors] = useState<Supervisor[]>([])
+  const [colourBy, setColourBy] = useState<'entity' | 'supervisor'>('entity')
 
   useEffect(() => {
     let cancelled = false
     const all = loadProjects()
     setProjects(all)
+    setSupervisors(loadSupervisors())
     const gantt: Record<string, GanttEntry[]> = {}
     const miles: Record<string, ReturnType<typeof loadMilestones>> = {}
     all.forEach(p => {
@@ -70,6 +75,7 @@ export default function ProgrammePage() {
     // Cross-device: pull all projects' milestones from Supabase and overwrite local for projects
     // where a remote row exists (replace-semantics array; remote is the durable last-editor copy).
     ;(async () => {
+      try { const sups = await getSupervisors(); if (!cancelled) setSupervisors(sups) } catch { /* keep local */ }
       try {
         const remote = await getAllGanttMilestones()
         if (cancelled || remote.length === 0) return
@@ -85,6 +91,10 @@ export default function ProgrammePage() {
     })()
     return () => { cancelled = true }
   }, [])
+
+  // Live cross-device: re-read supervisors when their colours/names change anywhere.
+  useCrossTabRefresh(['supervisors'], () => setSupervisors(loadSupervisors()))
+  const supColourByName = supervisorColourByName(supervisors)
 
   const fridays = getNextFridays(WEEKS)
   const currentWeekIso = toISODate(fridays[0])
@@ -149,6 +159,16 @@ export default function ProgrammePage() {
           ))}
         </div>
 
+        {/* Colour by */}
+        <div className="flex border border-fg-border text-[10px] font-light tracking-wide uppercase overflow-hidden">
+          {([['entity','Entity'],['supervisor','Supervisor']] as ['entity'|'supervisor',string][]).map(([val, label]) => (
+            <button key={val} onClick={() => setColourBy(val)}
+              className={`px-3 py-1.5 transition-colors border-r border-fg-border last:border-r-0 ${colourBy === val ? 'bg-fg-dark text-white/80' : 'text-fg-muted hover:text-fg-heading'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* Foreman */}
         {foremanOptions.length > 2 && (
           <select value={filterForeman} onChange={e => setFilterForeman(e.target.value)}
@@ -162,12 +182,18 @@ export default function ProgrammePage() {
 
       {/* Legend */}
       <div className="flex items-center gap-5 mb-5 flex-wrap">
-        {[
-          { colour: '#8A8580', label: 'Formation / Landscapes' },
-          { colour: '#B5A898', label: 'Subcontractor' },
-          { colour: '#6BA5C8', label: 'Lume Pools' },
-          { colour: '#C8A870', label: 'Design' },
-        ].map(l => (
+        {(colourBy === 'supervisor'
+          ? [
+              ...supervisors.filter(s => s.name).map(s => ({ colour: s.colour, label: s.name })),
+              { colour: UNASSIGNED_COLOUR, label: 'Unassigned' },
+            ]
+          : [
+              { colour: '#8A8580', label: 'Formation / Landscapes' },
+              { colour: '#B5A898', label: 'Subcontractor' },
+              { colour: '#6BA5C8', label: 'Lume Pools' },
+              { colour: '#C8A870', label: 'Design' },
+            ]
+        ).map(l => (
           <div key={l.label} className="flex items-center gap-1.5">
             <div className="w-6 h-2.5 rounded-sm" style={{ background: l.colour }} />
             <span className="text-[10px] font-light text-fg-muted uppercase tracking-wide">{l.label}</span>
@@ -224,7 +250,10 @@ export default function ProgrammePage() {
               const col = healthColour(status)
               const planned = p.baseline?.plannedCompletion
               const expected = getForecastCompletion(p, entries)
-              const barColour = p.entity === 'lume' ? '#6BA5C8' : p.entity === 'design' ? '#C8A870' : '#8A8580'
+              const entityColour = p.entity === 'lume' ? '#6BA5C8' : p.entity === 'design' ? '#C8A870' : '#8A8580'
+              // In supervisor mode the whole project takes its supervisor's colour (so a team's jobs + gaps
+              // read at a glance); in entity mode keep the per-source shading.
+              const supColour = supColourByName[p.foreman] || UNASSIGNED_COLOUR
 
               // Collect all segments across all entries
               type SegRow = { startDate: string; endDate: string; colour: string; label?: string }
@@ -238,7 +267,9 @@ export default function ProgrammePage() {
                     segRows.push({
                       startDate: seg.startDate,
                       endDate: seg.endDate,
-                      colour: entry.crewType === 'Subcontractor' ? '#B5A898' : barColour,
+                      colour: colourBy === 'supervisor'
+                        ? supColour
+                        : (entry.crewType === 'Subcontractor' ? '#B5A898' : entityColour),
                       label: seg.label || entry.category,
                     })
                   }

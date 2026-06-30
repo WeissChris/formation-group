@@ -16,6 +16,7 @@ import { isSupabaseConfigured } from '@/lib/supabase'
 import { downloadBackup, restoreFromBackup } from '@/lib/backup'
 import { getXeroAuthUrl, getXeroStatus, disconnectXero, triggerXeroSync, type XeroStatus } from '@/lib/xero'
 import { XeroMappingSection } from '@/components/XeroMappingSection'
+import { SupervisorsSection } from '@/components/SupervisorsSection'
 import { Check } from 'lucide-react'
 
 export default function SettingsPage() {
@@ -171,6 +172,9 @@ export default function SettingsPage() {
               Default: <code className="font-mono text-fg-heading bg-fg-border/50 px-1.5 py-0.5">formation2026</code>
             </p>
           </section>
+
+          {/* Supervisors */}
+          <SupervisorsSection />
         </div>
 
         {/* Right column — External Links */}

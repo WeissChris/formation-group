@@ -19,7 +19,7 @@
 import { supabase, isSupabaseConfigured } from './supabase'
 import {
   getEstimates, getProjects, getProposals, getRevenue, getAllGanttEntries,
-  getActuals, getPaymentStages, getProgressClaims, getSubcontractors, getDesignProjects,
+  getActuals, getPaymentStages, getProgressClaims, getSubcontractors, getDesignProjects, getSupervisors,
 } from './storageAsync'
 import { notify, notifyThisTab, type StorageEvent } from './broadcast'
 import { mergeKeyed, type Keyed } from './mergeKeyed'
@@ -49,6 +49,7 @@ const DATASETS: Dataset[] = [
   { table: 'fg_progress_claims', lsKey: 'fg_progress_claims', bcKey: 'progress_claims', getRemote: getProgressClaims as () => Promise<Keyed[]> },
   { table: 'fg_subcontractors', lsKey: 'fg_subcontractors', bcKey: 'subcontractors', getRemote: getSubcontractors as () => Promise<Keyed[]> },
   { table: 'fg_design_projects', lsKey: 'fg_design_projects', bcKey: 'design_projects', getRemote: getDesignProjects as () => Promise<Keyed[]> },
+  { table: 'fg_supervisors', lsKey: 'fg_supervisors', bcKey: 'supervisors', getRemote: getSupervisors as () => Promise<Keyed[]> },
 ]
 
 function readLocal(lsKey: string): Keyed[] {

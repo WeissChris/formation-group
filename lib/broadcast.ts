@@ -24,6 +24,7 @@ export type StorageEvent =
   | { key: 'payment_stages' }
   | { key: 'design_projects' }
   | { key: 'subcontractors' }
+  | { key: 'supervisors' }
   | { key: 'takeoffs' }
   | { key: 'all' }  // wildcard — emit on bulk operations (seed, recover-from-IDB)
 

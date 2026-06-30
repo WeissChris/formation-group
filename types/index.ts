@@ -51,6 +51,17 @@ export interface Project {
   updatedAt?: string
 }
 
+/**
+ * A site supervisor / foreman, each with a colour for the Master Programme so a team's jobs (and gaps)
+ * read at a glance. Projects link by name via `project.foreman` (= Supervisor.name).
+ */
+export interface Supervisor {
+  id: string
+  name: string
+  colour: string             // hex, e.g. #6BA5C8
+  updatedAt?: string         // stamped on save — drives cross-device newest-wins (see liveSync)
+}
+
 export interface SubcontractorClaim {
   id: string
   date: string         // ISO date of the claim
