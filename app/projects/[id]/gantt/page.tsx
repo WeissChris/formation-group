@@ -179,6 +179,20 @@ function categoryColour(category: string): string {
   return CATEGORY_PALETTE[h % CATEGORY_PALETTE.length]
 }
 
+// Lighten (amt>0, toward white) / darken (amt<0, toward black) a #rrggbb by fraction |amt|. Used to shade
+// a section colour per discipline so Materials/Labour/Sub still read at a glance within one cohesive tint.
+function shade(hex: string, amt: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return hex
+  const n = parseInt(m[1], 16)
+  const t = amt < 0 ? 0 : 255, p = Math.abs(amt)
+  const mix = (c: number) => Math.round(c + (t - c) * p)
+  const r = mix((n >> 16) & 255), g = mix((n >> 8) & 255), b = mix(n & 255)
+  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`
+}
+// Per-discipline shade of the section colour: Labour darker, Materials lighter, Equipment lightest, Sub ~base.
+const DISCIPLINE_SHADE: Record<string, number> = { labour: -0.16, material: 0.18, subcontractor: 0.0, equipment: 0.34 }
+
 // Should this category be persisted (localStorage + Supabase)? Yes if it carries any real work: a drawn
 // bar, OR subtask structure the user deliberately added (a split, or manual subtasks like "Cabinet
 // install") even before its bars are drawn. Without the subtask clause a split-but-unscheduled category
@@ -2079,7 +2093,7 @@ export default function GanttPage() {
               ) : (
                 <div key={seg.id} className="absolute" title={`${category} — drag to shift the whole category`}
                   onMouseDown={e => handleRollupMouseDown(e, entry, i)}
-                  style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, top: 4, height: 7,
+                  style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, top: 3, height: 10,
                     background: sectionColour(category),
                     borderRadius: isStart && isEnd ? 3 : isStart ? '3px 0 0 3px' : isEnd ? '0 3px 3px 0' : 0,
                     cursor: (moving?.rollup && moving.entryId === entry.id) ? 'grabbing' : 'grab' }} />
@@ -2120,14 +2134,15 @@ export default function GanttPage() {
                     </div>
                   </div>
                 )}
-                {/* Resize handles — drag an edge to extend/shorten. onClick-stop so it doesn't open the popover. */}
+                {/* Resize handles — always-visible grips at each bar end (Instagantt style); drag to
+                    extend/shorten. onClick-stop so it doesn't open the popover. */}
                 {isStart && (
                   <div onMouseDown={e => handleResizeMouseDown(e, entry, seg, 'start', subtaskId)} onClick={e => e.stopPropagation()}
-                    title="Drag to change the start" className="absolute inset-y-0 left-0 w-1.5 z-20 cursor-ew-resize hover:bg-white/40" />
+                    title="Drag to change the start" className="absolute inset-y-1 left-0.5 w-[3px] z-20 cursor-ew-resize rounded-full bg-white/45 hover:bg-white/80 transition-colors" />
                 )}
                 {isEnd && (
                   <div onMouseDown={e => handleResizeMouseDown(e, entry, seg, 'end', subtaskId)} onClick={e => e.stopPropagation()}
-                    title="Drag to change the end" className="absolute inset-y-0 right-0 w-1.5 z-20 cursor-ew-resize hover:bg-white/40" />
+                    title="Drag to change the end" className="absolute inset-y-1 right-0.5 w-[3px] z-20 cursor-ew-resize rounded-full bg-white/45 hover:bg-white/80 transition-colors" />
                 )}
               </div>
             )
@@ -2138,8 +2153,8 @@ export default function GanttPage() {
           {/* Bar label on the RHS of the grid line — the section name on a roll-up, the line name on a
               subtask (Instagantt style: every bar reads without cross-referencing the left column). */}
           {i === trailingIdx && trailingLabel && (
-            <div className="absolute inset-y-0 left-1.5 z-10 flex items-center pointer-events-none whitespace-nowrap">
-              <span className={isSubtask ? 'text-[10px] font-light text-fg-muted' : 'text-[11px] font-medium text-fg-heading/90 tracking-tight'}>{trailingLabel}</span>
+            <div className="absolute inset-y-0 left-1.5 z-10 flex items-center pointer-events-none">
+              <span title={trailingLabel} className={`inline-block max-w-[150px] truncate ${isSubtask ? 'text-[10px] font-light text-fg-muted' : 'text-[11px] font-medium text-fg-heading/90 tracking-tight'}`}>{trailingLabel}</span>
             </div>
           )}
         </td>
@@ -2797,7 +2812,7 @@ export default function GanttPage() {
                             )
                           })()}
                         </td>
-                        {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true, subtask.label || undefined, undefined, sectionColour(cat.category))}
+                        {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true, subtask.label || undefined, undefined, shade(sectionColour(cat.category), DISCIPLINE_SHADE[subtask.costType ?? ''] ?? 0))}
                       </tr>
                     ))}
                   </>
