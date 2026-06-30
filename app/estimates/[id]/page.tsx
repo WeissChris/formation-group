@@ -11,6 +11,7 @@ import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
 import { getAllLibraryItems, getCategories, defaultMarkupForType, TARGET_MARGINS } from '@/lib/itemLibrary'
 import { getXeroAccounts, loadCachedXeroAccounts, type XeroAccountOption } from '@/lib/xero'
+import { loadXccDefaults, recordXccDefault, resolveXccDefault } from '@/lib/xcc'
 import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData } from '@/types'
 import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch, Copy, Eye, EyeOff, Check } from 'lucide-react'
 import TakeoffTab from '@/components/TakeoffTab'
@@ -801,6 +802,14 @@ export default function EstimateBuilderPage() {
       }
     })
     setHasUnsavedChanges(true)
+    // Learn the XCC default for this category+type — but only when it changes the stored default, so a
+    // units/cost keystroke (which also calls updateLineItem) doesn't churn localStorage.
+    if (updated.xeroCategory) {
+      const cur = loadXccDefaults()
+      if (resolveXccDefault(cur, updated.category, updated.type) !== updated.xeroCategory) {
+        recordXccDefault(updated.category, updated.type, updated.xeroCategory)
+      }
+    }
   }, [])
 
   // Apply a takeoff quantity to the line item whose Units field was last focused.
@@ -919,21 +928,26 @@ export default function EstimateBuilderPage() {
     setEstimate(prev => {
       if (!prev) return prev
       const base = prev.lineItems.length
-      const newItems: EstimateLineItem[] = libraryItems.map((li, i) => ({
-        id: generateId(),
-        estimateId: prev.id,
-        displayOrder: String(base + i + 1),
-        category: pickerCategory || li.category,
-        description: li.description,
-        type: li.type,
-        units: 0,
-        uom: li.type === 'Labour' ? 'hour' : li.defaultUom,
-        unitCost: li.defaultUnitCost,
-        total: 0,
-        markupPercent: defaultMarkupForType(li.type),   // per-type default (Material 45 / Labour 75 / Sub 35 / Equip 40)
-        revenue: 0,
-        crewType: li.crewType,
-      }))
+      const xccDefaults = loadXccDefaults()
+      const newItems: EstimateLineItem[] = libraryItems.map((li, i) => {
+        const category = pickerCategory || li.category
+        return {
+          id: generateId(),
+          estimateId: prev.id,
+          displayOrder: String(base + i + 1),
+          category,
+          description: li.description,
+          type: li.type,
+          units: 0,
+          uom: li.type === 'Labour' ? 'hour' : li.defaultUom,
+          unitCost: li.defaultUnitCost,
+          total: 0,
+          markupPercent: defaultMarkupForType(li.type),   // per-type default (Material 45 / Labour 75 / Sub 35 / Equip 40)
+          revenue: 0,
+          crewType: li.crewType,
+          xeroCategory: resolveXccDefault(xccDefaults, category, li.type),   // auto-fill from learned defaults
+        }
+      })
       return { ...prev, lineItems: [...prev.lineItems, ...newItems], updatedAt: new Date().toISOString() }
     })
     setShowPicker(false)
@@ -964,6 +978,7 @@ export default function EstimateBuilderPage() {
       markupPercent: markup,
       revenue: 0,
       crewType: defaultCrew,
+      xeroCategory: resolveXccDefault(loadXccDefaults(), category, 'Material'),   // auto-fill from learned defaults
     }
     setEstimate(prev => prev ? {
       ...prev,
