@@ -40,8 +40,8 @@ import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react
 // 30 weeks in weeks view and 10 weeks (50 working days) in days view on a typical screen (Andrew).
 const CELL_W_WEEKS = 36
 const CELL_W_DAYS = 16   // narrow day columns (Instagantt-like); bar labels overflow to the right, so this is safe
-const WEEK_COUNT = 78         // total weeks rendered by default (~15 months forward after the lookback) so you can scroll well ahead
-const LOOKBACK_WEEKS = 12     // weeks of grid BEFORE today you can scroll back to (~3 months); the initial view lands 2 weeks behind today
+const WEEK_COUNT = 52         // total weeks rendered (~10 months forward after the lookback); kept lean so the grid scrolls smoothly
+const LOOKBACK_WEEKS = 8      // weeks of grid BEFORE today you can scroll back to (~2 months); the initial view lands 2 weeks behind today
 // Andrew's zoom scale: 100% default, then ~25% steps each way (25/50/75/100/125/150/200).
 const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2] as const
 const DAYS_VIEW_WEEKS = 26   // Days view renders this many weeks of working-day columns (was 12 — too short for multi-month jobs)
@@ -810,7 +810,10 @@ export default function GanttPage() {
     if (scrolledToToday.current || !gridScrollRef.current || colCount === 0) return
     // Land the left edge TWO WEEKS before today (the rest of the lookback weeks sit further left, scrollable).
     const colsBeforeView = timeView === 'days' ? (LOOKBACK_WEEKS - 2) * 5 : (LOOKBACK_WEEKS - 2)
-    gridScrollRef.current.scrollLeft = Math.max(0, colsBeforeView * CELL_W)
+    const target = Math.max(0, colsBeforeView * CELL_W)
+    // Defer to the next frame: setting scrollLeft before the (large) table has laid out clamps it to 0,
+    // which is the "opens on the far-left empty weeks" symptom.
+    requestAnimationFrame(() => { if (gridScrollRef.current) gridScrollRef.current.scrollLeft = target })
     scrolledToToday.current = true
   }, [colCount, timeView, CELL_W])
 
@@ -1993,10 +1996,10 @@ export default function GanttPage() {
   const STICKY_LEFTS = [0, COL_CATEGORY, 0]
   const stickyL = (idx: number, z = 20): React.CSSProperties => ({
     position: 'sticky', left: STICKY_LEFTS[idx], zIndex: z,
-    // Divider where the frozen Category/Budget block meets the scrolling timeline. A HARD box-shadow
-    // (0 blur) draws a crisp 3px line that moves with the sticky cell — a plain border drops off sticky
-    // cells in a border-collapse table, and a blurred shadow on every cell janks the horizontal scroll.
-    ...(idx === 1 || idx === 2 ? { boxShadow: '3px 0 0 0 #8A8580' } : {}),
+    // Divider where the frozen Category/Budget block meets the scrolling timeline. A 2px right border:
+    // cheap to repaint (a box-shadow on every sticky cell janked the horizontal scroll). idx 1 = Budget,
+    // idx 2 = the full-block cell.
+    ...(idx === 1 || idx === 2 ? { borderRight: '2px solid #8A8580' } : {}),
   })
 
   // Sticky-top header: the cashflow + date rows stay put while the grid scrolls down. Fixed row heights
