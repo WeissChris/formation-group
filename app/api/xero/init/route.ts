@@ -34,14 +34,14 @@ export async function GET(request: NextRequest) {
   // with the entity so the callback can route the tokens. The whole string is still CSRF-checked.
   const state = `${entity}.${randomBytes(32).toString('hex')}`
 
-  // Formation additionally reads AU Payroll timesheets for per-job labour HOURS (the labour-pace
-  // panel on the financial report). Lume doesn't use the labour feed, so it isn't asked for the
-  // payroll scope. NOTE: these payroll scopes must be ENABLED in the Xero developer app config or
-  // the authorize call returns invalid_scope — same gotcha that hit accounting.transactions/contacts.
-  const baseScope = 'accounting.settings.read accounting.invoices accounting.banktransactions.read accounting.reports.profitandloss.read offline_access'
-  const scope = entity === 'formation'
-    ? `${baseScope} payroll.timesheets.read payroll.settings.read`
-    : baseScope
+  // Accounting-only scopes — proven by the cost feed and enabled in the Xero app config. The XCC
+  // account list + cost feed need only these.
+  // PAYROLL (paused labour-hours feature): the per-job hours pull needs
+  // `payroll.timesheets.read payroll.settings.read`, but those must FIRST be enabled in the Xero
+  // developer app config (developer.xero.com -> Configuration). Requesting a scope the app config
+  // doesn't have makes the WHOLE authorize fail with invalid_scope, so the connect silently bounces
+  // back with no token (the symptom we hit). Re-add them here once the app config has them.
+  const scope = 'accounting.settings.read accounting.invoices accounting.banktransactions.read accounting.reports.profitandloss.read offline_access'
 
   const params = new URLSearchParams({
     response_type: 'code',
