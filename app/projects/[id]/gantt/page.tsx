@@ -593,6 +593,7 @@ export default function GanttPage() {
   const [estimate, setEstimate] = useState<Estimate | null>(null)
   const [variations, setVariations] = useState<Estimate[]>([])   // accepted variations, scheduled alongside the base
   const [entries, setEntries] = useState<GanttEntry[]>([])
+  const [loaded, setLoaded] = useState(false)   // initial load (local + remote merge) finished — gates auto-split
   const [successMsg, setSuccessMsg] = useState('')
   const [timeView, setTimeView] = useState<TimeView>('days')   // default to Days scale (Chris)
 
@@ -600,6 +601,7 @@ export default function GanttPage() {
   // persist path is the manual "Save Gantt" button. Track a dirty flag + the latest entries so we can
   // flush to localStorage + Supabase on navigate/unmount (otherwise unsaved edits are lost).
   const hasUnsavedChangesRef = useRef(false)
+  const autoSplitDoneRef = useRef(false)   // default-split runs once per mount (see the effect below)
   const latestEntriesRef = useRef<GanttEntry[]>([])
   latestEntriesRef.current = entries
 
@@ -825,6 +827,7 @@ export default function GanttPage() {
           }
         } catch { /* keep local copy on any sync error */ }
       }
+      if (!cancelled) setLoaded(true)   // gate auto-split until entries reflect local + any remote pull
     })()
     return () => { cancelled = true }
   }, [id, router])
@@ -1275,11 +1278,11 @@ export default function GanttPage() {
     { key: 'equipment', label: 'Equipment' },
   ]
   const isCategorySplit = (entry: GanttEntry): boolean => (entry.subtasks ?? []).some(st => st.costType)
-  const handleSplitCategory = (category: string) => {
-    const entry = getEntry(category)
-    if (isCategorySplit(entry)) return   // already split
-    const cat = categories.find(c => c.category === category)
-    if (!cat) return
+  // Build the split version of an entry (Materials/Labour/Sub/Equipment type lines carrying each type's
+  // budget, parent's own bar cleared) without persisting. Returns null if it's already split or has no
+  // budgeted type to split into. Shared by the manual Split button and the default-split-on-load.
+  const buildSplitEntry = (entry: GanttEntry, cat: CategorySummary): GanttEntry | null => {
+    if (isCategorySplit(entry)) return null
     const baseSeg = entry.segments.find(s => s.startDate && s.endDate)
     const typeSubs: GanttSubtask[] = TYPE_LINES
       .filter(t => (cat.cost[t.key] ?? 0) > 0 || (cat.rev?.[t.key] ?? 0) > 0)
@@ -1289,9 +1292,15 @@ export default function GanttPage() {
           ? [{ id: generateId(), startDate: baseSeg.startDate, endDate: baseSeg.endDate, weekCount: baseSeg.weekCount, grain: baseSeg.grain, revenueAllocation: cat.rev?.[t.key] ?? 0, costAllocation: cat.cost[t.key] ?? 0 }]
           : [],
       }))
-    if (typeSubs.length === 0) return
+    if (typeSubs.length === 0) return null
     // Keep any existing manual subtasks; prepend the type lines; clear the parent's own segments.
-    updateEntry({ ...entry, segments: [], subtasks: [...typeSubs, ...(entry.subtasks ?? [])] })
+    return { ...entry, segments: [], subtasks: [...typeSubs, ...(entry.subtasks ?? [])] }
+  }
+  const handleSplitCategory = (category: string) => {
+    const cat = categories.find(c => c.category === category)
+    if (!cat) return
+    const split = buildSplitEntry(getEntry(category), cat)
+    if (split) updateEntry(split)
   }
   const handleUnsplitCategory = (category: string) => {
     const entry = getEntry(category)
@@ -1310,6 +1319,32 @@ export default function GanttPage() {
   const handleSplitAll = () => {
     categories.forEach(c => handleSplitCategory(c.category))
   }
+
+  // Default to a Materials/Labour/Sub split (Chris): once the initial load settles, split every category
+  // the user hasn't touched yet (no bar drawn, no subtasks) so fresh categories start itemised without
+  // pressing "Split M/L/S". Runs once per mount; categories already split, scheduled, or hand-structured
+  // are left untouched, so it never overrides manual work. The split persists + syncs like any edit.
+  useEffect(() => {
+    if (!loaded || autoSplitDoneRef.current || !estimate || categories.length === 0) return
+    autoSplitDoneRef.current = true
+    const current = latestEntriesRef.current
+    const additions: GanttEntry[] = []
+    for (const c of categories) {
+      const base = current.find(e => e.category === c.category) ?? getEntry(c.category)
+      const untouched = base.segments.length === 0 && (base.subtasks?.length ?? 0) === 0
+      if (!untouched) continue
+      const split = buildSplitEntry(base, c)
+      if (split) additions.push(split)
+    }
+    if (additions.length === 0) return
+    setEntries(prev => {
+      const byCat = new Map(prev.map(e => [e.category, e]))
+      for (const a of additions) byCat.set(a.category, a)
+      return Array.from(byCat.values())
+    })
+    hasUnsavedChangesRef.current = true   // persist + sync the default split on the next flush/save
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, estimate, categories])
 
   // ── Subtask management ────────────────────────────────────────────────────
 
