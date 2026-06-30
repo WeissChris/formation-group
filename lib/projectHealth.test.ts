@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getForecastCompletion, scheduleStatus, calcProjectHealth } from './projectHealth'
+import { getForecastCompletion, scheduleStatus, calcProjectHealth, getTargetMarginPct } from './projectHealth'
 import type { Project, GanttEntry, ProjectBaseline } from '@/types'
 
 function project(overrides: Partial<Project> = {}): Project {
@@ -35,6 +35,24 @@ function ganttEntry(overrides: Partial<GanttEntry> & { segments?: GanttEntry['se
     ...overrides,
   }
 }
+
+describe('getTargetMarginPct (blended by subbie mix)', () => {
+  it('falls back to 40% with no override and no cost mix', () => {
+    expect(getTargetMarginPct(project())).toBe(40)
+  })
+  it('honours an explicit per-project override over the blend', () => {
+    expect(getTargetMarginPct(project({ targetMarginPct: 33 }), { formationCost: 1000, subCost: 1000 })).toBe(33)
+  })
+  it('blends 40/30 cost-weighted: all-Formation -> 40, all-sub -> 30, 50/50 -> 35', () => {
+    expect(getTargetMarginPct(project(), { formationCost: 1000, subCost: 0 })).toBe(40)
+    expect(getTargetMarginPct(project(), { formationCost: 0, subCost: 1000 })).toBe(30)
+    expect(getTargetMarginPct(project(), { formationCost: 1000, subCost: 1000 })).toBe(35)
+  })
+  it('a subbie-heavy job (~39% subby cost) targets ~36%, not 40% (the Joubert case)', () => {
+    // FORMATION cost 76,847 + SUBCONTRACTOR cost 49,200 -> ~36.1% blended target, so 39% GP is on track.
+    expect(getTargetMarginPct(project(), { formationCost: 76847, subCost: 49200 })).toBeCloseTo(36.1, 1)
+  })
+})
 
 describe('getForecastCompletion', () => {
   it('prefers an explicit project.forecastCompletion override', () => {

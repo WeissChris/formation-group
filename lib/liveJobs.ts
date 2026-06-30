@@ -88,8 +88,11 @@ export function computeLiveJobRow(inputs: LiveJobInputs): LiveJobRow {
   const forecastGpDollars = forecastRevenue - forecastCost
   const forecastGpPct = forecastRevenue > 0 ? (forecastGpDollars / forecastRevenue) * 100 : 0
 
-  // Target + fade
-  const targetMarginPct = getTargetMarginPct(project)
+  // Target + fade. Blend the target by the Formation/Subcontractor cost split so subbie-heavy jobs
+  // aren't held to a flat 40% (mirrors the project-health card).
+  const formationCost = acceptedEstimates.reduce((s, e) => s + (e.lineItems || []).filter(li => li.crewType === 'Formation').reduce((ls, li) => ls + (li.total || 0), 0), 0)
+  const subCost = acceptedEstimates.reduce((s, e) => s + (e.lineItems || []).filter(li => li.crewType === 'Subcontractor').reduce((ls, li) => ls + (li.total || 0), 0), 0)
+  const targetMarginPct = getTargetMarginPct(project, { formationCost, subCost })
   const quotedMarginPct = project.baseline?.gpPercent ?? targetMarginPct
   const fadePpts = forecastGpPct - quotedMarginPct
 

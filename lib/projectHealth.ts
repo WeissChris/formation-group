@@ -1,5 +1,6 @@
 import type { Project, Estimate, GanttEntry, WeeklyActual } from '@/types'
 import { entrySegments } from './ganttForecast'
+import { blendedTargetMargin, getEstimateTotals } from './estimateCalculations'
 
 export type HealthStatus = 'green' | 'amber' | 'red'
 
@@ -27,16 +28,23 @@ const DAYS_AMBER_THRESHOLD = 7    // 1 week slip → amber
 const DAYS_RED_THRESHOLD = 21     // 3 week slip → red
 
 /**
- * Resolve the project's target gross margin.
+ * Resolve the project's target gross margin (as a percentage).
  *
- * Falls back to 40% for legacy projects that pre-date the `targetMarginPct` field. Lets
- * existing code use a single number without each caller having to write `?? 40`.
+ * Precedence:
+ *   1. `project.targetMarginPct` — explicit manual override, always wins.
+ *   2. Blended target from the cost mix — subbie-heavy jobs run a lower margin (subbie items target
+ *      30%, Formation 40%), so a flat 40% wrongly flags them. Cost-weight the two targets by the
+ *      Formation vs Subcontractor cost split (e.g. ~39% subby cost -> ~36% target, not 40%).
+ *   3. Legacy 40% when no override and no cost mix is supplied.
  *
- * Per-project targets matter because subbie-heavy jobs run a lower margin (often 30-33%)
- * and shouldn't be flagged as below-target against a generic 40% threshold.
+ * Pass `mix` (Formation/Subcontractor cost split, e.g. from getEstimateTotals) to get the blend.
  */
-export function getTargetMarginPct(project: Project): number {
-  return project.targetMarginPct ?? 40
+export function getTargetMarginPct(project: Project, mix?: { formationCost: number; subCost: number }): number {
+  if (project.targetMarginPct != null) return project.targetMarginPct
+  if (mix && mix.formationCost + mix.subCost > 0) {
+    return Math.round(blendedTargetMargin(mix.formationCost, mix.subCost) * 1000) / 10   // 1dp percent
+  }
+  return 40
 }
 
 /**
@@ -92,8 +100,10 @@ export function calcProjectHealth(
   const baselineGP = baseline?.gpPercent ?? null
   const gpVariance = forecastGP !== null && baselineGP !== null ? forecastGP - baselineGP : null
 
-  // Use the project's own target if set; otherwise legacy 40%
-  const targetMarginPct = getTargetMarginPct(project)
+  // Target: the project's manual override if set, else blended from the accepted estimate's Formation/
+  // Subcontractor cost split (subbie-heavy jobs run a lower target than a flat 40%).
+  const mix = acceptedEstimate ? getEstimateTotals(acceptedEstimate) : undefined
+  const targetMarginPct = getTargetMarginPct(project, mix)
   if (forecastGP !== null && forecastGP < targetMarginPct) {
     flags.push({
       reason: `Review Required – Forecast GP below target (${forecastGP.toFixed(1)}% vs ${targetMarginPct}% target)`,

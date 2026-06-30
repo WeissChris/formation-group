@@ -82,6 +82,17 @@ export function costBreakdown(items: EstimateLineItem[]): CostBreakdown {
   return b
 }
 
+/**
+ * Cost-weighted blended target margin (0-1) for a Formation/Subcontractor cost mix. Single source for
+ * BOTH the per-category Mixed blend and the project-level health target: a subbie-heavy job is pulled
+ * down toward the 30% subbie minimum, an all-Formation job sits at 40%. Empty mix -> the Formation target.
+ */
+export function blendedTargetMargin(formationCost: number, subCost: number): number {
+  const total = formationCost + subCost
+  if (total <= 0) return TARGET_MARGINS.Formation
+  return (formationCost / total) * TARGET_MARGINS.Formation + (subCost / total) * TARGET_MARGINS.Subcontractor
+}
+
 export function getMarginSummary(estimate: Estimate): CategoryMargin[] {
   const active = activeLineItems(estimate)
   const categories = Array.from(new Set(active.map(i => i.category)))
@@ -108,10 +119,7 @@ export function getMarginSummary(estimate: Estimate): CategoryMargin[] {
     if (crewType === 'Mixed') {
       const formCost = formationItems.reduce((s, i) => s + i.total, 0)
       const subCostTotal = subItems.reduce((s, i) => s + i.total, 0)
-      const totalMixed = formCost + subCostTotal
-      targetMargin = totalMixed > 0
-        ? (formCost / totalMixed) * TARGET_MARGINS.Formation + (subCostTotal / totalMixed) * TARGET_MARGINS.Subcontractor
-        : TARGET_MARGINS.Formation
+      targetMargin = blendedTargetMargin(formCost, subCostTotal)
     } else {
       targetMargin = crewType === 'Subcontractor' ? TARGET_MARGINS.Subcontractor : TARGET_MARGINS.Formation
     }

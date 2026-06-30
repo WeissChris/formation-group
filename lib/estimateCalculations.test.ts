@@ -6,6 +6,7 @@ import {
   getEstimateTotals,
   getEstimateContract,
   variationContractValue,
+  blendedTargetMargin,
 } from './estimateCalculations'
 import type { Estimate, EstimateLineItem } from '@/types'
 
@@ -106,6 +107,13 @@ describe('getMarginSummary', () => {
     expect(plumbing.targetMargin).toBe(0.30)   // subcontracted items: min 30% per the spreadsheet rules
     expect(plumbing.marginPercent).toBeCloseTo((2680 - 2000) / 2680, 4)
     expect(plumbing.meetsTarget).toBe(false)   // 25.4% still < 30%
+  })
+
+  it('blendedTargetMargin: cost-weights the 40/30 targets (empty -> 40)', () => {
+    expect(blendedTargetMargin(1000, 0)).toBeCloseTo(0.40, 4)
+    expect(blendedTargetMargin(0, 1000)).toBeCloseTo(0.30, 4)
+    expect(blendedTargetMargin(1000, 1000)).toBeCloseTo(0.35, 4)
+    expect(blendedTargetMargin(0, 0)).toBeCloseTo(0.40, 4)
   })
 
   it('uses cost-weighted blended target for mixed-crew categories', () => {
