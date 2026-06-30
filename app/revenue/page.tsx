@@ -253,6 +253,7 @@ export default function RevenuePage() {
   const [revenue, setRevenue]     = useState<WeeklyRevenue[]>([])
   const [year, setYear]           = useState(() => new Date().getFullYear())
   const [month, setMonth]         = useState(() => new Date().getMonth())
+  const [showHistory, setShowHistory] = useState(false)   // reveal quarters before the current one
   const [modal, setModal]         = useState<{
     open: boolean
     entry?: WeeklyRevenue
@@ -470,14 +471,22 @@ export default function RevenuePage() {
     if (month === 11) { setMonth(0); setYear(y => y + 1) } else setMonth(m => m + 1)
   }
 
-  // ── Quarter panels (FY: Jul–Jun) ──
-  const fyStart = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1
-  const quarterDefs = [
-    { label: 'Q1', months: [6, 7, 8],   years: [fyStart, fyStart, fyStart] },
-    { label: 'Q2', months: [9, 10, 11], years: [fyStart, fyStart, fyStart] },
-    { label: 'Q3', months: [0, 1, 2],   years: [fyStart + 1, fyStart + 1, fyStart + 1] },
-    { label: 'Q4', months: [3, 4, 5],   years: [fyStart + 1, fyStart + 1, fyStart + 1] },
+  // ── Quarter panels (FY: Jul–Jun), rolling across FY boundaries ──
+  const fyOf = (d: Date) => (d.getMonth() >= 6 ? d.getFullYear() : d.getFullYear() - 1)
+  const quartersForFY = (fy: number) => [
+    { label: 'Q1', fyStart: fy, months: [6, 7, 8],   years: [fy, fy, fy] },
+    { label: 'Q2', fyStart: fy, months: [9, 10, 11], years: [fy, fy, fy] },
+    { label: 'Q3', fyStart: fy, months: [0, 1, 2],   years: [fy + 1, fy + 1, fy + 1] },
+    { label: 'Q4', fyStart: fy, months: [3, 4, 5],   years: [fy + 1, fy + 1, fy + 1] },
   ]
+  // Span every FY from the earliest revenue entry (so History reaches it) through the next FY (so the
+  // quarter AFTER the current one always exists, even across the FY boundary).
+  const curFy = fyOf(now)
+  let minFy = curFy, maxFy = curFy + 1
+  for (const r of revenue) { const d = new Date(r.weekEnding); if (!isNaN(d.getTime())) { const f = fyOf(d); if (f < minFy) minFy = f; if (f > maxFy) maxFy = f } }
+  const quarterDefs: { label: string; fyStart: number; months: number[]; years: number[] }[] = []
+  for (let fy = minFy; fy <= maxFy; fy++) quarterDefs.push(...quartersForFY(fy))
+
   const quarterTotals = quarterDefs.map(q =>
     q.months.reduce((sum, m, i) =>
       sum + revenue.filter(r => {
@@ -486,9 +495,18 @@ export default function RevenuePage() {
       }).reduce((s, r) => s + r.plannedRevenue, 0)
     , 0)
   )
-  const currentQIdx = quarterDefs.findIndex(q =>
+  const currentQIdx = Math.max(0, quarterDefs.findIndex(q =>
     q.months.some((m, i) => m === now.getMonth() && q.years[i] === now.getFullYear())
-  )
+  ))
+  // Default view shows the current quarter + the next one. Past quarters hide behind the History
+  // toggle; a future quarter still shows if it carries forecast revenue (so nothing planned is hidden).
+  const isQuarterVisible = (qi: number) =>
+    qi === currentQIdx || qi === currentQIdx + 1
+      ? true
+      : qi < currentQIdx
+        ? showHistory
+        : quarterTotals[qi] > 0
+  const hasHistory = currentQIdx > 0
 
   return (
     <div className="max-w-[1200px] mx-auto px-6 lg:px-10 py-12">
@@ -629,7 +647,16 @@ export default function RevenuePage() {
 
             {/* Revenue Calendar */}
       <div className="space-y-10">
+        {hasHistory && (
+          <button
+            onClick={() => setShowHistory(v => !v)}
+            className="text-2xs font-light tracking-architectural uppercase text-fg-muted hover:text-fg-heading transition-colors border border-fg-border px-3 py-1.5"
+          >
+            {showHistory ? 'Hide earlier quarters' : 'History — view earlier quarters'}
+          </button>
+        )}
         {quarterDefs.map((q, qi) => {
+          if (!isQuarterVisible(qi)) return null
           const qTotal = quarterTotals[qi]
           const qActual = q.months.reduce((sum, m, mi) => {
             const y = q.years[mi]
@@ -640,7 +667,7 @@ export default function RevenuePage() {
           const isCurrent = qi === currentQIdx
 
           return (
-            <div key={q.label}>
+            <div key={`${q.fyStart}-${q.label}`}>
               {/* Quarter divider */}
               <div className="flex items-center gap-3 mb-4">
                 <span className={`text-2xs font-semibold tracking-architectural uppercase px-2.5 py-1 ${isCurrent ? 'bg-fg-dark text-white/80' : 'bg-fg-border/60 text-fg-muted'}`}>
