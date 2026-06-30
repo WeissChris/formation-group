@@ -62,6 +62,30 @@ describe('mergeKeyed (newest-wins, preserve local-only)', () => {
     expect(ids(merged)).toEqual(['a'])
   })
 
+  it('keepLocalOnly prunes stale local-only rows the predicate rejects, keeps the rest', () => {
+    // Models stale Gantt forecast rows: a local "(Gantt)" row absent from remote is pruned when the
+    // remote still holds that project's forecast; manual rows and fresh-project gantt rows are kept.
+    type Row = Keyed & { projectId: string; notes: string }
+    const local: Row[] = [
+      { id: 'stale', projectId: 'p1', notes: 'Decking (Gantt)' },     // stale: remote replaced p1's forecast
+      { id: 'manual', projectId: 'p1', notes: 'Deposit' },            // manual: keep
+      { id: 'fresh', projectId: 'p2', notes: 'Paving (Gantt)' },      // p2 has no remote forecast yet: keep
+    ]
+    const remote: Row[] = [{ id: 'new', projectId: 'p1', notes: 'Decking — Labour (Gantt)' }]
+    const keep = (row: Row, rem: Row[]) => {
+      if (!row.notes.trim().endsWith('(Gantt)')) return true
+      return !rem.some(x => x.projectId === row.projectId && x.notes.trim().endsWith('(Gantt)'))
+    }
+    const { merged, changed } = mergeKeyed(local, remote, keep)
+    expect(changed).toBe(true)
+    expect(ids(merged)).toEqual(['fresh', 'manual', 'new'])   // 'stale' pruned
+  })
+
+  it('without keepLocalOnly, all local-only rows are preserved (default)', () => {
+    const { merged } = mergeKeyed([row('a'), row('b')], [row('a')])
+    expect(ids(merged)).toEqual(['a', 'b'])
+  })
+
   it('models the incident: a remote entry edited on another device replaces the stale local copy', () => {
     // Colleague saved Outdoor kitchen with subtasks (newer); this device holds the stale subtask-less copy.
     type Entry = Keyed & { subtasks: string[] }

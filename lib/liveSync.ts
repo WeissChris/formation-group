@@ -29,6 +29,22 @@ interface Dataset {
   lsKey: string
   bcKey: StorageEvent['key']
   getRemote: () => Promise<Keyed[]>
+  // Optional: drop stale local-only rows the DB has replaced (see mergeKeyed). Return true to KEEP.
+  keepLocalOnly?: (row: Keyed, remote: Keyed[]) => boolean
+}
+
+// A Gantt forecast revenue row carries its category-line in `notes` ending "(Gantt)". The forecast is
+// regenerated wholesale (delete + re-insert with fresh ids), so a local "(Gantt)" row the remote no
+// longer has is stale and must be pruned — but only when the remote actually holds this project's
+// forecast (otherwise we'd prune a device's own freshly-generated rows mid-push, or offline edits).
+function keepRevenueRow(row: Keyed, remote: Keyed[]): boolean {
+  const r = row as { notes?: string; projectId?: string }
+  const isGantt = (r.notes ?? '').trim().endsWith('(Gantt)')
+  if (!isGantt) return true   // manual rows are user-owned — never prune
+  return !remote.some(x => {
+    const xr = x as { notes?: string; projectId?: string }
+    return xr.projectId === r.projectId && (xr.notes ?? '').trim().endsWith('(Gantt)')
+  })
 }
 
 // Only datasets whose save helpers stamp `updatedAt` AND notify() qualify for newest-wins realtime.
@@ -37,7 +53,7 @@ const DATASETS: Dataset[] = [
   { table: 'fg_estimates', lsKey: 'fg_estimates', bcKey: 'estimates', getRemote: getEstimates as () => Promise<Keyed[]> },
   { table: 'fg_projects', lsKey: 'fg_projects', bcKey: 'projects', getRemote: getProjects as () => Promise<Keyed[]> },
   { table: 'fg_proposals', lsKey: 'fg_proposals', bcKey: 'proposals', getRemote: getProposals as () => Promise<Keyed[]> },
-  { table: 'fg_revenue', lsKey: 'fg_revenue', bcKey: 'revenue', getRemote: getRevenue as () => Promise<Keyed[]> },
+  { table: 'fg_revenue', lsKey: 'fg_revenue', bcKey: 'revenue', getRemote: getRevenue as () => Promise<Keyed[]>, keepLocalOnly: keepRevenueRow },
   // Gantt stores every project's entries in one flat 'fg_gantt' array keyed by entry id, so it fits the
   // per-row newest-wins merge directly. upsertGanttEntries stamps updatedAt + notifies, so it qualifies.
   { table: 'fg_gantt', lsKey: 'fg_gantt', bcKey: 'gantt', getRemote: getAllGanttEntries as () => Promise<Keyed[]> },
@@ -61,9 +77,9 @@ function readLocal(lsKey: string): Keyed[] {
   }
 }
 
-/** Merge remote rows into localStorage with newest-wins, preserving local-only rows. */
-function mergeRemote(lsKey: string, remote: Keyed[]): boolean {
-  const { merged, changed } = mergeKeyed(readLocal(lsKey), remote)
+/** Merge remote rows into localStorage with newest-wins, preserving local-only rows (unless pruned). */
+function mergeRemote(lsKey: string, remote: Keyed[], keepLocalOnly?: (row: Keyed, remote: Keyed[]) => boolean): boolean {
+  const { merged, changed } = mergeKeyed(readLocal(lsKey), remote, keepLocalOnly)
   if (changed) localStorage.setItem(lsKey, JSON.stringify(merged))
   return changed
 }
@@ -84,7 +100,7 @@ function announce(bcKey: StorageEvent['key']): void {
 
 async function resync(ds: Dataset): Promise<void> {
   try {
-    if (mergeRemote(ds.lsKey, await ds.getRemote())) announce(ds.bcKey)
+    if (mergeRemote(ds.lsKey, await ds.getRemote(), ds.keepLocalOnly)) announce(ds.bcKey)
   } catch (e) {
     console.warn('[liveSync] resync failed', ds.table, e)
   }
