@@ -26,6 +26,7 @@ import {
 import { readLineItemRevenue, getEstimateContract, lineContractValue, addLineCost, emptyCostBreakdown, STD_LABOUR_RATE, type CostBreakdown } from '@/lib/estimateCalculations'
 import { normalizedPcts, rebalancedPcts, datedPeriodCount } from '@/lib/ganttAllocation'
 import { labourWorkingDays } from '@/lib/ganttSchedule'
+import { vicPublicHolidayName } from '@/lib/publicHolidays'
 import { mapSubtaskTree, findSubtaskInTree, removeSubtaskFromTree, addChildSubtask, flattenSubtasks } from '@/lib/ganttSubtasks'
 import { plannedByWeek, entryClaimSegments, claimLeafSegments } from '@/lib/ganttForecast'
 import { buildPhasedBudget, phasedBudgetToCsv } from '@/lib/xccBudget'
@@ -2032,10 +2033,14 @@ export default function GanttPage() {
       const isCurrentWeek = timeView === 'weeks' ? iso === currentWeekIso : iso === today
       const isTodayCol = i === todayColIdx
       const activeSegs = segs.filter(s => isSegmentActiveInCol(s, col))
+      // VIC public holiday — a non-working day. Days view only (a weeks-view column is a whole week, so a
+      // single holiday must not hatch the lot). A faint red diagonal hatch reads as "blocked, no work".
+      const holiday = timeView !== 'weeks' ? vicPublicHolidayName(iso) : undefined
 
       return (
         <td
           key={i}
+          title={holiday || undefined}
           style={{
             width: CELL_W,
             minWidth: CELL_W,
@@ -2043,7 +2048,8 @@ export default function GanttPage() {
             position: 'relative',
             borderLeft: colBorderLeft(i),
             // white grid canvas so bars + text pop (Instagantt-like); keep a faint current-week column tint
-            background: isCurrentWeek && !activeSegs.length ? '#F1EEEA' : '#FFFFFF',
+            backgroundColor: isCurrentWeek && !activeSegs.length ? '#F1EEEA' : '#FFFFFF',
+            backgroundImage: holiday ? 'repeating-linear-gradient(45deg, rgba(184,74,74,0.13) 0, rgba(184,74,74,0.13) 3px, transparent 3px, transparent 7px)' : undefined,
           }}
           className={`gantt-cell border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border/25'} cursor-crosshair ${isCurrentWeek && !activeSegs.length ? 'bg-fg-card/20' : ''}`}
           onMouseDown={() => handleCellMouseDown(category, i, subtaskId)}
@@ -2614,14 +2620,16 @@ export default function GanttPage() {
                 <tr className="gantt-dow" style={{ height: H_DOW }}>
                   <th colSpan={2} style={{ width: fixedColsWidth, ...stickyCorner(2, topDow) }} className="bg-fg-bg border-b border-r border-fg-border" />
                   {workingDays.map((d, i) => {
+                    const holiday = vicPublicHolidayName(toISODate(d))
                     return (
                       <th key={i}
+                        title={holiday || undefined}
                         style={{
                           width: CELL_W_DAYS, minWidth: CELL_W_DAYS,
                           borderLeft: colBorderLeft(i),
                           ...stickyTop(topDow),
                         }}
-                        className="bg-fg-bg border-b border-r border-fg-border py-1 text-center text-[9px] font-light text-fg-muted/60">
+                        className={`bg-fg-bg border-b border-r border-fg-border py-1 text-center text-[9px] font-light ${holiday ? 'text-[#B84A4A]' : 'text-fg-muted/60'}`}>
                         {DAY_LABELS[d.getDay() === 0 ? 0 : d.getDay() - 1]}
                       </th>
                     )
@@ -2636,13 +2644,14 @@ export default function GanttPage() {
                 {columns.map((col, i) => {
                   const iso = toISODate(col)
                   const isCurrentWeek = timeView === 'weeks' ? iso === currentWeekIso : iso === today
+                  const holiday = timeView !== 'weeks' ? vicPublicHolidayName(iso) : undefined
                   return (
-                    <th key={i} style={{
+                    <th key={i} title={holiday || undefined} style={{
                       width: CELL_W, minWidth: CELL_W, height: CELL_W,   // square date metric (Andrew §1)
                       borderLeft: colBorderLeft(i),
                       ...stickyTop(topDate),
                     }}
-                      className={`border-b border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border'} py-0.5 text-center text-[10px] font-light leading-tight text-fg-muted ${isCurrentWeek ? 'bg-fg-card/60' : 'bg-fg-bg'}`}>
+                      className={`border-b border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border'} py-0.5 text-center text-[10px] font-light leading-tight ${holiday ? 'text-[#B84A4A] font-medium' : 'text-fg-muted'} ${isCurrentWeek ? 'bg-fg-card/60' : 'bg-fg-bg'}`}>
                       {timeView === 'weeks' ? formatDayMonth(col) : String(col.getDate())}
                     </th>
                   )
