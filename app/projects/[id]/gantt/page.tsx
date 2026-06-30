@@ -190,8 +190,9 @@ function shade(hex: string, amt: number): string {
   const r = mix((n >> 16) & 255), g = mix((n >> 8) & 255), b = mix(n & 255)
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`
 }
-// Per-discipline shade of the section colour: Labour darker, Materials lighter, Equipment lightest, Sub ~base.
-const DISCIPLINE_SHADE: Record<string, number> = { labour: -0.16, material: 0.18, subcontractor: 0.0, equipment: 0.34 }
+// Per-discipline shade of the section colour: Labour clearly darker, Materials clearly lighter, Equipment
+// lightest, Sub ~base — strong enough to read M/L/S at a glance while staying one section tint.
+const DISCIPLINE_SHADE: Record<string, number> = { labour: -0.32, material: 0.34, subcontractor: 0.0, equipment: 0.55 }
 
 // Should this category be persisted (localStorage + Supabase)? Yes if it carries any real work: a drawn
 // bar, OR subtask structure the user deliberately added (a split, or manual subtasks like "Cabinet
@@ -2091,12 +2092,17 @@ export default function GanttPage() {
                   style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, background: '#8A8580',
                     borderRadius: isStart && isEnd ? 3 : isStart ? '3px 0 0 3px' : isEnd ? '0 3px 3px 0' : 0 }} />
               ) : (
+                // Slim, vertically-centred summary line with darker end grips (Instagantt style). Grab
+                // anywhere to slide the whole section.
                 <div key={seg.id} className="absolute" title={`${category} — drag to shift the whole category`}
                   onMouseDown={e => handleRollupMouseDown(e, entry, i)}
-                  style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, top: 3, height: 10,
+                  style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : 0, top: '50%', transform: 'translateY(-50%)', height: 4,
                     background: sectionColour(category),
-                    borderRadius: isStart && isEnd ? 3 : isStart ? '3px 0 0 3px' : isEnd ? '0 3px 3px 0' : 0,
-                    cursor: (moving?.rollup && moving.entryId === entry.id) ? 'grabbing' : 'grab' }} />
+                    borderRadius: isStart && isEnd ? 2 : isStart ? '2px 0 0 2px' : isEnd ? '0 2px 2px 0' : 0,
+                    cursor: (moving?.rollup && moving.entryId === entry.id) ? 'grabbing' : 'grab' }}>
+                  {isStart && <div className="absolute rounded-sm pointer-events-none" style={{ left: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 11, background: shade(sectionColour(category), -0.3) }} />}
+                  {isEnd && <div className="absolute rounded-sm pointer-events-none" style={{ right: 0, top: '50%', transform: 'translateY(-50%)', width: 3, height: 11, background: shade(sectionColour(category), -0.3) }} />}
+                </div>
               )
             }
 
