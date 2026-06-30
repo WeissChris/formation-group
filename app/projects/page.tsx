@@ -3,12 +3,13 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { loadProjects, loadGanttEntries, saveProject } from '@/lib/storage'
+import { loadProjects, loadGanttEntries, saveProject, loadSupervisors } from '@/lib/storage'
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
-import { getProjects } from '@/lib/storageAsync'
+import { getProjects, getSupervisors, upsertProject } from '@/lib/storageAsync'
 import { STAGE_LABELS, STAGE_COLOURS } from '@/lib/stageConfig'
 import { scheduleStatus, healthColour, healthBg, getForecastCompletion } from '@/lib/projectHealth'
-import type { ProjectStage, GanttEntry } from '@/types'
+import { supervisorColourByName, UNASSIGNED_COLOUR } from '@/lib/supervisors'
+import type { ProjectStage, GanttEntry, Supervisor } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 import type { Project, EntityType } from '@/types'
 import EntityBadge from '@/components/EntityBadge'
@@ -46,6 +47,7 @@ function ProjectsInner() {
   const [ganttByProject, setGanttByProject] = useState<Record<string, GanttEntry[]>>({})
   const [search, setSearch] = useState('')
   const [entityFilter, setEntityFilter] = useState<EntityType | 'all'>(entityParam ?? 'all')
+  const [supervisors, setSupervisors] = useState<Supervisor[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -65,6 +67,8 @@ function ProjectsInner() {
       const map: Record<string, GanttEntry[]> = {}
       for (const p of loaded) map[p.id] = loadGanttEntries(p.id)
       setGanttByProject(map)
+      setSupervisors(loadSupervisors())
+      try { const sups = await getSupervisors(); if (!cancelled) setSupervisors(sups) } catch { /* keep local */ }
     })()
     return () => { cancelled = true }
   }, [])
@@ -77,6 +81,14 @@ function ProjectsInner() {
     for (const p of loaded) map[p.id] = loadGanttEntries(p.id)
     setGanttByProject(map)
   })
+  useCrossTabRefresh(['supervisors'], () => setSupervisors(loadSupervisors()))
+  const supColourByName = supervisorColourByName(supervisors)
+
+  // Assign a supervisor inline (writes project.foreman); upsertProject syncs + notifies.
+  const assignSupervisor = (project: Project, name: string) => {
+    setProjects(prev => prev.map(p => p.id === project.id ? { ...p, foreman: name } : p))
+    void upsertProject({ ...project, foreman: name })
+  }
 
   const filtered = projects
     .filter(p => entityFilter === 'all' || p.entity === entityFilter)
@@ -177,8 +189,29 @@ function ProjectsInner() {
                 </div>
               </div>
               <div className="hidden sm:flex items-center gap-6">
-                {p.foreman && (
-                  <span className="text-xs font-light text-fg-muted">{p.foreman}</span>
+                {supervisors.length > 0 ? (
+                  // Inline supervisor picker. The row is a Link, so swallow the click so choosing a
+                  // supervisor doesn't navigate into the project.
+                  <div
+                    className="flex items-center gap-1.5"
+                    onClick={e => { e.preventDefault(); e.stopPropagation() }}
+                  >
+                    <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ background: p.foreman ? (supColourByName[p.foreman] || UNASSIGNED_COLOUR) : 'transparent', border: p.foreman ? undefined : '1px solid var(--fg-border, #ccc)' }} />
+                    <select
+                      value={p.foreman || ''}
+                      onChange={e => assignSupervisor(p, e.target.value)}
+                      className="bg-transparent border border-fg-border text-xs font-light text-fg-muted rounded-none outline-none focus:border-fg-heading transition-colors py-1 pl-1.5 pr-2 appearance-none cursor-pointer max-w-[120px] truncate"
+                      title="Supervisor"
+                    >
+                      <option value="">Unassigned</option>
+                      {supervisors.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                      {p.foreman && !supervisors.some(s => s.name === p.foreman) && (
+                        <option value={p.foreman}>{p.foreman}</option>
+                      )}
+                    </select>
+                  </div>
+                ) : (
+                  p.foreman && <span className="text-xs font-light text-fg-muted">{p.foreman}</span>
                 )}
                 <div className="text-right">
                   <p className="text-sm font-light text-fg-heading tabular-nums">{formatCurrency(p.contractValue)}</p>
