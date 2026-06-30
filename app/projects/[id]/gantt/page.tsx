@@ -1990,7 +1990,12 @@ export default function GanttPage() {
   // (Crew + Start/Duration removed to maximise grid space — Andrew). idx 0 = Category, 1 = Budget, 2 = a
   // colSpan=2 cell spanning the whole fixed block.
   const STICKY_LEFTS = [0, COL_CATEGORY, 0]
-  const stickyL = (idx: number, z = 20): React.CSSProperties => ({ position: 'sticky', left: STICKY_LEFTS[idx], zIndex: z })
+  const stickyL = (idx: number, z = 20): React.CSSProperties => ({
+    position: 'sticky', left: STICKY_LEFTS[idx], zIndex: z,
+    // Clear divider where the frozen Category/Budget block meets the scrolling timeline: a crisp 2px edge
+    // plus a soft shadow falling onto the grid. idx 1 = Budget's right edge, idx 2 = the full-block cell.
+    ...(idx === 1 || idx === 2 ? { borderRight: '2px solid #B0AAA2', boxShadow: '4px 0 6px -3px rgba(0,0,0,0.16)' } : {}),
+  })
 
   // Sticky-top header: the cashflow + date rows stay put while the grid scrolls down. Fixed row heights
   // give exact cumulative `top` offsets. Corner cells (fixed column AND header) merge stickyL + top.
