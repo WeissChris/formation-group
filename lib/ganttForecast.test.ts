@@ -141,4 +141,14 @@ describe('segmentWeekShare / segmentWeekShares (week-straddle distribution)', ()
     expect(m.get('2026-08-07')?.rev).toBeCloseTo(300, 4)   // 1/3 of 900
     expect(m.get('2026-07-31')?.cost).toBeCloseTo(200, 4)  // 2/3 of 300
   })
+
+  // 2026-06-05 = Fri, 2026-06-08 = Mon (King's Birthday, a VIC public holiday), 2026-06-09 = Tue.
+  it('skips public holidays in the day split, not just weekends', () => {
+    // Bar Fri 06-05 -> Tue 06-09. Week ending 06-05: Fri = 1 chart day. Week ending 06-12: Mon 08 is a
+    // public holiday (skipped), so only Tue 09 = 1 chart day. => 1/2 + 1/2 (would be 1/3 + 2/3 if the
+    // holiday counted).
+    const holBar = { id: 'h', startDate: '2026-06-05', endDate: '2026-06-09', weekCount: 1, grain: 'days' as const, revenueAllocation: 800, costAllocation: 0 }
+    expect(segmentWeekShare(holBar, '2026-06-01', '2026-06-05')).toBeCloseTo(0.5, 6)
+    expect(segmentWeekShare(holBar, '2026-06-08', '2026-06-12')).toBeCloseTo(0.5, 6)
+  })
 })
