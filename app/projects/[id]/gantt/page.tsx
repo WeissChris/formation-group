@@ -864,7 +864,9 @@ export default function GanttPage() {
   const jumpToToday = () => {
     pendingJumpRef.current = null
     setJumpBackWeeks(0)
-    requestAnimationFrame(() => { if (gridScrollRef.current) gridScrollRef.current.scrollLeft = 0 })
+    // Re-assert scrollLeft=0 across the re-render (the grid shrinks back to the 2-week lookback) so it
+    // lands cleanly on the default view rather than keeping the pre-reset scroll offset.
+    ;[0, 150, 400].forEach(ms => setTimeout(() => { if (gridScrollRef.current) gridScrollRef.current.scrollLeft = 0 }, ms))
   }
   // Once a jump has extended the lookback and the grid re-rendered, scroll to the pending target.
   useEffect(() => {
