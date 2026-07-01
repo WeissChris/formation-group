@@ -40,11 +40,13 @@ import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react
 // 30 weeks in weeks view and 10 weeks (50 working days) in days view on a typical screen (Andrew).
 const CELL_W_WEEKS = 36
 const CELL_W_DAYS = 16   // narrow day columns (Instagantt-like); bar labels overflow to the right, so this is safe
-const WEEK_COUNT = 52         // total weeks rendered (~10 months forward after the lookback); kept lean so the grid scrolls smoothly
-const LOOKBACK_WEEKS = 8      // weeks of grid BEFORE today you can scroll back to (~2 months); the initial view lands 2 weeks behind today
+const WEEK_COUNT = 74         // horizon floor: weeks rendered when there's little scheduled work (auto-extends to reach later work)
+const LOOKBACK_WEEKS = 12     // weeks of grid BEFORE today you can scroll back to (~3 months); the initial view lands 2 weeks behind today
 // Andrew's zoom scale: 100% default, then ~25% steps each way (25/50/75/100/125/150/200).
 const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2] as const
-const DAYS_VIEW_WEEKS = 26   // Days view renders this many weeks of working-day columns (was 12 — too short for multi-month jobs)
+const DAYS_VIEW_WEEKS = 74   // Days view renders up to this many weeks of columns. THIS is the days-view horizon cap
+                            // (min with the fridays horizon). Kept in step with WEEK_COUNT so the day grid is wide
+                            // enough to overflow a big monitor and actually scroll horizontally + reach later work.
 const COL_CATEGORY = 248   // wider so category names breathe (less wrapping)
 const COL_BUDGET = 150     // wider so the cost breakdown isn't cramped
 
