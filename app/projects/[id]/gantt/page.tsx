@@ -2315,33 +2315,6 @@ export default function GanttPage() {
           <p className="text-sm font-light text-fg-muted mt-1">{project.name}</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Time view toggle */}
-          <div className="flex items-center border border-fg-border text-[10px] font-light tracking-wide uppercase overflow-hidden">
-            <button
-              onClick={() => setTimeView('weeks')}
-              className={`px-3 py-2 transition-colors ${timeView === 'weeks' ? 'bg-fg-dark text-white/80' : 'text-fg-muted hover:text-fg-heading'}`}
-            >
-              Weeks
-            </button>
-            <button
-              onClick={() => setTimeView('days')}
-              className={`px-3 py-2 transition-colors ${timeView === 'days' ? 'bg-fg-dark text-white/80' : 'text-fg-muted hover:text-fg-heading'}`}
-            >
-              Days
-            </button>
-          </div>
-
-          {/* Zoom — scales the column width */}
-          <div className="flex items-center border border-fg-border text-fg-muted overflow-hidden">
-            <button onClick={() => setZoom(z => ZOOM_LEVELS[Math.max(0, ZOOM_LEVELS.indexOf(z as typeof ZOOM_LEVELS[number]) - 1)] ?? z)}
-              disabled={zoom <= ZOOM_LEVELS[0]} title="Zoom out"
-              className="px-2.5 py-2 text-sm leading-none hover:text-fg-heading disabled:opacity-30 disabled:cursor-not-allowed">−</button>
-            <span className="px-1 text-[10px] font-light tabular-nums w-9 text-center">{Math.round(zoom * 100)}%</span>
-            <button onClick={() => setZoom(z => ZOOM_LEVELS[Math.min(ZOOM_LEVELS.length - 1, ZOOM_LEVELS.indexOf(z as typeof ZOOM_LEVELS[number]) + 1)] ?? z)}
-              disabled={zoom >= ZOOM_LEVELS[ZOOM_LEVELS.length - 1]} title="Zoom in"
-              className="px-2.5 py-2 text-sm leading-none hover:text-fg-heading disabled:opacity-30 disabled:cursor-not-allowed">+</button>
-          </div>
-
           {/* Jump to a date — scrolls the timeline there, extending the lookback if it's in the past */}
           <div className="gantt-no-print flex items-center gap-1.5 border border-fg-border px-2.5 py-1.5">
             <span className="text-[10px] font-light tracking-wide uppercase text-fg-muted">Jump</span>
@@ -2580,6 +2553,22 @@ export default function GanttPage() {
               <span className="text-fg-heading tabular-nums">{pctComplete}%</span>
             </div>
           )}
+          {/* Weeks/Days view toggle + zoom — right-aligned on the summary strip (moved off the toolbar) */}
+          <div className="gantt-no-print flex items-center gap-3 ml-auto">
+            <div className="flex items-center border border-fg-border text-[10px] font-light tracking-wide uppercase overflow-hidden">
+              <button onClick={() => setTimeView('weeks')} className={`px-3 py-1.5 transition-colors ${timeView === 'weeks' ? 'bg-fg-dark text-white/80' : 'text-fg-muted hover:text-fg-heading'}`}>Weeks</button>
+              <button onClick={() => setTimeView('days')} className={`px-3 py-1.5 transition-colors ${timeView === 'days' ? 'bg-fg-dark text-white/80' : 'text-fg-muted hover:text-fg-heading'}`}>Days</button>
+            </div>
+            <div className="flex items-center border border-fg-border text-fg-muted overflow-hidden">
+              <button onClick={() => setZoom(z => ZOOM_LEVELS[Math.max(0, ZOOM_LEVELS.indexOf(z as typeof ZOOM_LEVELS[number]) - 1)] ?? z)}
+                disabled={zoom <= ZOOM_LEVELS[0]} title="Zoom out"
+                className="px-2.5 py-1.5 text-sm leading-none hover:text-fg-heading disabled:opacity-30 disabled:cursor-not-allowed">−</button>
+              <span className="px-1 text-[10px] font-light tabular-nums w-9 text-center">{Math.round(zoom * 100)}%</span>
+              <button onClick={() => setZoom(z => ZOOM_LEVELS[Math.min(ZOOM_LEVELS.length - 1, ZOOM_LEVELS.indexOf(z as typeof ZOOM_LEVELS[number]) + 1)] ?? z)}
+                disabled={zoom >= ZOOM_LEVELS[ZOOM_LEVELS.length - 1]} title="Zoom in"
+                className="px-2.5 py-1.5 text-sm leading-none hover:text-fg-heading disabled:opacity-30 disabled:cursor-not-allowed">+</button>
+            </div>
+          </div>
         </div>
       )}
 
