@@ -47,7 +47,7 @@ const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2] as const
 const DAYS_VIEW_WEEKS = 74   // Days view renders up to this many weeks of columns. THIS is the days-view horizon cap
                             // (min with the fridays horizon). Kept in step with WEEK_COUNT so the day grid is wide
                             // enough to overflow a big monitor and actually scroll horizontally + reach later work.
-const COL_CATEGORY = 268   // wider so category names breathe (less wrapping / fewer lines)
+const COL_CATEGORY = 340   // wide category/description column — boundary shifted across the dead space so long names + descriptions rarely wrap
 const COL_BUDGET = 188     // wide enough that "$43,635 / $43,635 · 336h" stays on one line (no wrap)
 
 // Cost-type palette for the per-task cost split + project totals strip.
@@ -2846,14 +2846,17 @@ export default function GanttPage() {
                               className={`bg-transparent border-none outline-none text-[10px] font-light italic text-fg-muted/60 placeholder:text-fg-muted/25 hover:text-fg-heading focus:text-fg-heading w-full min-w-0 truncate ${descriptions[cat.category] ? '' : 'hidden group-hover:block print:hidden'} gantt-edit`}
                             />
                           </div>
-                          {/* Far-right: split / M·L·S STACKED on hover (narrow, so the category name gets the
-                              width). The + add-subtask moved to the bottom of the subtask list (added below). */}
+                          {/* Far-right: split / M·L·S / + add-subtask STACKED on hover (narrow, so the category
+                              name gets the width). The + sits UNDER merge/split and appends a subtask row — it
+                              no longer draws a full-width row across the chart. */}
                           <div className="gantt-edit flex-shrink-0 flex flex-col items-end gap-0.5 mt-px opacity-0 group-hover:opacity-100 transition-all">
                             <button onClick={() => handleAddSplit(cat.category)} title="Add another work period"
                               className="text-fg-muted/40 hover:text-fg-heading leading-none text-[8px] uppercase tracking-wide">split</button>
                             <button onClick={() => split ? handleUnsplitCategory(cat.category) : handleSplitCategory(cat.category)}
                               title={split ? 'Merge the M/L/S lines back into one category bar' : 'Split into Materials / Labour / Subcontractor lines'}
                               className={`leading-none text-[8px] uppercase tracking-wide ${split ? 'text-fg-heading' : 'text-fg-muted/40 hover:text-fg-heading'}`}>{split ? 'merge' : 'M/L/S'}</button>
+                            <button onClick={() => handleAddSubtask(cat.category)} title="Add a subtask row below"
+                              className="text-fg-muted/40 hover:text-fg-heading leading-none flex items-center"><Plus className="w-2.5 h-2.5" /></button>
                           </div>
                         </div>
                       </td>
@@ -2947,20 +2950,6 @@ export default function GanttPage() {
                         {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true, subtask.label || undefined, undefined, shade(sectionColour(cat.category), DISCIPLINE_SHADE[subtask.costType ?? ''] ?? 0))}
                       </tr>
                     ))}
-                    {/* + add subtask — at the BOTTOM of the list (new subtasks are appended here, so this is
-                        where it's most used). Was a small + up on the category header row. */}
-                    {!isCollapsed && (
-                      <tr className="gantt-edit border-b border-fg-border/20">
-                        <td className="border-r border-fg-border bg-fg-bg py-0.5 whitespace-nowrap align-middle" style={{ width: COL_CATEGORY, paddingLeft: 24, ...stickyL(0) }}>
-                          <button onClick={() => handleAddSubtask(cat.category)} title="Add a subtask row below"
-                            className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-fg-muted/40 hover:text-fg-heading transition-colors">
-                            <Plus className="w-3 h-3" /> add subtask
-                          </button>
-                        </td>
-                        <td className="border-r border-fg-border bg-fg-bg" style={{ width: COL_BUDGET, ...stickyL(1) }} />
-                        <td colSpan={columns.length} style={{ background: '#FFFFFF' }} />
-                      </tr>
-                    )}
                   </>
                 )
               })}
