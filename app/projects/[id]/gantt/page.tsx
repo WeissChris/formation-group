@@ -2846,19 +2846,14 @@ export default function GanttPage() {
                               className={`bg-transparent border-none outline-none text-[10px] font-light italic text-fg-muted/60 placeholder:text-fg-muted/25 hover:text-fg-heading focus:text-fg-heading w-full min-w-0 truncate ${descriptions[cat.category] ? '' : 'print:hidden'} gantt-edit`}
                             />
                           </div>
-                          {/* Far-right (by the totals): + add subtask (always there), split / M·L·S on hover */}
-                          <div className="gantt-edit flex-shrink-0 flex flex-col items-end gap-0.5 mt-px">
-                            <button onClick={() => handleAddSubtask(cat.category)} title="Add subtask row"
-                              className="text-fg-muted/40 hover:text-fg-heading transition-colors">
-                              <Plus className="w-3.5 h-3.5" />
-                            </button>
-                            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1.5 transition-all">
-                              <button onClick={() => handleAddSplit(cat.category)} title="Add another work period"
-                                className="text-fg-muted/40 hover:text-fg-heading leading-none text-[8px] uppercase tracking-wide">split</button>
-                              <button onClick={() => split ? handleUnsplitCategory(cat.category) : handleSplitCategory(cat.category)}
-                                title={split ? 'Merge the M/L/S lines back into one category bar' : 'Split into Materials / Labour / Subcontractor lines'}
-                                className={`leading-none text-[8px] uppercase tracking-wide ${split ? 'text-fg-heading' : 'text-fg-muted/40 hover:text-fg-heading'}`}>{split ? 'merge' : 'M/L/S'}</button>
-                            </div>
+                          {/* Far-right: split / M·L·S STACKED on hover (narrow, so the category name gets the
+                              width). The + add-subtask moved to the bottom of the subtask list (added below). */}
+                          <div className="gantt-edit flex-shrink-0 flex flex-col items-end gap-0.5 mt-px opacity-0 group-hover:opacity-100 transition-all">
+                            <button onClick={() => handleAddSplit(cat.category)} title="Add another work period"
+                              className="text-fg-muted/40 hover:text-fg-heading leading-none text-[8px] uppercase tracking-wide">split</button>
+                            <button onClick={() => split ? handleUnsplitCategory(cat.category) : handleSplitCategory(cat.category)}
+                              title={split ? 'Merge the M/L/S lines back into one category bar' : 'Split into Materials / Labour / Subcontractor lines'}
+                              className={`leading-none text-[8px] uppercase tracking-wide ${split ? 'text-fg-heading' : 'text-fg-muted/40 hover:text-fg-heading'}`}>{split ? 'merge' : 'M/L/S'}</button>
                           </div>
                         </div>
                       </td>
@@ -2952,6 +2947,20 @@ export default function GanttPage() {
                         {renderSegmentCells(entry, subtask.segments, cat.category, cat.crewType, subtask.id, true, subtask.label || undefined, undefined, shade(sectionColour(cat.category), DISCIPLINE_SHADE[subtask.costType ?? ''] ?? 0))}
                       </tr>
                     ))}
+                    {/* + add subtask — at the BOTTOM of the list (new subtasks are appended here, so this is
+                        where it's most used). Was a small + up on the category header row. */}
+                    {!isCollapsed && (
+                      <tr className="gantt-edit border-b border-fg-border/20">
+                        <td className="border-r border-fg-border bg-fg-bg py-0.5 whitespace-nowrap align-middle" style={{ width: COL_CATEGORY, paddingLeft: 24, ...stickyL(0) }}>
+                          <button onClick={() => handleAddSubtask(cat.category)} title="Add a subtask row below"
+                            className="flex items-center gap-1 text-[9px] uppercase tracking-wide text-fg-muted/40 hover:text-fg-heading transition-colors">
+                            <Plus className="w-3 h-3" /> add subtask
+                          </button>
+                        </td>
+                        <td className="border-r border-fg-border bg-fg-bg" style={{ width: COL_BUDGET, ...stickyL(1) }} />
+                        <td colSpan={columns.length} style={{ background: '#FFFFFF' }} />
+                      </tr>
+                    )}
                   </>
                 )
               })}
