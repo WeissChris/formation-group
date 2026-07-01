@@ -2877,8 +2877,8 @@ export default function GanttPage() {
 
                     {/* ── Subtask rows (flattened tree; indent = nesting depth) ── */}
                     {!isCollapsed && flattenSubtasks(subtasks).map(({ st: subtask, depth }) => (
-                      <tr key={subtask.id} className="border-b border-fg-border/20 group/sub" style={{ height: 25 }}>
-                        <td className="border-r border-fg-border bg-fg-bg pr-2 py-1.5 text-[11px] font-normal text-fg-heading/85 whitespace-nowrap align-middle" style={{ width: COL_CATEGORY, paddingLeft: 20 + depth * 16, ...stickyL(0) }}>
+                      <tr key={subtask.id} className="border-b border-fg-border/20 group/sub" style={{ height: 19 }}>
+                        <td className="border-r border-fg-border bg-fg-bg pr-2 py-0.5 text-[11px] font-normal text-fg-heading/85 whitespace-nowrap align-middle" style={{ width: COL_CATEGORY, paddingLeft: 20 + depth * 16, ...stickyL(0) }}>
                           <div className="flex items-center gap-1">
                             {subtask.costType
                               ? <span className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: COST_TYPE_META[subtask.costType].colour }} />
