@@ -47,7 +47,7 @@ const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2] as const
 const DAYS_VIEW_WEEKS = 74   // Days view renders up to this many weeks of columns. THIS is the days-view horizon cap
                             // (min with the fridays horizon). Kept in step with WEEK_COUNT so the day grid is wide
                             // enough to overflow a big monitor and actually scroll horizontally + reach later work.
-const COL_CATEGORY = 248   // wider so category names breathe (less wrapping)
+const COL_CATEGORY = 268   // wider so category names breathe (less wrapping / fewer lines)
 const COL_BUDGET = 188     // wide enough that "$43,635 / $43,635 · 336h" stays on one line (no wrap)
 
 // Cost-type palette for the per-task cost split + project totals strip.
@@ -2843,7 +2843,7 @@ export default function GanttPage() {
                               onChange={e => setCategoryDescription(cat.category, e.target.value)}
                               placeholder="+ description"
                               title={descriptions[cat.category] || 'Add a description for this category'}
-                              className={`bg-transparent border-none outline-none text-[10px] font-light italic text-fg-muted/60 placeholder:text-fg-muted/25 hover:text-fg-heading focus:text-fg-heading w-full min-w-0 truncate ${descriptions[cat.category] ? '' : 'print:hidden'} gantt-edit`}
+                              className={`bg-transparent border-none outline-none text-[10px] font-light italic text-fg-muted/60 placeholder:text-fg-muted/25 hover:text-fg-heading focus:text-fg-heading w-full min-w-0 truncate ${descriptions[cat.category] ? '' : 'hidden group-hover:block print:hidden'} gantt-edit`}
                             />
                           </div>
                           {/* Far-right: split / M·L·S STACKED on hover (narrow, so the category name gets the
