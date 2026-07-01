@@ -2176,7 +2176,7 @@ export default function GanttPage() {
               // thin top-half band that signals "this is a roll-up summary, not a claimable bar".
               return clientPrint ? (
                 <div key={seg.id} className="absolute inset-y-1 pointer-events-none" title={`${category} — timeframe`}
-                  style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : -1, background: '#8A8580',
+                  style={{ left: isStart ? 2 : 0, right: isEnd ? 2 : -1, background: sectionColour(category),
                     borderRadius: isStart && isEnd ? 3 : isStart ? '3px 0 0 3px' : isEnd ? '0 3px 3px 0' : 0 }} />
               ) : (
                 // Slim, vertically-centred summary line with darker end grips (Instagantt style). Grab
@@ -2277,6 +2277,11 @@ export default function GanttPage() {
         .gantt-scroll td.gantt-cell { position: relative !important; }
         /* Print background colours (bars, INV badge) — browsers drop them by default. */
         .gantt-scroll, .gantt-scroll * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        /* Grid lines: the on-screen day/row borders are only 25-40% opacity and wash out on paper. Force
+           the vertical (right) + horizontal (bottom) borders to a solid visible grey on both PDFs. The
+           heavy black week-boundary lines are inline borderLeft, so they are untouched. */
+        .gantt-scroll th, .gantt-scroll td { border-right-color: #B9B4AD !important; }
+        .gantt-scroll tr, .gantt-scroll th, .gantt-scroll td { border-bottom-color: #C9C4BE !important; }
         .gantt-print-nofinance .gantt-finance { display: none !important; }
         /* Client-facing PDF: drop the editing controls + the day-of-week sub-row for a clean high-level read. */
         .gantt-print-client .gantt-edit { display: none !important; }
