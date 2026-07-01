@@ -822,8 +822,8 @@ export default function GanttPage() {
       if (el.scrollWidth > el.clientWidth + 1) {
         el.scrollLeft = target
         scrolledToToday.current = true
-      } else if (tries++ < 30) {
-        setTimeout(tryScroll, 50)
+      } else if (tries++ < 120) {
+        setTimeout(tryScroll, 100)   // keep trying for ~12s while data loads over the network on a cold cache
       }
     }
     tryScroll()
