@@ -764,9 +764,14 @@ export default function GanttPage() {
   const [zoom, setZoom] = useState(1)
   const gridScrollRef = useRef<HTMLDivElement | null>(null)
   const scrolledToToday = useRef(false)
+  // Jump-to-date: `jumpBackWeeks` extends the lookback on demand so you can scroll back further than the
+  // 2-week default (e.g. to log work done a while ago); pendingJumpRef carries the date to scroll to.
+  const [jumpBackWeeks, setJumpBackWeeks] = useState(0)
+  const pendingJumpRef = useRef<string | null>(null)
+  const effLookback = Math.max(LOOKBACK_WEEKS, jumpBackWeeks)
 
-  // Render enough weeks to reach the project's last scheduled date (Andrew iter3: full-lifespan horizon),
-  // floored at WEEK_COUNT and capped at 156 (3yr). Covers bars, nested subtasks and milestones.
+  // Render enough weeks to reach the project's last scheduled date, floored at WEEK_COUNT (+ any extra
+  // lookback added by a jump). Covers bars, nested subtasks and milestones.
   const horizonWeeks = (() => {
     let latest = ''
     for (const e of entries) {
@@ -774,13 +779,14 @@ export default function GanttPage() {
       for (const { st } of flattenSubtasks(e.subtasks ?? [])) for (const s of st.segments) if (s.endDate && s.endDate > latest) latest = s.endDate
     }
     for (const m of milestones) if (m.date && m.date > latest) latest = m.date
-    if (!latest) return WEEK_COUNT
-    const firstCol = new Date(); firstCol.setDate(firstCol.getDate() - LOOKBACK_WEEKS * 7)
+    const extraBack = effLookback - LOOKBACK_WEEKS
+    if (!latest) return WEEK_COUNT + extraBack
+    const firstCol = new Date(); firstCol.setDate(firstCol.getDate() - effLookback * 7)
     const weeks = Math.ceil((new Date(`${latest}T00:00:00`).getTime() - firstCol.getTime()) / (7 * 86400000)) + 4
-    return Math.min(156, Math.max(WEEK_COUNT, weeks))
+    return Math.min(200 + extraBack, Math.max(WEEK_COUNT + extraBack, weeks))
   })()
   const fridays = (() => {
-    const all = getNextFridays(horizonWeeks, LOOKBACK_WEEKS)
+    const all = getNextFridays(horizonWeeks, effLookback)
     if (!clientPrint) return all
     // Client PDF: trim to the active work range — cut the empty weeks before the first bar and after the
     // last, so the programme reads zoomed-in on what matters.
@@ -797,7 +803,7 @@ export default function GanttPage() {
     return trimmed.length ? trimmed : all
   })()
   const workingDays = getWorkingDays(fridays)
-  const currentWeekIso = fridays[LOOKBACK_WEEKS] ? toISODate(fridays[LOOKBACK_WEEKS]) : (fridays[0] ? toISODate(fridays[0]) : '')
+  const currentWeekIso = fridays[effLookback] ? toISODate(fridays[effLookback]) : (fridays[0] ? toISODate(fridays[0]) : '')
   const today = toISODate(new Date())
 
   const CELL_W = Math.round((timeView === 'days' ? CELL_W_DAYS : CELL_W_WEEKS) * zoom)
@@ -834,6 +840,44 @@ export default function GanttPage() {
     }
     tryScroll()
   }, [colCount, timeView, CELL_W])
+
+  // ── Jump to a date ──────────────────────────────────────────────────────────
+  // Scroll the timeline so the chosen date sits near the left edge. If it's before the rendered range,
+  // the lookback is extended first (handleJumpToDate) and the effect below scrolls once the grid re-renders.
+  const scrollToJumpTarget = () => {
+    const iso = pendingJumpRef.current
+    const el = gridScrollRef.current
+    if (!iso || !el) return
+    let idx = columns.findIndex(c => toISODate(c) >= iso)
+    if (idx < 0) idx = Math.max(0, columns.length - 1)
+    el.scrollLeft = Math.max(0, (idx - 2) * CELL_W)
+    pendingJumpRef.current = null
+  }
+  const handleJumpToDate = (iso: string) => {
+    if (!iso) return
+    pendingJumpRef.current = iso
+    const weeksBefore = Math.ceil((Date.now() - new Date(`${iso}T00:00:00`).getTime()) / (7 * 86400000))
+    const neededBack = weeksBefore > 0 ? weeksBefore + 1 : 0
+    if (neededBack > jumpBackWeeks) setJumpBackWeeks(neededBack)   // extend backward; effect below scrolls
+    else requestAnimationFrame(scrollToJumpTarget)                 // already in range
+  }
+  const jumpToToday = () => {
+    pendingJumpRef.current = null
+    setJumpBackWeeks(0)
+    requestAnimationFrame(() => { if (gridScrollRef.current) gridScrollRef.current.scrollLeft = 0 })
+  }
+  // Once a jump has extended the lookback and the grid re-rendered, scroll to the pending target.
+  useEffect(() => {
+    if (!pendingJumpRef.current) return
+    let tries = 0
+    const go = () => {
+      const el = gridScrollRef.current
+      if (!el || !pendingJumpRef.current) return
+      if (el.scrollWidth > el.clientWidth + 1) scrollToJumpTarget()
+      else if (tries++ < 40) setTimeout(go, 50)
+    }
+    go()
+  }, [jumpBackWeeks, colCount])   // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let cancelled = false
@@ -2292,6 +2336,16 @@ export default function GanttPage() {
             <button onClick={() => setZoom(z => ZOOM_LEVELS[Math.min(ZOOM_LEVELS.length - 1, ZOOM_LEVELS.indexOf(z as typeof ZOOM_LEVELS[number]) + 1)] ?? z)}
               disabled={zoom >= ZOOM_LEVELS[ZOOM_LEVELS.length - 1]} title="Zoom in"
               className="px-2.5 py-2 text-sm leading-none hover:text-fg-heading disabled:opacity-30 disabled:cursor-not-allowed">+</button>
+          </div>
+
+          {/* Jump to a date — scrolls the timeline there, extending the lookback if it's in the past */}
+          <div className="gantt-no-print flex items-center gap-1.5 border border-fg-border px-2.5 py-1.5">
+            <span className="text-[10px] font-light tracking-wide uppercase text-fg-muted">Jump</span>
+            <input type="date" onChange={e => handleJumpToDate(e.target.value)}
+              title="Scroll the timeline to a date"
+              className="text-[11px] font-light bg-transparent text-fg-heading outline-none" />
+            <button onClick={jumpToToday} title="Back to today"
+              className="text-[10px] font-light tracking-wide uppercase text-fg-muted hover:text-fg-heading">Today</button>
           </div>
 
           {/* Crew size — drives the labour-hours model (2 = 16h/day, 3 = 24h, 4 = 32h) */}
