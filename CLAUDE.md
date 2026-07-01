@@ -87,3 +87,14 @@ keep the stages joined up rather than as isolated tools.
   symptom is silent $0 (revenue) or an empty bar/grid (schedule). Check ALL readers go through
   `entryClaimSegments` (revenue) or `entrySegments` (schedule/dates/cost) — never `entry.segments`.
 - The page blocks screenshots; don't try to verify visuals yourself — build/test, then ask Chris.
+
+## Gotcha: Gantt horizontal scroll / "opens too far back"
+- Days view is capped by `DAYS_VIEW_WEEKS` (getWorkingDays: `min(DAYS_VIEW_WEEKS, fridays.length)`),
+  NOT by WEEK_COUNT/LOOKBACK_WEEKS. If the days-view table is narrower than the monitor it FITS and
+  there's no horizontal scroll at all (scrollWidth == clientWidth). Big monitors (e.g. 2560px) need
+  DAYS_VIEW_WEEKS high enough that cols*CELL_W overflows the screen. This was misdiagnosed for many
+  commits as a scroll-container/flex/box-shadow problem — it was purely the week cap. Inspect live with
+  the claude-in-chrome MCP: measure `.gantt-scroll` clientWidth vs scrollWidth before theorising.
+- The grid IS scrollable via a block `<div style={{minWidth: tableWidth}}>` sizer wrapping the table
+  (a border-collapse auto-layout table sets its own width as a soft suggestion and won't overflow) —
+  mirrors app/programme/page.tsx. The scroll container is `.gantt-scroll` (overflow:auto, maxWidth:100vw).

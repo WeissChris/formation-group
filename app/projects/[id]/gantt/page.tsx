@@ -822,6 +822,12 @@ export default function GanttPage() {
       if (el.scrollWidth > el.clientWidth + 1) {
         el.scrollLeft = target
         scrolledToToday.current = true
+        // A post-load data sync can re-render and reset scrollLeft to 0 — re-assert a few times, but only
+        // while still near the left edge so we never fight a user who has already scrolled.
+        ;[400, 1000, 2000].forEach(ms => setTimeout(() => {
+          const e2 = gridScrollRef.current
+          if (e2 && e2.scrollLeft < 4) e2.scrollLeft = target
+        }, ms))
       } else if (tries++ < 120) {
         setTimeout(tryScroll, 100)   // keep trying for ~12s while data loads over the network on a cold cache
       }
