@@ -218,6 +218,24 @@ function addDays(isoDate: string, days: number): string {
   return toISODate(d)
 }
 
+// "Chart days" = the Mon-Fri columns a bar covers. Weekends are NOT columns on the chart, so the
+// Duration field must count only weekdays — otherwise it reads calendar days (16) for a bar that spans
+// 12 columns. (Public holidays ARE columns, just marked, so they still count.)
+function countChartDays(startIso: string, endIso: string): number {
+  if (!startIso || !endIso || endIso < startIso) return 0
+  const d = new Date(`${startIso}T00:00:00`), end = new Date(`${endIso}T00:00:00`)
+  let n = 0
+  while (d <= end) { const g = d.getDay(); if (g !== 0 && g !== 6) n++; d.setDate(d.getDate() + 1) }
+  return n
+}
+// The end date that makes a bar span exactly `days` chart days from a Mon-Fri start. Weekends are spanned
+// but not counted, so a 12-chart-day bar can cross two weekends (the timeframe the user actually drew).
+function endFromChartDays(startIso: string, days: number): string {
+  const d = new Date(`${startIso}T00:00:00`)
+  let n = 0
+  for (;;) { const g = d.getDay(); if (g !== 0 && g !== 6) { n++; if (n >= days) return toISODate(d) } d.setDate(d.getDate() + 1) }
+}
+
 // Place a position:fixed popover so it never opens off-screen. Coordinates are viewport-relative
 // (fixed positioning ignores scroll — the old code added scrollX/scrollY, which pushed the popover
 // off the bottom whenever the page was scrolled). Clamp horizontally to stay fully on screen, and flip
@@ -1806,8 +1824,10 @@ export default function GanttPage() {
         startIso = toISODate(snapToFriday(new Date(`${startIso}T00:00:00`)))
       }
     }
-    const endIso = startIso ? addDays(startIso, timeView === 'days' ? n - 1 : (n - 1) * 7) : ''
-    const weekCount = timeView === 'days' ? Math.max(1, Math.ceil(n / 7)) : n
+    // Days view: advance n CHART days (skip weekends), so the entered duration matches the columns on
+    // screen and the drawn timeframe is preserved. Weeks view: n weeks, Friday-to-Friday.
+    const endIso = !startIso ? '' : (timeView === 'days' ? endFromChartDays(startIso, n) : addDays(startIso, (n - 1) * 7))
+    const weekCount = timeView === 'days' ? Math.max(1, Math.ceil(n / 5)) : n
     // Set/clear the primary (first) segment; keep any extra split periods. Sub-task segments carry no
     // budget allocation (they sub-schedule a category), category segments carry the category budget.
     const applySeg = (segs: GanttSegment[], rev: number, cost: number): GanttSegment[] => {
@@ -1827,7 +1847,7 @@ export default function GanttPage() {
   const durationOf = (segs: GanttSegment[]): number | '' => {
     const s = segs[0]
     if (!s) return ''
-    return timeView === 'days' ? daysBetweenIso(s.startDate, s.endDate) + 1 : (s.weekCount || 1)
+    return timeView === 'days' ? countChartDays(s.startDate, s.endDate) : (s.weekCount || 1)
   }
 
   // ── Header groupings ──────────────────────────────────────────────────────
