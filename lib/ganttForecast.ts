@@ -1,5 +1,6 @@
 import type { GanttEntry, GanttSubtask, GanttSegment } from '@/types'
-import { toISODate } from '@/lib/utils'
+import { toISODate, snapToFriday } from '@/lib/utils'
+import { workingDaysBetween } from '@/lib/ganttSchedule'
 
 export type CostTypeKey = 'labour' | 'material' | 'subcontractor' | 'equipment'
 
@@ -45,9 +46,53 @@ export function entrySegments(entry: GanttEntry): GanttSegment[] {
   return entryClaimSegments(entry).map(c => c.seg)
 }
 
-// Planned revenue + cost per week (keyed by the week's Friday ISO). A segment contributes
-// revenueAllocation/weekCount to every week it overlaps (Mon–Fri of that week), so it works in both weeks
-// and days view and against a baseline snapshot. Used for the fortnightly cycle + inline invoice totals.
+/**
+ * The fraction of a segment's allocation that belongs to the week [monIso..friIso] (0 if it doesn't
+ * overlap). A DAYS-view bar splits by the working days that fall in each week, so a bar straddling a week
+ * boundary distributes proportionally (e.g. a 3-day bar = 2/3 in the first week, 1/3 in the next) instead
+ * of dumping the whole amount into both weeks. A WEEKS-view (or legacy, grain-absent) bar is stored
+ * Friday-to-Friday and splits equally across its weekCount weeks — the same result the old code gave.
+ */
+export function segmentWeekShare(seg: GanttSegment, monIso: string, friIso: string): number {
+  if (!seg.startDate || !seg.endDate || seg.weekCount <= 0) return 0
+  if (!(seg.startDate <= friIso && seg.endDate >= monIso)) return 0   // no overlap with this week
+  if (seg.grain !== 'days') return 1 / seg.weekCount
+  const total = workingDaysBetween(seg.startDate, seg.endDate)
+  if (total <= 0) return 1 / seg.weekCount   // all-weekend/holiday span — fall back to equal
+  const s = seg.startDate > monIso ? seg.startDate : monIso
+  const e = seg.endDate < friIso ? seg.endDate : friIso
+  return s <= e ? workingDaysBetween(s, e) / total : 0
+}
+
+/** Enumerate the weeks a segment touches with each week's share (fractions sum to 1). Used where the weeks
+ *  aren't already being iterated (the persisted forecast). Mirrors segmentWeekShare's day-vs-week split. */
+export function segmentWeekShares(seg: GanttSegment): { friIso: string; fraction: number }[] {
+  if (!seg.startDate || !seg.endDate || seg.weekCount <= 0) return []
+  const out: { friIso: string; fraction: number }[] = []
+  if (seg.grain !== 'days') {
+    const start = new Date(`${seg.startDate}T00:00:00`)
+    for (let w = 0; w < seg.weekCount; w++) {
+      const d = new Date(start); d.setDate(d.getDate() + w * 7)
+      out.push({ friIso: toISODate(snapToFriday(d)), fraction: 1 / seg.weekCount })
+    }
+    return out
+  }
+  const endFri = snapToFriday(new Date(`${seg.endDate}T00:00:00`))
+  const cur = snapToFriday(new Date(`${seg.startDate}T00:00:00`))
+  while (cur <= endFri) {
+    const friIso = toISODate(cur)
+    const monIso = toISODate(new Date(cur.getTime() - 4 * 86400000))
+    const share = segmentWeekShare(seg, monIso, friIso)
+    if (share > 0) out.push({ friIso, fraction: share })
+    cur.setDate(cur.getDate() + 7)
+  }
+  if (out.length === 0) out.push({ friIso: toISODate(snapToFriday(new Date(`${seg.startDate}T00:00:00`))), fraction: 1 })
+  return out
+}
+
+// Planned revenue + cost per week (keyed by the week's Friday ISO). Each segment contributes its
+// per-week SHARE (proportional to working days for a straddling days bar; equal per week for a weeks bar),
+// so it works in both views and against a baseline snapshot. Fortnightly cycle + inline invoice totals.
 export function plannedByWeek(entries: GanttEntry[], fridays: Date[]): Map<string, { rev: number; cost: number }> {
   const map = new Map<string, { rev: number; cost: number }>()
   for (const f of fridays) {
@@ -57,9 +102,10 @@ export function plannedByWeek(entries: GanttEntry[], fridays: Date[]): Map<strin
     let rev = 0, cost = 0
     for (const e of entries) {
       for (const { seg } of entryClaimSegments(e)) {
-        if (seg.startDate && seg.endDate && seg.weekCount > 0 && seg.startDate <= friIso && seg.endDate >= monIso) {
-          rev += seg.revenueAllocation / seg.weekCount
-          cost += seg.costAllocation / seg.weekCount
+        const share = segmentWeekShare(seg, monIso, friIso)
+        if (share > 0) {
+          rev += seg.revenueAllocation * share
+          cost += seg.costAllocation * share
         }
       }
     }

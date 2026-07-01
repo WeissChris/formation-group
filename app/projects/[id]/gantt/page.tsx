@@ -28,7 +28,7 @@ import { normalizedPcts, rebalancedPcts, datedPeriodCount } from '@/lib/ganttAll
 import { labourWorkingDays } from '@/lib/ganttSchedule'
 import { vicPublicHolidayName } from '@/lib/publicHolidays'
 import { mapSubtaskTree, findSubtaskInTree, removeSubtaskFromTree, addChildSubtask, flattenSubtasks } from '@/lib/ganttSubtasks'
-import { plannedByWeek, entryClaimSegments, claimLeafSegments } from '@/lib/ganttForecast'
+import { plannedByWeek, entryClaimSegments, claimLeafSegments, segmentWeekShare, segmentWeekShares } from '@/lib/ganttForecast'
 import { buildPhasedBudget, phasedBudgetToCsv } from '@/lib/xccBudget'
 import { loadCachedXeroAccounts } from '@/lib/xero'
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
@@ -1620,20 +1620,16 @@ export default function GanttPage() {
 
     const rows: WeeklyRevenue[] = []
     const pushSeg = (seg: GanttSegment, notes: string) => {
-      if (!seg.startDate || !seg.endDate || seg.weekCount <= 0) return
-      const weeklyRev = seg.revenueAllocation / seg.weekCount
-      const weeklyCost = seg.costAllocation / seg.weekCount
-      const start = new Date(seg.startDate)
-      for (let w = 0; w < seg.weekCount; w++) {
-        const d = new Date(start); d.setDate(d.getDate() + w * 7)
-        const weekEnding = toISODate(snapToFriday(d))
+      // Distribute by the segment's per-week SHARE so a bar straddling a week boundary splits
+      // proportionally (2-day/1-day = 66.7%/33.3%) instead of dumping the whole amount in each week.
+      segmentWeekShares(seg).forEach(({ friIso: weekEnding, fraction }, i) => {
         rows.push({
           id: generateId(), projectId: project.id, projectName: project.name, entity: project.entity,
-          weekEnding, weekNumber: w + 1, plannedRevenue: weeklyRev,
+          weekEnding, weekNumber: i + 1, plannedRevenue: seg.revenueAllocation * fraction,
           actualInvoiced: actualByKey.get(`${weekEnding}|${notes}`) ?? 0,
-          isDeposit: false, scheduledCost: weeklyCost, notes,
+          isDeposit: false, scheduledCost: seg.costAllocation * fraction, notes,
         })
-      }
+      })
     }
     for (const entry of currentEntries) {
       // Leaf-claim roll-up (iter5): unsplit bars + the leaf claims of the split/nested tree, so nested
@@ -1897,10 +1893,11 @@ export default function GanttPage() {
         // contributes revenueAllocation/weekCount once. Type-line claims attribute to their discipline; an
         // unsplit parent's revenue is apportioned by the category ratio.
         for (const { costType, seg } of entryClaimSegments(entry)) {
-          if (seg.startDate && seg.endDate && seg.weekCount > 0 && seg.startDate <= friIso && seg.endDate >= monIso) {
-            const wRev = seg.revenueAllocation / seg.weekCount
+          const share = segmentWeekShare(seg, monIso, friIso)
+          if (share > 0) {
+            const wRev = seg.revenueAllocation * share
             rev += wRev
-            cost += seg.costAllocation / seg.weekCount
+            cost += seg.costAllocation * share
             if (costType) {
               revType[costType] += wRev
             } else if (cat && cat.budgetedRevenue > 0) {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { GanttEntry } from '@/types'
-import { plannedByWeek, claimLeafSegments, entrySegments } from './ganttForecast'
+import { plannedByWeek, claimLeafSegments, entrySegments, segmentWeekShare, segmentWeekShares } from './ganttForecast'
 
 // Three consecutive week-ending Fridays.
 const fridays = ['2026-08-07', '2026-08-14', '2026-08-21'].map(d => new Date(`${d}T00:00:00`))
@@ -112,5 +112,33 @@ describe('claimLeafSegments (leaf roll-up, iter5)', () => {
   it('treats an untyped leaf as a Labour claim (iter6)', () => {
     const leaves = claimLeafSegments([{ id: 'n', label: 'Remove for works', segments: [seg('2026-08-07', '2026-08-07', 1, 5000)] }])
     expect(leaves.map(l => [l.costType, l.seg.revenueAllocation])).toEqual([['labour', 5000]])
+  })
+})
+
+// Reference: 2026-07-31 and 2026-08-07 are Fridays; 2026-07-30 = Thu, 2026-08-03 = Mon.
+describe('segmentWeekShare / segmentWeekShares (week-straddle distribution)', () => {
+  // 3-day days-view bar: Thu 07-30 + Fri 07-31 (week ending 07-31) then Mon 08-03 (week ending 08-07).
+  const daysBar = { id: 'd', startDate: '2026-07-30', endDate: '2026-08-03', weekCount: 1, grain: 'days' as const, revenueAllocation: 900, costAllocation: 300 }
+
+  it('splits a days bar proportionally: 2/3 in the first week, 1/3 in the next', () => {
+    expect(segmentWeekShare(daysBar, '2026-07-27', '2026-07-31')).toBeCloseTo(2 / 3, 6)
+    expect(segmentWeekShare(daysBar, '2026-08-03', '2026-08-07')).toBeCloseTo(1 / 3, 6)
+  })
+  it('does not double-count: the week shares sum to 1', () => {
+    const total = segmentWeekShares(daysBar).reduce((a, b) => a + b.fraction, 0)
+    expect(total).toBeCloseTo(1, 6)
+    expect(segmentWeekShares(daysBar).map(s => s.friIso)).toEqual(['2026-07-31', '2026-08-07'])
+  })
+  it('a weeks-view (grain-absent) bar still splits equally per week', () => {
+    const weeksBar = { id: 'w', startDate: '2026-07-31', endDate: '2026-08-07', weekCount: 2, revenueAllocation: 1000, costAllocation: 0 }
+    expect(segmentWeekShare(weeksBar, '2026-07-27', '2026-07-31')).toBeCloseTo(0.5, 6)
+    expect(segmentWeekShare(weeksBar, '2026-08-03', '2026-08-07')).toBeCloseTo(0.5, 6)
+  })
+  it('plannedByWeek distributes a straddling days bar proportionally', () => {
+    const fri = ['2026-07-31', '2026-08-07'].map(d => new Date(`${d}T00:00:00`))
+    const m = plannedByWeek([entry({ segments: [daysBar] })], fri)
+    expect(m.get('2026-07-31')?.rev).toBeCloseTo(600, 4)   // 2/3 of 900
+    expect(m.get('2026-08-07')?.rev).toBeCloseTo(300, 4)   // 1/3 of 900
+    expect(m.get('2026-07-31')?.cost).toBeCloseTo(200, 4)  // 2/3 of 300
   })
 })
