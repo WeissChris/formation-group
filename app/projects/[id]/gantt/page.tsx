@@ -48,7 +48,7 @@ const DAYS_VIEW_WEEKS = 74   // Days view renders up to this many weeks of colum
                             // (min with the fridays horizon). Kept in step with WEEK_COUNT so the day grid is wide
                             // enough to overflow a big monitor and actually scroll horizontally + reach later work.
 const COL_CATEGORY = 248   // wider so category names breathe (less wrapping)
-const COL_BUDGET = 150     // wider so the cost breakdown isn't cramped
+const COL_BUDGET = 188     // wide enough that "$43,635 / $43,635 · 336h" stays on one line (no wrap)
 
 // Cost-type palette for the per-task cost split + project totals strip.
 const COST_TYPE_META = {
@@ -2844,7 +2844,7 @@ export default function GanttPage() {
                       </td>
                       {/* Budget — revenue + an inline, compact cost split. Single-letter type tags with
                           tooltips keep it to ~1 line. (Crew + Start/Duration columns removed — Andrew.) */}
-                      <td className="border-r border-fg-border bg-fg-bg px-2 py-2 text-right text-[11px] font-normal text-fg-heading/90 tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(1) }}>
+                      <td className="border-r border-fg-border bg-fg-bg px-2 py-2 text-right text-[11px] font-normal text-fg-heading/90 tabular-nums align-middle whitespace-nowrap" style={{ width: COL_BUDGET, ...stickyL(1) }}>
                         <div className="gantt-finance">
                           <div className="text-fg-heading" title={showRevenue ? 'Contract revenue' : 'Budgeted cost'}>{formatCurrency(showRevenue ? cat.budgetedRevenue : cat.budgetedCost)}</div>
                           {/* Live category roll-up (Andrew iter6) — sum of every leaf claim under this category,
@@ -2854,14 +2854,18 @@ export default function GanttPage() {
                             const claimed = segs.reduce((s, c) => s + (showRevenue ? (c.seg.revenueAllocation || 0) : (c.seg.costAllocation || 0)), 0)
                             return <div className="text-[9px] text-fg-muted" title="Claimed so far (rolled up from all nested lines)">claimed {formatCurrency(claimed)}</div>
                           })()}
-                          <div className="mt-px flex flex-wrap justify-end gap-x-1.5 gap-y-0 text-[9px] leading-tight">
-                            {COST_TYPE_KEYS.map(k => cat.cost[k] > 0 ? (
-                              <span key={k} className="whitespace-nowrap" title={`${COST_TYPE_META[k].label}: ${formatCurrency(cat.cost[k])}${k === 'labour' ? ` · ${Math.round(cat.cost[k] / STD_LABOUR_RATE)}h` : ''}`}>
-                                <span style={{ color: COST_TYPE_META[k].colour }}>{COST_TYPE_META[k].label[0]}</span>
-                                <span className="text-fg-heading/70"> {fmtK(cat.cost[k])}</span>
-                              </span>
-                            ) : null)}
-                          </div>
+                          {/* L/M/S/E breakdown — only when UNSPLIT (a split category shows it on its
+                              Mat/Lab/Sub/Equip subtask rows, so it's redundant under the parent total). */}
+                          {!split && (
+                            <div className="mt-px flex flex-wrap justify-end gap-x-1.5 gap-y-0 text-[9px] leading-tight">
+                              {COST_TYPE_KEYS.map(k => cat.cost[k] > 0 ? (
+                                <span key={k} className="whitespace-nowrap" title={`${COST_TYPE_META[k].label}: ${formatCurrency(cat.cost[k])}${k === 'labour' ? ` · ${Math.round(cat.cost[k] / STD_LABOUR_RATE)}h` : ''}`}>
+                                  <span style={{ color: COST_TYPE_META[k].colour }}>{COST_TYPE_META[k].label[0]}</span>
+                                  <span className="text-fg-heading/70"> {fmtK(cat.cost[k])}</span>
+                                </span>
+                              ) : null)}
+                            </div>
+                          )}
                         </div>
                       </td>
                       {/* Segment cells — collapsed rows roll the subtask span into a summary bar */}
@@ -2902,7 +2906,7 @@ export default function GanttPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="border-r border-fg-border bg-fg-bg px-2 text-right text-[10px] font-normal text-fg-heading/75 tabular-nums align-middle" style={{ width: COL_BUDGET, ...stickyL(1) }}>
+                        <td className="border-r border-fg-border bg-fg-bg px-2 text-right text-[10px] font-normal text-fg-heading/75 tabular-nums align-middle whitespace-nowrap" style={{ width: COL_BUDGET, ...stickyL(1) }}>
                           {(() => {
                             // Live roll-up (Andrew iter6 Phase 2): the line's value = the sum of its leaf
                             // claims, recomputed every render. Untyped subtasks count as Labour. Explicit
