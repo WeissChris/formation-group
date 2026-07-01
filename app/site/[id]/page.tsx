@@ -4,20 +4,23 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { entrySegments } from '@/lib/ganttForecast'
+import { activeLineItems, estimateLabourHours } from '@/lib/estimateCalculations'
+import { computeScorecard, type ScoreStatus } from '@/lib/siteScorecard'
 import {
-  siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, saveSiteActual,
-  type SiteProject,
+  siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, saveSiteActual, getSiteBoq,
+  getSitePlans, uploadSitePlan, deleteSitePlan,
+  type SiteProject, type SitePlan,
 } from '@/lib/siteData'
-import type { GanttEntry, WeeklyActual, SubcontractorPackage } from '@/types'
+import type { GanttEntry, WeeklyActual, SubcontractorPackage, Estimate } from '@/types'
 
-type Tab = 'week' | 'schedule' | 'plans' | 'subbies' | 'client' | 'log'
+type Tab = 'schedule' | 'boq' | 'plans' | 'subbies' | 'client' | 'score'
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'week', label: 'This Week' },
   { key: 'schedule', label: 'Schedule' },
+  { key: 'boq', label: 'BOQ' },
   { key: 'subbies', label: 'Subbies' },
   { key: 'plans', label: 'Plans' },
   { key: 'client', label: 'Client & site' },
-  { key: 'log', label: 'Cost Log' },
+  { key: 'score', label: 'Scorecard' },
 ]
 
 export default function SiteProjectWorkspace({ params }: { params: { id: string } }) {
@@ -25,7 +28,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
   const [project, setProject] = useState<SiteProject | null>(null)
   const [gantt, setGantt] = useState<GanttEntry[]>([])
   const [denied, setDenied] = useState(false)
-  const [tab, setTab] = useState<Tab>('week')
+  const [tab, setTab] = useState<Tab>('schedule')
 
   useEffect(() => {
     siteMe().then(m => {
@@ -64,12 +67,12 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
       </header>
 
       <div className="mt-4">
-        {tab === 'week' && <ThisWeek gantt={gantt} />}
         {tab === 'schedule' && <Schedule gantt={gantt} projectId={project.id} />}
+        {tab === 'boq' && <Boq projectId={project.id} />}
         {tab === 'subbies' && <Subbies projectId={project.id} />}
-        {tab === 'plans' && <Plans />}
+        {tab === 'plans' && <Plans projectId={project.id} />}
         {tab === 'client' && <ClientAndSite project={project} />}
-        {tab === 'log' && <CostLog projectId={project.id} gantt={gantt} />}
+        {tab === 'score' && <Scorecard projectId={project.id} gantt={gantt} />}
       </div>
     </div>
   )
@@ -92,39 +95,17 @@ function fmt(iso: string): string {
 }
 function money(n: number): string { return '$' + Math.round(n).toLocaleString('en-AU') }
 
-// ── This Week ────────────────────────────────────────────────────────────────────
-function ThisWeek({ gantt }: { gantt: GanttEntry[] }) {
+// ── Schedule (this-week strip + programme summary + link to the editable gantt) ────
+function Schedule({ gantt, projectId }: { gantt: GanttEntry[]; projectId: string }) {
+  // What's on this week — the merged-in "This Week" view, now a compact strip at the top.
   const mon = thisMonday()
   const monIso = toISO(mon), friIso = toISO(addDays(mon, 4)), sunIso = toISO(addDays(mon, 6))
-  const active = gantt.flatMap(e =>
+  const thisWeek = gantt.flatMap(e =>
     entrySegments(e)
       .filter(s => s.startDate && s.endDate && s.startDate <= sunIso && s.endDate >= monIso)
       .map(s => ({ category: e.category, seg: s })))
 
-  return (
-    <section>
-      <p className="text-xs text-fg-muted mb-3">Week of {fmt(monIso)} &ndash; {fmt(friIso)}</p>
-      {active.length === 0 ? (
-        <p className="text-sm text-fg-muted py-6 text-center">No work scheduled this week.</p>
-      ) : (
-        <ul className="space-y-2">
-          {active.map((a, i) => (
-            <li key={i} className="rounded-lg border border-fg-border p-3 flex items-center justify-between">
-              <div className="min-w-0">
-                <p className="font-medium truncate">{a.category}</p>
-                <p className="text-xs text-fg-muted">{fmt(a.seg.startDate)} &ndash; {fmt(a.seg.endDate)}{a.seg.label ? ` · ${a.seg.label}` : ''}</p>
-              </div>
-              <span className="text-xs text-fg-muted tabular-nums shrink-0">{money(a.seg.costAllocation)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  )
-}
-
-// ── Schedule (read-only summary; full editing is the next build step) ──────────────
-function Schedule({ gantt, projectId }: { gantt: GanttEntry[]; projectId: string }) {
+  // The full programme — every category's overall start/end, sorted by start.
   const rows = gantt.map(e => {
     const segs = entrySegments(e).filter(s => s.startDate && s.endDate)
     if (!segs.length) return null
@@ -135,25 +116,143 @@ function Schedule({ gantt, projectId }: { gantt: GanttEntry[]; projectId: string
   rows.sort((a, b) => a.start.localeCompare(b.start))
 
   return (
-    <section>
-      <Link href={`/site/${projectId}/schedule`}
-        className="block rounded-lg bg-fg-heading text-white px-4 py-3 text-sm font-medium text-center mb-2">
-        Open editable schedule
-      </Link>
-      <p className="text-xs text-fg-muted text-center mb-4">Best on a laptop or tablet in landscape. Your changes update the office forecast.</p>
-      {rows.length === 0 ? (
-        <p className="text-sm text-fg-muted py-6 text-center">No schedule set yet.</p>
-      ) : (
-        <ul className="divide-y divide-fg-border/50">
-          {rows.map((r, i) => (
-            <li key={i} className="flex items-center justify-between py-2.5">
-              <span className="font-medium truncate pr-3">{r.category}</span>
-              <span className="text-xs text-fg-muted tabular-nums shrink-0">{fmt(r.start)} &ndash; {fmt(r.end)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <section className="space-y-6">
+      {/* This week */}
+      <div>
+        <div className="flex items-baseline justify-between mb-2">
+          <h2 className="text-sm font-medium">This week</h2>
+          <span className="text-xs text-fg-muted">{fmt(monIso)} &ndash; {fmt(friIso)}</span>
+        </div>
+        {thisWeek.length === 0 ? (
+          <p className="text-sm text-fg-muted py-4 text-center rounded-lg border border-fg-border/60 border-dashed">
+            No work scheduled this week.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {thisWeek.map((a, i) => (
+              <li key={i} className="rounded-lg border border-fg-border p-3 flex items-center justify-between">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{a.category}</p>
+                  <p className="text-xs text-fg-muted">{fmt(a.seg.startDate)} &ndash; {fmt(a.seg.endDate)}{a.seg.label ? ` · ${a.seg.label}` : ''}</p>
+                </div>
+                <span className="text-xs text-fg-muted tabular-nums shrink-0">{money(a.seg.costAllocation)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Editable programme */}
+      <div>
+        <Link href={`/site/${projectId}/schedule`}
+          className="block rounded-lg bg-fg-heading text-white px-4 py-3 text-sm font-medium text-center mb-2">
+          Open editable schedule
+        </Link>
+        <p className="text-xs text-fg-muted text-center mb-4">Best on a laptop or tablet in landscape. Your changes update the office forecast.</p>
+        {rows.length === 0 ? (
+          <p className="text-sm text-fg-muted py-6 text-center">No schedule set yet.</p>
+        ) : (
+          <ul className="divide-y divide-fg-border/50">
+            {rows.map((r, i) => (
+              <li key={i} className="flex items-center justify-between py-2.5">
+                <span className="font-medium truncate pr-3">{r.category}</span>
+                <span className="text-xs text-fg-muted tabular-nums shrink-0">{fmt(r.start)} &ndash; {fmt(r.end)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
+  )
+}
+
+// ── BOQ (read-only bill of quantities from the accepted estimate) ──────────────────
+function Boq({ projectId }: { projectId: string }) {
+  const [estimate, setEstimate] = useState<Estimate | null | undefined>(undefined)   // undefined = loading
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+  useEffect(() => { getSiteBoq(projectId).then(setEstimate) }, [projectId])
+
+  const view = useMemo(() => {
+    if (!estimate) return null
+    const items = activeLineItems(estimate)
+    const cats = Array.from(new Set(items.map(i => i.category || 'Uncategorised')))
+    const groups = cats.map(cat => {
+      const rows = items.filter(i => (i.category || 'Uncategorised') === cat)
+      return {
+        cat,
+        rows,
+        cost: rows.reduce((s, i) => s + (i.total || 0), 0),
+        hours: estimateLabourHours(rows),
+      }
+    }).sort((a, b) => b.cost - a.cost)
+    return {
+      groups,
+      totalCost: items.reduce((s, i) => s + (i.total || 0), 0),
+      totalHours: estimateLabourHours(items),
+    }
+  }, [estimate])
+
+  if (estimate === undefined) return <p className="text-sm text-fg-muted py-6 text-center">Loading...</p>
+  if (!estimate || !view || view.groups.length === 0) return (
+    <p className="text-sm text-fg-muted py-6 text-center">No accepted estimate for this job yet.</p>
+  )
+
+  const typeTag = (t?: string) => t === 'Labour' ? 'L' : t === 'Subcontractor' ? 'S' : t === 'Equipment' ? 'E' : 'M'
+
+  return (
+    <section className="space-y-4">
+      <div className="grid grid-cols-2 gap-2">
+        <Stat label="Cost allowance">{money(view.totalCost)}</Stat>
+        <Stat label="Labour allowed">{Math.round(view.totalHours).toLocaleString('en-AU')} hrs</Stat>
+      </div>
+      <p className="text-[11px] text-fg-muted">Cost allowances from the accepted estimate. This is your budget to build to, not the client price.</p>
+
+      <ul className="space-y-2">
+        {view.groups.map(g => {
+          const isOpen = !!open[g.cat]
+          return (
+            <li key={g.cat} className="rounded-lg border border-fg-border overflow-hidden">
+              <button onClick={() => setOpen(o => ({ ...o, [g.cat]: !o[g.cat] }))}
+                className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left">
+                <span className="min-w-0 flex items-center gap-2">
+                  <span className={`shrink-0 text-fg-muted transition-transform ${isOpen ? 'rotate-90' : ''}`}>&#9656;</span>
+                  <span className="font-medium truncate">{g.cat}</span>
+                </span>
+                <span className="shrink-0 text-right">
+                  <span className="text-sm tabular-nums">{money(g.cost)}</span>
+                  {g.hours > 0 && <span className="block text-[10px] text-fg-muted tabular-nums">{Math.round(g.hours)} hrs</span>}
+                </span>
+              </button>
+              {isOpen && (
+                <ul className="border-t border-fg-border/50 divide-y divide-fg-border/40 bg-fg-card/20">
+                  {g.rows.map(r => (
+                    <li key={r.id} className="flex items-start justify-between gap-3 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="text-sm leading-snug">{r.description || '(no description)'}</p>
+                        <p className="text-[11px] text-fg-muted">
+                          <span className="inline-block w-4 font-medium">{typeTag(r.type)}</span>
+                          {r.units ? `${Number(r.units).toLocaleString('en-AU')} ${r.uom || ''}`.trim() : ''}
+                          {r.units && r.unitCost ? ` @ ${money(r.unitCost)}` : ''}
+                        </p>
+                      </div>
+                      <span className="text-sm tabular-nums shrink-0">{money(r.total || 0)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+function Stat({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-fg-border px-3 py-2">
+      <p className="text-[10px] uppercase tracking-wide text-fg-muted">{label}</p>
+      <p className="text-base font-light tabular-nums mt-0.5">{children}</p>
+    </div>
   )
 }
 
@@ -193,12 +292,72 @@ function Subbies({ projectId }: { projectId: string }) {
   )
 }
 
-// ── Plans ────────────────────────────────────────────────────────────────────────
-function Plans() {
+// ── Plans (drag-drop to a private per-project Storage folder) ──────────────────────
+function fileSize(bytes: number): string {
+  if (!bytes) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+function Plans({ projectId }: { projectId: string }) {
+  const [files, setFiles] = useState<SitePlan[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [drag, setDrag] = useState(false)
+  const [err, setErr] = useState('')
+
+  const refresh = () => getSitePlans(projectId).then(setFiles)
+  useEffect(() => { refresh() }, [projectId])
+
+  const upload = async (list: FileList | File[] | null) => {
+    const arr = Array.from(list || [])
+    if (!arr.length) return
+    setBusy(true); setErr('')
+    let failed = 0
+    for (const f of arr) { if (!(await uploadSitePlan(projectId, f))) failed++ }
+    setBusy(false)
+    if (failed) setErr(`${failed} file${failed > 1 ? 's' : ''} failed to upload.`)
+    refresh()
+  }
+
+  const remove = async (p: SitePlan) => {
+    if (!window.confirm(`Delete ${p.name}?`)) return
+    await deleteSitePlan(projectId, p.path)
+    refresh()
+  }
+
   return (
-    <section className="py-6 text-center">
-      <p className="text-sm text-fg-muted">Plans aren&apos;t wired into the cockpit yet.</p>
-      <p className="text-xs text-fg-muted mt-1">Ask the office for the latest drawings for now.</p>
+    <section className="space-y-4">
+      <label
+        onDragOver={e => { e.preventDefault(); setDrag(true) }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={e => { e.preventDefault(); setDrag(false); upload(e.dataTransfer.files) }}
+        className={`block rounded-xl border-2 border-dashed px-4 py-8 text-center cursor-pointer transition-colors ${
+          drag ? 'border-fg-heading bg-fg-card/40' : 'border-fg-border'}`}>
+        <input type="file" multiple className="hidden"
+          onChange={e => { upload(e.target.files); e.target.value = '' }} />
+        <p className="text-sm font-medium">{busy ? 'Uploading...' : 'Drop plans & specs here'}</p>
+        <p className="text-xs text-fg-muted mt-1">or tap to choose files (PDF, images, up to 50MB each)</p>
+      </label>
+      {err && <p className="text-xs text-red-600 text-center">{err}</p>}
+
+      {files === null ? (
+        <p className="text-sm text-fg-muted py-4 text-center">Loading...</p>
+      ) : files.length === 0 ? (
+        <p className="text-sm text-fg-muted py-4 text-center">No plans uploaded yet.</p>
+      ) : (
+        <ul className="space-y-2">
+          {files.map(f => (
+            <li key={f.path} className="rounded-lg border border-fg-border p-3 flex items-center justify-between gap-3">
+              <a href={f.url} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate underline">{f.name}</p>
+                <p className="text-[11px] text-fg-muted">{fileSize(f.size)}{f.updatedAt ? ` · ${fmt(f.updatedAt)}` : ''}</p>
+              </a>
+              <button onClick={() => remove(f)} aria-label={`Delete ${f.name}`}
+                className="shrink-0 text-xs text-fg-muted hover:text-red-600 px-1">Delete</button>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   )
 }
@@ -232,10 +391,19 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-// ── Cost Log ────────────────────────────────────────────────────────────────────
-function CostLog({ projectId, gantt }: { projectId: string; gantt: GanttEntry[] }) {
+// ── Scorecard (delivery levers + score, over the cost-logging form that feeds it) ──
+const STATUS_UI: Record<ScoreStatus, { bar: string; text: string; ring: string; label: string }> = {
+  good:  { bar: 'bg-green-500', text: 'text-green-700', ring: 'border-green-500', label: 'On track' },
+  watch: { bar: 'bg-amber-500', text: 'text-amber-700', ring: 'border-amber-500', label: 'Watch' },
+  over:  { bar: 'bg-red-500',   text: 'text-red-700',   ring: 'border-red-500',   label: 'Over budget' },
+  na:    { bar: 'bg-fg-border', text: 'text-fg-muted',  ring: 'border-fg-border', label: 'Too early' },
+}
+
+function Scorecard({ projectId, gantt }: { projectId: string; gantt: GanttEntry[] }) {
   const categories = useMemo(() => gantt.map(e => e.category), [gantt])
   const [actuals, setActuals] = useState<WeeklyActual[] | null>(null)
+  const [estimate, setEstimate] = useState<Estimate | null>(null)
+  const [subbies, setSubbies] = useState<SubcontractorPackage[]>([])
   const [category, setCategory] = useState('')
   const [weekEnding, setWeekEnding] = useState(toISO(addDays(thisMonday(), 4)))
   const [supply, setSupply] = useState('')
@@ -244,7 +412,16 @@ function CostLog({ projectId, gantt }: { projectId: string; gantt: GanttEntry[] 
   const [saved, setSaved] = useState(false)
 
   const refresh = () => getSiteActuals(projectId).then(setActuals)
-  useEffect(() => { refresh() }, [projectId])
+  useEffect(() => {
+    refresh()
+    getSiteBoq(projectId).then(setEstimate)
+    getSiteSubbies(projectId).then(s => setSubbies(s || []))
+  }, [projectId])
+
+  const card = useMemo(() => computeScorecard({
+    estimate, actuals: actuals || [], subbies, gantt, today: toISO(new Date()),
+  }), [estimate, actuals, subbies, gantt])
+  const overall = STATUS_UI[card.status]
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -259,6 +436,55 @@ function CostLog({ projectId, gantt }: { projectId: string; gantt: GanttEntry[] 
 
   return (
     <section className="space-y-5">
+      {/* Overall score + progress */}
+      <div className={`rounded-xl border-2 ${overall.ring} p-4`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-fg-muted">Job score</p>
+            <p className={`text-3xl font-light leading-none mt-1 ${overall.text}`}>
+              {card.score === null ? '--' : card.score}
+              {card.score !== null && <span className="text-base text-fg-muted"> / 100</span>}
+            </p>
+          </div>
+          <span className={`text-sm font-medium ${overall.text}`}>{overall.label}</span>
+        </div>
+        <div className="mt-3">
+          <div className="flex justify-between text-[11px] text-fg-muted mb-1">
+            <span>Job progress</span><span>{Math.round(card.progressPct * 100)}%</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-fg-border/50 overflow-hidden">
+            <div className="h-full bg-fg-heading" style={{ width: `${Math.round(card.progressPct * 100)}%` }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Levers */}
+      {card.hasBudget ? (
+        <div className="space-y-3">
+          {card.levers.map(l => {
+            const ui = STATUS_UI[l.status]
+            const pct = Math.min(1, l.consumedPct)
+            return (
+              <div key={l.key}>
+                <div className="flex justify-between items-baseline text-sm">
+                  <span className="font-medium">{l.label}</span>
+                  <span className="tabular-nums text-fg-muted text-xs">{money(l.actual)} <span className="opacity-60">/ {money(l.budget)}</span></span>
+                </div>
+                <div className="h-2 rounded-full bg-fg-border/40 overflow-hidden mt-1">
+                  <div className={`h-full ${ui.bar}`} style={{ width: `${Math.round(pct * 100)}%` }} />
+                </div>
+                <p className={`text-[10px] mt-0.5 ${ui.text}`}>
+                  {l.budget > 0 ? `${Math.round(l.consumedPct * 100)}% of allowance used` : 'No allowance'}
+                </p>
+              </div>
+            )
+          })}
+          <p className="text-[11px] text-fg-muted">Labour is measured in dollars for now; it switches to hours once Xero timesheets are connected.</p>
+        </div>
+      ) : (
+        <p className="text-sm text-fg-muted text-center py-2">No estimate to score against yet.</p>
+      )}
+
       <form onSubmit={submit} className="space-y-3 rounded-xl border border-fg-border p-4">
         <p className="text-sm font-medium">Log costs</p>
         <select value={category} onChange={e => setCategory(e.target.value)}

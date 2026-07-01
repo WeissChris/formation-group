@@ -2,7 +2,9 @@
 // enforce the supervisor session + project ownership server-side); the browser never touches Supabase
 // directly here. Keep these thin and typed.
 
-import type { GanttEntry, WeeklyActual, SubcontractorPackage } from '@/types'
+import type { GanttEntry, WeeklyActual, SubcontractorPackage, Estimate } from '@/types'
+import { mapEstimate } from '@/lib/storageAsync'
+import { supabase } from '@/lib/supabase'
 
 export interface SiteProjectCard {
   id: string
@@ -71,6 +73,13 @@ export async function getSiteGantt(id: string): Promise<GanttEntry[]> {
   return d?.entries ?? []
 }
 
+// The accepted estimate for the project's BOQ, mapped to the same Estimate shape the office uses (so
+// estimateCalculations agree). Returns null when nothing is accepted / estimated yet.
+export async function getSiteBoq(id: string): Promise<Estimate | null> {
+  const d = await getJson<{ ok: boolean; estimate: Record<string, unknown> | null }>(`/api/site/projects/${id}/boq`)
+  return d?.ok && d.estimate ? mapEstimate(d.estimate) : null
+}
+
 export async function getSiteActuals(id: string): Promise<WeeklyActual[]> {
   const d = await getJson<{ ok: boolean; actuals: WeeklyActual[] }>(`/api/site/projects/${id}/actuals`)
   return d?.actuals ?? []
@@ -79,6 +88,35 @@ export async function getSiteActuals(id: string): Promise<WeeklyActual[]> {
 export async function getSiteSubbies(id: string): Promise<SubcontractorPackage[]> {
   const d = await getJson<{ ok: boolean; subbies: SubcontractorPackage[] }>(`/api/site/projects/${id}/subbies`)
   return d?.subbies ?? []
+}
+
+// ── Plans (private Supabase Storage bucket, one folder per project) ──────────────
+
+export interface SitePlan { name: string; path: string; size: number; updatedAt: string; url: string }
+
+export async function getSitePlans(id: string): Promise<SitePlan[]> {
+  const d = await getJson<{ ok: boolean; files: SitePlan[] }>(`/api/site/projects/${id}/plans`)
+  return d?.files ?? []
+}
+
+// Mint a signed upload URL server-side, then push the file bytes straight to Storage (bypassing the
+// Vercel function-body limit). Returns false on any failure.
+export async function uploadSitePlan(id: string, file: File): Promise<boolean> {
+  if (!supabase) return false
+  const res = await fetch(`/api/site/projects/${id}/plans`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileName: file.name }),
+  })
+  if (!res.ok) return false
+  const { path, token } = await res.json() as { path: string; token: string }
+  const { error } = await supabase.storage.from('project-plans').uploadToSignedUrl(path, token, file)
+  return !error
+}
+
+export async function deleteSitePlan(id: string, path: string): Promise<boolean> {
+  const res = await fetch(`/api/site/projects/${id}/plans?path=${encodeURIComponent(path)}`, { method: 'DELETE' })
+  return res.ok
 }
 
 export async function saveSiteActual(
