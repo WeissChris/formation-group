@@ -41,7 +41,7 @@ import { Check, Plus, X, ChevronDown, ChevronRight, Diamond } from 'lucide-react
 const CELL_W_WEEKS = 36
 const CELL_W_DAYS = 16   // narrow day columns (Instagantt-like); bar labels overflow to the right, so this is safe
 const WEEK_COUNT = 74         // horizon floor: weeks rendered when there's little scheduled work (auto-extends to reach later work)
-const LOOKBACK_WEEKS = 12     // weeks of grid BEFORE today you can scroll back to (~3 months); the initial view lands 2 weeks behind today
+const LOOKBACK_WEEKS = 2      // grid starts 2 weeks before today, so it OPENS on ~2 weeks back with no fragile auto-scroll jump
 // Andrew's zoom scale: 100% default, then ~25% steps each way (25/50/75/100/125/150/200).
 const ZOOM_LEVELS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2] as const
 const DAYS_VIEW_WEEKS = 74   // Days view renders up to this many weeks of columns. THIS is the days-view horizon cap
