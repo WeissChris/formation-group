@@ -101,7 +101,15 @@ export function saveProject(project: Project): void {
   const idx = all.findIndex(p => p.id === stamped.id)
   if (idx >= 0) all[idx] = stamped
   else all.push(stamped)
-  localStorage.setItem('fg_projects', JSON.stringify(all))
+  try {
+    localStorage.setItem('fg_projects', JSON.stringify(all))
+  } catch (e) {
+    // QuotaExceededError — a full localStorage (usually big estimate/takeoff payloads) must not crash
+    // the caller: the project page auto-restores/fixes projects during LOAD, and an uncaught throw here
+    // left it on an infinite "Loading..." spinner. Persist is best-effort; Supabase still has the data.
+    console.warn('saveProject: localStorage persist failed (quota?) — continuing without local save', e)
+    return
+  }
   backupToIndexedDB('fg_projects', loadProjects())
   notify({ key: 'projects' })
 }

@@ -1033,48 +1033,58 @@ export default function ProjectDetailPage() {
   const [notesSaved, setNotesSaved] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [loadAttempt, setLoadAttempt] = useState(0)   // bump to retry after a load error
 
-  // Load all data
+  // Load all data. The whole chain is guarded: an uncaught throw (a failed Supabase fetch on a
+  // machine without the local copy, a QuotaExceededError from a persist) used to die BEFORE
+  // setProject, leaving the page on an infinite "Loading..." spinner with no clue why.
   useEffect(() => {
     if (!id) return
     let cancelled = false
     ;(async () => {
-      let found = loadProjects().find(p => p.id === id)
-      if (!found) {
-        // Local copy may have been cleared — fall back to Supabase and restore it locally
-        found = (await getProjects()).find(p => p.id === id)
-        if (found) saveProject(found)
+      try {
+        setLoadError('')
+        let found = loadProjects().find(p => p.id === id)
+        if (!found) {
+          // Local copy may have been cleared — fall back to Supabase and restore it locally
+          found = (await getProjects()).find(p => p.id === id)
+          if (found) saveProject(found)
+        }
+        if (cancelled) return
+        if (!found) { router.push('/projects'); return }
+        setNotesValue(found.notes || '')
+        // Auto-initialise or fix stage checklist
+        const loaded = found
+        const currentStage: ProjectStage = (loaded.stage as ProjectStage) || defaultStageForStatus(loaded.status || 'planning')
+        const existingChecklist = (loaded.stageChecklist as any[]) || []
+        // Checklist is stale if: missing, empty, or its IDs don't start with the current stage prefix
+        const checklistIsStale = existingChecklist.length === 0 ||
+          !existingChecklist[0]?.id?.startsWith(currentStage)
+        if (checklistIsStale) {
+          const fixed = { ...loaded, stage: currentStage, stageChecklist: buildChecklist(currentStage) }
+          saveProject(fixed)
+          setProject(fixed)
+        } else {
+          setProject({ ...loaded, stage: currentStage })
+        }
+        setRevenueEntries(loadWeeklyRevenue().filter(r => r.projectId === id))
+        setEstimates(loadEstimates().filter(e => e.projectId === id))
+        setGanttEntries(loadGanttEntries(id))
+        setActuals(loadWeeklyActuals(id))
+        setProgressClaims(loadProgressClaims(id))
+        setStages(loadProgressPaymentStages(id))
+        setSubcontractors(loadSubcontractors(id))
+        // Pull any client variation approvals/rejections down from Supabase, then refresh the estimates.
+        const changed = await reconcileVariations()
+        if (changed > 0 && !cancelled) setEstimates(loadEstimates().filter(e => e.projectId === id))
+      } catch (e) {
+        console.error('Project load failed', e)
+        if (!cancelled) setLoadError(e instanceof Error ? e.message : 'Something went wrong loading this project.')
       }
-      if (cancelled) return
-      if (!found) { router.push('/projects'); return }
-      setNotesValue(found.notes || '')
-    // Auto-initialise or fix stage checklist
-    const loaded = found
-    const currentStage: ProjectStage = (loaded.stage as ProjectStage) || defaultStageForStatus(loaded.status || 'planning')
-    const existingChecklist = (loaded.stageChecklist as any[]) || []
-    // Checklist is stale if: missing, empty, or its IDs don't start with the current stage prefix
-    const checklistIsStale = existingChecklist.length === 0 ||
-      !existingChecklist[0]?.id?.startsWith(currentStage)
-    if (checklistIsStale) {
-      const fixed = { ...loaded, stage: currentStage, stageChecklist: buildChecklist(currentStage) }
-      saveProject(fixed)
-      setProject(fixed)
-    } else {
-      setProject({ ...loaded, stage: currentStage })
-    }
-    setRevenueEntries(loadWeeklyRevenue().filter(r => r.projectId === id))
-    setEstimates(loadEstimates().filter(e => e.projectId === id))
-      setGanttEntries(loadGanttEntries(id))
-      setActuals(loadWeeklyActuals(id))
-      setProgressClaims(loadProgressClaims(id))
-      setStages(loadProgressPaymentStages(id))
-      setSubcontractors(loadSubcontractors(id))
-      // Pull any client variation approvals/rejections down from Supabase, then refresh the estimates.
-      const changed = await reconcileVariations()
-      if (changed > 0 && !cancelled) setEstimates(loadEstimates().filter(e => e.projectId === id))
     })()
     return () => { cancelled = true }
-  }, [id, router])
+  }, [id, router, loadAttempt])
 
   // Auto-save notes
   const saveNotes = useCallback(() => {
@@ -1174,7 +1184,24 @@ export default function ProjectDetailPage() {
   if (!project) {
     return (
       <div className="min-h-screen bg-fg-bg flex items-center justify-center">
-        <p className="text-fg-muted font-light">Loading…</p>
+        {loadError ? (
+          <div className="text-center px-6">
+            <p className="text-sm text-fg-heading">This project couldn&apos;t load.</p>
+            <p className="text-xs text-fg-muted mt-1 max-w-md break-words">{loadError}</p>
+            <div className="mt-4 flex items-center justify-center gap-3">
+              <button onClick={() => setLoadAttempt(a => a + 1)}
+                className="px-4 py-2 bg-fg-dark text-white text-xs font-light tracking-wide uppercase hover:bg-fg-darker transition-colors">
+                Try again
+              </button>
+              <button onClick={() => router.push('/projects')}
+                className="px-4 py-2 border border-fg-border text-fg-heading text-xs font-light tracking-wide uppercase hover:bg-fg-card/40 transition-colors">
+                All projects
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-fg-muted font-light">Loading…</p>
+        )}
       </div>
     )
   }
