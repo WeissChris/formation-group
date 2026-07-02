@@ -11,7 +11,7 @@
 // budget+actual to HOURS (allowed hours = estimateLabourHours) — the maths below is unit-agnostic.
 
 import type { Estimate, WeeklyActual, SubcontractorPackage, GanttEntry } from '@/types'
-import { activeLineItems, costBreakdown } from './estimateCalculations'
+import { activeLineItems, costBreakdown, STD_LABOUR_RATE } from './estimateCalculations'
 import { entrySegments } from './ganttForecast'
 import { workingDaysBetween } from './ganttSchedule'
 
@@ -92,9 +92,14 @@ export interface ScorecardInput {
   subbies: SubcontractorPackage[]
   gantt: GanttEntry[]
   today: string   // ISO date
+  /** REAL logged hours from Xero timesheets (fg_xero_project_hours). When present (non-null),
+   *  the labour lever runs on these instead of the $-derived fallback: the hours are valued at
+   *  STD_LABOUR_RATE, so lever %, projection and the score all measure hours used vs allowed
+   *  (allowance = labour budget / rate = estimateLabourHours). Null = not synced yet. */
+  actualLabourHours?: number | null
 }
 
-export function computeScorecard({ estimate, actuals, subbies, gantt, today }: ScorecardInput): Scorecard {
+export function computeScorecard({ estimate, actuals, subbies, gantt, today, actualLabourHours }: ScorecardInput): Scorecard {
   const items = estimate ? activeLineItems(estimate) : []
   const b = costBreakdown(items)
   const budgetMaterials = b.material + b.equipment   // supply-type spend the foreman logs together
@@ -103,7 +108,10 @@ export function computeScorecard({ estimate, actuals, subbies, gantt, today }: S
   const budgetCost = budgetMaterials + budgetLabour + budgetSubbies
 
   const actMaterials = actuals.reduce((s, a) => s + (a.supplyCost || 0), 0)
-  const actLabour = actuals.reduce((s, a) => s + (a.labourCost || 0), 0)
+  // Labour actual: real timesheet hours at the costed rate when synced, else the logged-$ fallback.
+  const actLabour = actualLabourHours != null
+    ? actualLabourHours * STD_LABOUR_RATE
+    : actuals.reduce((s, a) => s + (a.labourCost || 0), 0)
   const committedSubbies = subbies.reduce((s, p) => s + (p.approvedValue || 0) + (p.variations || 0), 0)
 
   const progress = scheduleProgress(gantt, today)

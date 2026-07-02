@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runFullSync } from '@/lib/xeroCostSync'
+import { runHoursSync } from '@/lib/xeroHoursSync'
 
 export const runtime = 'nodejs'
 // Vercel function timeout — initial 24-month backfill can take ~60-90s. Allow margin.
@@ -29,6 +30,13 @@ export async function POST(request: NextRequest) {
 
   const result = await runFullSync('cron_hourly')
 
+  // Labour HOURS from payroll timesheets - additive and isolated (a failure or throttle-skip
+  // never affects the cost sync). Internally throttled to ~daily; hourly calls mostly no-op.
+  const hours = await runHoursSync().catch(e => ({
+    ok: false as const, timesheets_processed: 0, lines_matched: 0, projects_updated: 0, rows_written: 0,
+    error: e instanceof Error ? e.message : 'hours_sync_failed',
+  }))
+
   // Treat the "nothing to do yet" cases as 200-skipped, not 502-failed:
   //   - no_xero_tokens                  → Xero not connected yet via Settings page
   //   - supabase_admin_not_configured   → SUPABASE_SERVICE_ROLE_KEY not set
@@ -41,8 +49,8 @@ export async function POST(request: NextRequest) {
   //   rate_limited                    → Xero 429; will auto-retry next hour with back-off
   const KNOWN_SKIP_REASONS = new Set(['no_xero_tokens', 'supabase_admin_not_configured', 'rate_limited'])
   if (!result.ok && result.error && KNOWN_SKIP_REASONS.has(result.error)) {
-    return NextResponse.json({ ...result, skipped: true }, { status: 200 })
+    return NextResponse.json({ ...result, hours, skipped: true }, { status: 200 })
   }
 
-  return NextResponse.json(result, { status: result.ok ? 200 : 502 })
+  return NextResponse.json({ ...result, hours }, { status: result.ok ? 200 : 502 })
 }

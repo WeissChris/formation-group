@@ -8,7 +8,7 @@ import { activeLineItems, estimateLabourHours, STD_LABOUR_RATE } from '@/lib/est
 import { computeScorecard, type ScoreStatus } from '@/lib/siteScorecard'
 import {
   siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, getSiteBoq,
-  getSitePlans, uploadSitePlan, deleteSitePlan,
+  getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours,
   type SiteProject, type SitePlan,
 } from '@/lib/siteData'
 import type { GanttEntry, WeeklyActual, SubcontractorPackage, Estimate } from '@/types'
@@ -403,16 +403,18 @@ function Scorecard({ projectId, gantt }: { projectId: string; gantt: GanttEntry[
   const [actuals, setActuals] = useState<WeeklyActual[] | null>(null)
   const [estimate, setEstimate] = useState<Estimate | null>(null)
   const [subbies, setSubbies] = useState<SubcontractorPackage[]>([])
+  const [xeroHours, setXeroHours] = useState<number | null>(null)
 
   useEffect(() => {
     getSiteActuals(projectId).then(setActuals)
     getSiteBoq(projectId).then(setEstimate)
     getSiteSubbies(projectId).then(s => setSubbies(s || []))
+    getSiteHours(projectId).then(h => setXeroHours(h.totalHours))
   }, [projectId])
 
   const card = useMemo(() => computeScorecard({
-    estimate, actuals: actuals || [], subbies, gantt, today: toISO(new Date()),
-  }), [estimate, actuals, subbies, gantt])
+    estimate, actuals: actuals || [], subbies, gantt, today: toISO(new Date()), actualLabourHours: xeroHours,
+  }), [estimate, actuals, subbies, gantt, xeroHours])
   const overall = STATUS_UI[card.status]
 
   // Labour reads in HOURS (allowance and used). Labour is always priced at the standard rate, so
@@ -468,7 +470,11 @@ function Scorecard({ projectId, gantt }: { projectId: string; gantt: GanttEntry[
               </div>
             )
           })}
-          <p className="text-[11px] text-fg-muted">Costs and labour hours flow in from Xero - nothing to log here.</p>
+          <p className="text-[11px] text-fg-muted">
+            {xeroHours != null
+              ? 'Labour hours are the crew’s logged Xero timesheets; costs flow in from Xero - nothing to log here.'
+              : 'Costs and labour hours flow in from Xero - nothing to log here. (No timesheet hours synced for this job yet.)'}
+          </p>
         </div>
       ) : (
         <p className="text-sm text-fg-muted text-center py-2">No estimate to score against yet.</p>

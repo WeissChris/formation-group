@@ -90,6 +90,13 @@ export async function getSiteSubbies(id: string): Promise<SubcontractorPackage[]
   return d?.subbies ?? []
 }
 
+// Real logged labour hours from Xero timesheets (fg_xero_project_hours). totalHours null =
+// no rows yet -> the Scorecard falls back to the $-derived labour figure.
+export async function getSiteHours(id: string): Promise<{ totalHours: number | null; weeks: { weekEnding: string; hours: number }[] }> {
+  const d = await getJson<{ ok: boolean; totalHours: number | null; weeks: { weekEnding: string; hours: number }[] }>(`/api/site/projects/${id}/hours`)
+  return d?.ok ? { totalHours: d.totalHours, weeks: d.weeks } : { totalHours: null, weeks: [] }
+}
+
 // ── Plans (private Supabase Storage bucket, one folder per project) ──────────────
 
 export interface SitePlan { name: string; path: string; size: number; updatedAt: string; url: string }

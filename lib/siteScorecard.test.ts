@@ -82,4 +82,25 @@ describe('computeScorecard', () => {
     expect(sc.hasBudget).toBe(false)
     expect(sc.score).toBeNull()
   })
+
+  it('uses REAL Xero timesheet hours for the labour lever when provided (at $68/hr)', () => {
+    // 10000 labour budget = 147.06 allowed hours. 73.53 real hours at half-way = exactly on plan.
+    const hours = 10000 / 68 / 2
+    const sc = computeScorecard({
+      estimate, actuals: [actual(5000, 999999)],   // logged labour $ is IGNORED once hours exist
+      subbies: [subbie(10000)], gantt: ganttHalf, today: '2026-08-07', actualLabourHours: hours,
+    })
+    const lab = sc.levers.find(l => l.key === 'labour')!
+    expect(lab.actual).toBeCloseTo(5000, 4)        // hours * 68
+    expect(lab.status).toBe('good')
+    expect(sc.score).toBe(100)
+  })
+
+  it('falls back to logged labour $ when hours are null (not yet synced)', () => {
+    const sc = computeScorecard({
+      estimate, actuals: [actual(5000, 7500)], subbies: [subbie(10000)], gantt: ganttHalf,
+      today: '2026-08-07', actualLabourHours: null,
+    })
+    expect(sc.levers.find(l => l.key === 'labour')?.actual).toBe(7500)
+  })
 })
