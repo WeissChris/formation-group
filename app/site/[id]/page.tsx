@@ -10,8 +10,9 @@ import { isVicPublicHoliday, vicPublicHolidayName } from '@/lib/publicHolidays'
 import {
   siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, getSiteBoq,
   getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours, getSiteMilestones, getSiteSafety, postSiteSafety,
-  getSiteBaseline, getSiteVariations, createSiteVariation,
+  getSiteBaseline, getSiteVariations, createSiteVariation, getSiteBookings, saveSiteBooking,
   type SiteProject, type SitePlan, type SiteMilestone, type SiteSafety, type SiteBaseline, type SiteVariation,
+  type SubbieBooking,
 } from '@/lib/siteData'
 import { SEVERITY_LABEL } from '@/lib/safetyDocs'
 import type { GanttEntry, WeeklyActual, SubcontractorPackage, Estimate } from '@/types'
@@ -47,9 +48,11 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
   const [plans, setPlans] = useState<SitePlan[]>([])
   const [baseline, setBaseline] = useState<SiteBaseline | null>(null)
   const [variations, setVariations] = useState<SiteVariation[]>([])
+  const [bookings, setBookings] = useState<SubbieBooking[]>([])
 
   const refreshSafety = () => getSiteSafety(params.id).then(setSafety)
   const refreshVariations = () => getSiteVariations(params.id).then(setVariations)
+  const refreshBookings = () => getSiteBookings(params.id).then(setBookings)
 
   useEffect(() => {
     siteMe().then(m => {
@@ -68,6 +71,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
       getSitePlans(params.id).then(setPlans)
       getSiteBaseline(params.id).then(setBaseline)
       getSiteVariations(params.id).then(setVariations)
+      getSiteBookings(params.id).then(setBookings)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id, router])
@@ -106,7 +110,8 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
         {tab === 'dashboard' && (
           <Dashboard project={project} gantt={gantt} card={card} milestones={milestones} openTab={setTab}
             safety={safety} plans={plans} baseline={baseline} hoursWeeks={hoursWeeks}
-            variations={variations} refreshVariations={refreshVariations} />
+            variations={variations} refreshVariations={refreshVariations}
+            bookings={bookings} refreshBookings={refreshBookings} />
         )}
         {tab === 'schedule' && <Schedule gantt={gantt} projectId={project.id} />}
         {tab === 'boq' && <Boq projectId={project.id} />}
@@ -142,6 +147,66 @@ function fmt(iso: string): string {
   const d = new Date(iso); return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
 }
 function money(n: number): string { return '$' + Math.round(n).toLocaleString('en-AU') }
+
+// ── Subbie contact box (booked tick + comment; due dates flow from the gantt) ───────
+function SubbieBookingsCard({ projectId, scopes, refresh }: {
+  projectId: string
+  scopes: { category: string; due: string; inDays: number; booked: boolean; comment: string }[]
+  refresh: () => void
+}) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [savingFor, setSavingFor] = useState<string | null>(null)
+
+  const toggle = async (s: (typeof scopes)[number]) => {
+    setSavingFor(s.category)
+    await saveSiteBooking(projectId, { category: s.category, booked: !s.booked })
+    setSavingFor(null)
+    refresh()
+  }
+  const saveComment = async (s: (typeof scopes)[number]) => {
+    const draft = drafts[s.category]
+    if (draft === undefined || draft === s.comment) return
+    setSavingFor(s.category)
+    await saveSiteBooking(projectId, { category: s.category, comment: draft })
+    setSavingFor(null)
+    refresh()
+  }
+
+  return (
+    <div>
+      <h2 className="text-sm font-medium mb-2">Subbie bookings</h2>
+      <ul className="space-y-2">
+        {scopes.map(s => {
+          const dueTone = s.booked ? 'text-fg-muted'
+            : s.inDays < 0 ? 'text-red-600 font-medium'
+            : s.inDays <= 7 ? 'text-amber-600 font-medium' : 'text-fg-muted'
+          return (
+            <li key={s.category} className={`rounded-lg border p-3 ${s.booked ? 'border-fg-border/60 bg-fg-card/10' : 'border-fg-border'}`}>
+              <div className="flex items-center justify-between gap-3">
+                <label className="flex items-center gap-2.5 min-w-0 cursor-pointer">
+                  <input type="checkbox" checked={s.booked} disabled={savingFor === s.category}
+                    onChange={() => toggle(s)} className="w-4 h-4 accent-fg-heading shrink-0" />
+                  <span className={`text-sm font-medium truncate ${s.booked ? 'text-fg-muted' : ''}`}>{s.category}</span>
+                </label>
+                <span className={`text-xs tabular-nums shrink-0 ${dueTone}`}>
+                  {s.booked ? 'Booked' : `due ${fmt(s.due)}${s.inDays >= 0 ? ` · in ${s.inDays}d` : ' · OVERDUE'}`}
+                </span>
+              </div>
+              <input
+                value={drafts[s.category] ?? s.comment}
+                onChange={e => setDrafts(d => ({ ...d, [s.category]: e.target.value }))}
+                onBlur={() => saveComment(s)}
+                placeholder="Comment - e.g. left a message, pushed to Thursday..."
+                className="w-full mt-2 border border-fg-border/60 rounded-lg px-2.5 py-1.5 text-xs bg-white placeholder:text-fg-muted/50"
+              />
+            </li>
+          )
+        })}
+      </ul>
+      <p className="text-[10px] text-fg-muted mt-1.5">Due dates come from the schedule - tick each subbie once they&apos;re contacted and booked in. Comments save automatically.</p>
+    </div>
+  )
+}
 
 // ── Variations (foreman-raised, capped at $1000, client approves digitally) ─────────
 function VariationsCard({ projectId, variations, refresh }: {
@@ -410,15 +475,36 @@ function ThisWeekStrip({ gantt, offset = 0, title = 'This week' }: { gantt: Gant
 }
 
 // ── Dashboard (default landing — the at-a-glance cockpit view) ─────────────────────
-function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, baseline, hoursWeeks, variations, refreshVariations }: {
+function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, baseline, hoursWeeks, variations, refreshVariations, bookings, refreshBookings }: {
   project: SiteProject; gantt: GanttEntry[]; card: ReturnType<typeof computeScorecard>
   milestones: SiteMilestone[]; openTab: (t: Tab) => void
   safety: SiteSafety | null; plans: SitePlan[]; baseline: SiteBaseline | null
   hoursWeeks: { weekEnding: string; hours: number }[]
   variations: SiteVariation[]; refreshVariations: () => void
+  bookings: SubbieBooking[]; refreshBookings: () => void
 }) {
   const todayIso = toISO(new Date())
   const [scoreOpen, setScoreOpen] = useState(false)
+
+  // Subbie contact box: every category with subcontractor work on the gantt, due = its scheduled
+  // start (moves automatically with the schedule). Booked tick + comment persist per category.
+  const subbieScopes = useMemo(() => {
+    const byCategory = new Map<string, string>()   // category -> earliest sub-claim start
+    for (const e of gantt) for (const { costType, seg } of entryClaimSegments(e)) {
+      if (costType !== 'subcontractor' || !seg.startDate) continue
+      const ex = byCategory.get(e.category)
+      if (!ex || seg.startDate < ex) byCategory.set(e.category, seg.startDate)
+    }
+    const state = new Map(bookings.map(b => [b.category, b]))
+    return Array.from(byCategory.entries())
+      .map(([category, due]) => ({
+        category, due,
+        inDays: Math.round((new Date(due).getTime() - new Date(todayIso).getTime()) / 86400000),
+        booked: state.get(category)?.booked ?? false,
+        comment: state.get(category)?.comment ?? '',
+      }))
+      .sort((a, b) => Number(a.booked) - Number(b.booked) || a.due.localeCompare(b.due))
+  }, [gantt, bookings, todayIso])
 
   // Schedule tracking: the gantt's latest bar end (the live forecast completion) vs the office
   // planned completion. Positive diff = finishing later than planned = behind.
@@ -546,8 +632,15 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
     const freshPlans = plans.filter(p => p.updatedAt && p.updatedAt >= weekAgo).length
     if (freshPlans > 0) out.push({ text: `${freshPlans} drawing${freshPlans === 1 ? '' : 's'} updated this week - check before building`, level: 'info', tab: 'plans' })
 
+    // Unbooked subbies approaching (or past) their scheduled start.
+    for (const s of subbieScopes) {
+      if (s.booked) continue
+      if (s.inDays < 0) out.push({ text: `${s.category}: subbie not booked - work was due to start ${fmt(s.due)}`, level: 'red' })
+      else if (s.inDays <= 7) out.push({ text: `${s.category}: subbie not booked - starts in ${s.inDays}d`, level: 'amber' })
+    }
+
     return out
-  }, [safety, plans])
+  }, [safety, plans, subbieScopes])
 
   const overall = STATUS_UI[card.status]
 
@@ -710,6 +803,11 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
             ))}
           </ul>
         </div>
+      )}
+
+      {/* Subbie contact box: due dates from the gantt; tick when booked in; comment for delays */}
+      {subbieScopes.length > 0 && (
+        <SubbieBookingsCard projectId={project.id} scopes={subbieScopes} refresh={refreshBookings} />
       )}
 
       {/* Variations: the crew raise small ones (<= $1000) and the client approves digitally */}
