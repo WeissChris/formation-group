@@ -332,9 +332,10 @@ interface SegEditProps {
   // a subtask Materials/Subcontractor (% claim) instead of the Labour/hours default.
   availableTypes?: ('labour' | 'material' | 'subcontractor' | 'equipment')[]
   onSetCostType?: (ct: 'labour' | 'material' | 'subcontractor' | 'equipment') => void
+  showRevenue?: boolean   // false (supervisor / site mode): Totals + Remaining show COST $, not revenue $
 }
 
-function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBudget, equipmentBudget, onUpdate, onDelete, onConvertToMilestone, onClose, anchorRef, canSchedule, schedStart, schedDuration, schedUnit, onSchedule, costType, typeBudgetRev = 0, typeBudgetCost = 0, typeClaimedElsewhere = 0, contextLabel, availableTypes, onSetCostType }: SegEditProps) {
+function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBudget, equipmentBudget, onUpdate, onDelete, onConvertToMilestone, onClose, anchorRef, canSchedule, schedStart, schedDuration, schedUnit, onSchedule, costType, typeBudgetRev = 0, typeBudgetCost = 0, typeClaimedElsewhere = 0, contextLabel, availableTypes, onSetCostType, showRevenue = true }: SegEditProps) {
   // The foreman types this period's material/equipment % (0–100) and it updates LIVE: the other dated
   // periods auto-balance to fill the remainder so each resource always sums to 100%, and the totals/costs
   // recompute as you type — no Apply step. The breakdown below shows every period's share moving.
@@ -372,7 +373,8 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
   const claimRemaining = typeBudgetRev - typeClaimedElsewhere - (seg.revenueAllocation || 0)
   // For Labour, Chris wants the Remaining counter in HOURS, not $ (iter6 polish). Convert the remaining
   // revenue to cost via the type's rev/cost ratio, then to hours at the standard rate.
-  const remainingHours = typeBudgetRev > 0 ? (claimRemaining * (typeBudgetCost / typeBudgetRev)) / STD_LABOUR_RATE : 0
+  const remainingCost = typeBudgetRev > 0 ? claimRemaining * (typeBudgetCost / typeBudgetRev) : 0
+  const remainingHours = remainingCost / STD_LABOUR_RATE
 
   // Push the current state up immediately so the parent auto-balances + recomputes. The just-changed
   // field is passed as an override (its useState hasn't committed yet on this keystroke).
@@ -479,9 +481,10 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
               <input type="number" min={0} value={claimVal} onChange={e => applyClaim(e.target.value)} placeholder="0"
                 className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
             </div>
+            {/* In supervisor/site mode the M/S/E $ figures show the COST allocation, not revenue. */}
             <div className="text-[10px] text-fg-muted space-y-0.5 border-t border-fg-border/50 pt-2">
-              <div className="flex justify-between"><span>Totals for this claim</span><span className="tabular-nums text-fg-heading">{costType === 'labour' ? `${Math.round((seg.costAllocation || 0) / STD_LABOUR_RATE)}h` : formatCurrency(seg.revenueAllocation || 0)}</span></div>
-              <div className="flex justify-between"><span>Remaining</span><span className={`tabular-nums ${claimRemaining < -0.5 ? 'text-amber-600' : 'text-fg-muted'}`}>{costType === 'labour' ? `${Math.round(remainingHours)}h` : formatCurrency(claimRemaining)}</span></div>
+              <div className="flex justify-between"><span>Totals for this claim</span><span className="tabular-nums text-fg-heading">{costType === 'labour' ? `${Math.round((seg.costAllocation || 0) / STD_LABOUR_RATE)}h` : formatCurrency((showRevenue ? seg.revenueAllocation : seg.costAllocation) || 0)}</span></div>
+              <div className="flex justify-between"><span>Remaining</span><span className={`tabular-nums ${claimRemaining < -0.5 ? 'text-amber-600' : 'text-fg-muted'}`}>{costType === 'labour' ? `${Math.round(remainingHours)}h` : formatCurrency(showRevenue ? claimRemaining : remainingCost)}</span></div>
             </div>
           </>
         )}
@@ -568,9 +571,10 @@ interface MilestonePopoverProps {
   onDelete: () => void
   onClose: () => void
   anchorRef: React.RefObject<HTMLDivElement | null>
+  showValue?: boolean   // false (site mode) hides the $ claim field; an existing value is preserved on Apply
 }
 
-function MilestonePopover({ milestone, onUpdate, onDelete, onClose, anchorRef }: MilestonePopoverProps) {
+function MilestonePopover({ milestone, onUpdate, onDelete, onClose, anchorRef, showValue = true }: MilestonePopoverProps) {
   const [label, setLabel] = useState(milestone.label)
   const [date, setDate] = useState(milestone.date)
   const [colour, setColour] = useState(milestone.colour ?? MILESTONE_COLOURS[0])
@@ -604,12 +608,14 @@ function MilestonePopover({ milestone, onUpdate, onDelete, onClose, anchorRef }:
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
             className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading" />
         </div>
-        <div>
-          <label className="text-2xs font-light text-fg-muted block mb-1">Claim value $ (optional)</label>
-          <input type="number" min={0} value={value} onChange={e => setValue(e.target.value)} placeholder="e.g. 5000"
-            title="A $ claim at this milestone — adds to the cash-flow + forecast at its week"
-            className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
-        </div>
+        {showValue && (
+          <div>
+            <label className="text-2xs font-light text-fg-muted block mb-1">Claim value $ (optional)</label>
+            <input type="number" min={0} value={value} onChange={e => setValue(e.target.value)} placeholder="e.g. 5000"
+              title="A $ claim at this milestone — adds to the cash-flow + forecast at its week"
+              className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading tabular-nums" />
+          </div>
+        )}
         <div>
           <label className="text-2xs font-light text-fg-muted block mb-1">Colour</label>
           <div className="flex gap-2 flex-wrap">
@@ -747,9 +753,12 @@ export default function GanttPage() {
   // The baseline used for slip comparison + the ghost overlay: the loaded one, else the most recent.
   const activeBaseline = (loadedBaselineId ? baselines.find(b => b.id === loadedBaselineId) : null) ?? baselines[baselines.length - 1] ?? null
   // Supervisor view — hides revenue / GP / margin so a site supervisor sees budget + cost only. A view
-  // toggle (the app has no per-user roles yet), not enforced access control.
+  // toggle (the app has no per-user roles yet), not enforced access control. In the /site cockpit it is
+  // FORCED ON (and the toggle hidden): foremen set the schedule + allocations but never see the invoicing
+  // layer. UI-hiding only — the $ data stays in memory because recalcEntry derives revenueAllocation from
+  // budgetedRevenue on every edit and writes it back to the office forecast.
   const [supervisorView, setSupervisorView] = useState(false)
-  const showRevenue = !supervisorView
+  const showRevenue = !supervisorView && !siteMode
 
   // Whether the PDF/print includes financial figures (Andrew: export with the option to include or exclude
   // financials). Off → a class on <body> hides every .gantt-finance element in the print stylesheet.
@@ -2171,7 +2180,7 @@ export default function GanttPage() {
               style={{ width: 16 }}
               onClick={e => { e.stopPropagation(); milestoneAnchorRef.current = e.currentTarget as HTMLDivElement; setMilestonePopover(m.id) }}
               onMouseDown={e => e.stopPropagation()}
-              title={m.value ? `${m.label} — ${formatCurrency(m.value)} claim` : m.label}
+              title={m.value && showRevenue ? `${m.label} — ${formatCurrency(m.value)} claim` : m.label}
             >
               <span className="text-sm leading-none" style={{ color: m.colour ?? '#8A8580' }}>◆</span>
             </div>
@@ -2358,7 +2367,7 @@ export default function GanttPage() {
               <option value={3}>3 · 24h/day</option>
               <option value={4}>4 · 32h/day</option>
             </select>
-            {CREW_LABOUR_TARGET[crewSize] && (
+            {CREW_LABOUR_TARGET[crewSize] && showRevenue && (
               <span className="text-[10px] font-light text-fg-muted/70 border-l border-fg-border pl-1.5 ml-0.5 whitespace-nowrap"
                 title={`A crew of ${crewSize} should turn over ${formatCurrency(CREW_LABOUR_TARGET[crewSize].revenue)} of revenue per week on ${formatCurrency(CREW_LABOUR_TARGET[crewSize].labour)} of labour`}>
                 target <span className="text-fg-heading tabular-nums">{fmtK(CREW_LABOUR_TARGET[crewSize].revenue)}</span>/wk · lab <span className="text-fg-heading tabular-nums">{fmtK(CREW_LABOUR_TARGET[crewSize].labour)}</span>
@@ -2366,12 +2375,15 @@ export default function GanttPage() {
             )}
           </div>
 
-          {/* Supervisor view — budget/cost only, hides revenue + GP + margin */}
-          <button onClick={() => setSupervisorView(v => !v)}
-            title="Supervisor view: hide revenue, GP and margin (budget + cost only)"
-            className={`px-3 py-2 border text-[10px] font-light tracking-wide uppercase transition-colors ${supervisorView ? 'bg-fg-dark text-white/80 border-fg-dark' : 'border-fg-border text-fg-muted hover:text-fg-heading hover:border-fg-heading'}`}>
-            Supervisor
-          </button>
+          {/* Supervisor view — budget/cost only, hides revenue + GP + margin. Hidden in the /site
+              cockpit where it's forced on (a foreman must not be able to flip revenue back on). */}
+          {!siteMode && (
+            <button onClick={() => setSupervisorView(v => !v)}
+              title="Supervisor view: hide revenue, GP and margin (budget + cost only)"
+              className={`px-3 py-2 border text-[10px] font-light tracking-wide uppercase transition-colors ${supervisorView ? 'bg-fg-dark text-white/80 border-fg-dark' : 'border-fg-border text-fg-muted hover:text-fg-heading hover:border-fg-heading'}`}>
+              Supervisor
+            </button>
+          )}
 
           {/* Add Milestone */}
           {addingMilestone ? (
@@ -2440,7 +2452,9 @@ export default function GanttPage() {
               Split M/L/S
             </button>
           )}
-          {estimate && categories.length > 0 && (
+          {/* Budget CSV + the $ print toggle are office workflow — hidden in the /site cockpit (the
+              prints themselves stay: in forced supervisor view their output is cost-only). */}
+          {!siteMode && estimate && categories.length > 0 && (
             <button onClick={handleBudgetCsv}
               title="Export a month-by-month project budget (cost by Xero cost code, phased by this Gantt) as a CSV for Xero Budget Manager"
               className="px-4 py-2 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading hover:border-fg-heading transition-colors">
@@ -2453,11 +2467,13 @@ export default function GanttPage() {
               className="px-4 py-2 text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading transition-colors">
               Internal PDF
             </button>
-            <label title="Include the dollar figures in the internal PDF (uncheck for a schedule-only programme)"
-              className="flex items-center gap-1.5 px-2 border-l border-fg-border text-[10px] font-light tracking-wide uppercase text-fg-muted cursor-pointer hover:text-fg-heading">
-              <input type="checkbox" checked={printFinancials} onChange={e => setPrintFinancials(e.target.checked)} className="accent-fg-heading" />
-              $
-            </label>
+            {!siteMode && (
+              <label title="Include the dollar figures in the internal PDF (uncheck for a schedule-only programme)"
+                className="flex items-center gap-1.5 px-2 border-l border-fg-border text-[10px] font-light tracking-wide uppercase text-fg-muted cursor-pointer hover:text-fg-heading">
+                <input type="checkbox" checked={printFinancials} onChange={e => setPrintFinancials(e.target.checked)} className="accent-fg-heading" />
+                $
+              </label>
+            )}
             <button onClick={doClientPrint}
               title="Client-facing PDF — high level: every category as one bar, no financials, no controls"
               className="px-4 py-2 border-l border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading transition-colors">
@@ -2995,7 +3011,7 @@ export default function GanttPage() {
                               milestoneAnchorRef.current = e.currentTarget as HTMLDivElement
                               setMilestonePopover(m.id)
                             }}
-                            title={m.value ? `${m.label} — ${formatCurrency(m.value)} claim` : m.label}
+                            title={m.value && showRevenue ? `${m.label} — ${formatCurrency(m.value)} claim` : m.label}
                           >
                             <span className="text-base leading-none" style={{ color: m.colour ?? '#8A8580' }}>◆</span>
                             <span className="text-[8px] font-light text-fg-muted/80 mt-0.5 truncate max-w-full px-0.5 text-center leading-tight">
@@ -3068,6 +3084,7 @@ export default function GanttPage() {
           <SegmentPopover
             key={`${popover.subtaskId ?? 'main'}-${popover.segId}-${popCostType ?? ''}`}
             seg={seg}
+            showRevenue={showRevenue}
             siblingSegs={siblingSegs}
             labourBudget={labBudget}
             materialsBudget={matBudget}
@@ -3106,6 +3123,7 @@ export default function GanttPage() {
             onUpdate={handleMilestoneUpdate}
             onDelete={() => handleMilestoneDelete(milestonePopover)}
             onClose={() => setMilestonePopover(null)}
+            showValue={showRevenue}
           />
         )
       })()}
