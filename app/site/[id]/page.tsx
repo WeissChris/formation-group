@@ -404,17 +404,19 @@ function Scorecard({ projectId, gantt }: { projectId: string; gantt: GanttEntry[
   const [estimate, setEstimate] = useState<Estimate | null>(null)
   const [subbies, setSubbies] = useState<SubcontractorPackage[]>([])
   const [xeroHours, setXeroHours] = useState<number | null>(null)
+  const [xeroSupply, setXeroSupply] = useState<number | null>(null)
 
   useEffect(() => {
     getSiteActuals(projectId).then(setActuals)
     getSiteBoq(projectId).then(setEstimate)
     getSiteSubbies(projectId).then(s => setSubbies(s || []))
-    getSiteHours(projectId).then(h => setXeroHours(h.totalHours))
+    getSiteHours(projectId).then(h => { setXeroHours(h.totalHours); setXeroSupply(h.supplyCost) })
   }, [projectId])
 
   const card = useMemo(() => computeScorecard({
-    estimate, actuals: actuals || [], subbies, gantt, today: toISO(new Date()), actualLabourHours: xeroHours,
-  }), [estimate, actuals, subbies, gantt, xeroHours])
+    estimate, actuals: actuals || [], subbies, gantt, today: toISO(new Date()),
+    actualLabourHours: xeroHours, actualSupplyCost: xeroSupply,
+  }), [estimate, actuals, subbies, gantt, xeroHours, xeroSupply])
   const overall = STATUS_UI[card.status]
 
   // Labour reads in HOURS (allowance and used). Labour is always priced at the standard rate, so
@@ -434,10 +436,18 @@ function Scorecard({ projectId, gantt }: { projectId: string; gantt: GanttEntry[
             <p className="text-[10px] uppercase tracking-wide text-fg-muted">Job score</p>
             <p className={`text-3xl font-light leading-none mt-1 ${overall.text}`}>
               {card.score === null ? '--' : card.score}
-              {card.score !== null && <span className="text-base text-fg-muted"> / 100</span>}
+              {card.score !== null && (
+                // Above 100 = projected to finish UNDER budget - "112 / 100" read like a bug, so
+                // the suffix says what it means instead.
+                card.score > 100
+                  ? <span className="text-base text-fg-muted"> · target 100</span>
+                  : <span className="text-base text-fg-muted"> / 100</span>
+              )}
             </p>
           </div>
-          <span className={`text-sm font-medium ${overall.text}`}>{overall.label}</span>
+          <span className={`text-sm font-medium ${overall.text}`}>
+            {card.score !== null && card.score > 100 ? 'Ahead of budget' : overall.label}
+          </span>
         </div>
         <div className="mt-3">
           <div className="flex justify-between text-[11px] text-fg-muted mb-1">

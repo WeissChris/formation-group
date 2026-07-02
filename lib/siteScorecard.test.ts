@@ -103,4 +103,22 @@ describe('computeScorecard', () => {
     })
     expect(sc.levers.find(l => l.key === 'labour')?.actual).toBe(7500)
   })
+
+  it('uses Xero supply spend for the materials lever when provided, ignoring logged $', () => {
+    const sc = computeScorecard({
+      estimate, actuals: [actual(999999, 5000)], subbies: [subbie(10000)], gantt: ganttHalf,
+      today: '2026-08-07', actualSupplyCost: 5000,
+    })
+    const mat = sc.levers.find(l => l.key === 'materials')!
+    expect(mat.actual).toBe(5000)
+    expect(mat.status).toBe('good')
+  })
+
+  it('falls back to logged supply $ when Xero supply is null', () => {
+    const sc = computeScorecard({
+      estimate, actuals: [actual(4000, 5000)], subbies: [], gantt: ganttHalf,
+      today: '2026-08-07', actualSupplyCost: null,
+    })
+    expect(sc.levers.find(l => l.key === 'materials')?.actual).toBe(4000)
+  })
 })

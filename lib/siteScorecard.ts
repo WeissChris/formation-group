@@ -97,9 +97,13 @@ export interface ScorecardInput {
    *  STD_LABOUR_RATE, so lever %, projection and the score all measure hours used vs allowed
    *  (allowance = labour budget / rate = estimateLabourHours). Null = not synced yet. */
   actualLabourHours?: number | null
+  /** Supply spend to date from the Xero cost feed (fg_xero_project_costs minus labour/subbie
+   *  accounts). When present (non-null) the materials lever runs on it instead of the retired
+   *  foreman cost log (fg_actuals), which nothing feeds any more. Null = not synced yet. */
+  actualSupplyCost?: number | null
 }
 
-export function computeScorecard({ estimate, actuals, subbies, gantt, today, actualLabourHours }: ScorecardInput): Scorecard {
+export function computeScorecard({ estimate, actuals, subbies, gantt, today, actualLabourHours, actualSupplyCost }: ScorecardInput): Scorecard {
   const items = estimate ? activeLineItems(estimate) : []
   const b = costBreakdown(items)
   const budgetMaterials = b.material + b.equipment   // supply-type spend the foreman logs together
@@ -107,7 +111,10 @@ export function computeScorecard({ estimate, actuals, subbies, gantt, today, act
   const budgetSubbies = b.subcontractor
   const budgetCost = budgetMaterials + budgetLabour + budgetSubbies
 
-  const actMaterials = actuals.reduce((s, a) => s + (a.supplyCost || 0), 0)
+  // Materials actual: Xero supply spend when synced, else the legacy logged-$ fallback.
+  const actMaterials = actualSupplyCost != null
+    ? actualSupplyCost
+    : actuals.reduce((s, a) => s + (a.supplyCost || 0), 0)
   // Labour actual: real timesheet hours at the costed rate when synced, else the logged-$ fallback.
   const actLabour = actualLabourHours != null
     ? actualLabourHours * STD_LABOUR_RATE
