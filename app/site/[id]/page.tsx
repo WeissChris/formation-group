@@ -8,13 +8,14 @@ import { activeLineItems, estimateLabourHours, STD_LABOUR_RATE } from '@/lib/est
 import { computeScorecard, type ScoreStatus } from '@/lib/siteScorecard'
 import {
   siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, getSiteBoq,
-  getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours,
-  type SiteProject, type SitePlan,
+  getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours, getSiteMilestones,
+  type SiteProject, type SitePlan, type SiteMilestone,
 } from '@/lib/siteData'
 import type { GanttEntry, WeeklyActual, SubcontractorPackage, Estimate } from '@/types'
 
-type Tab = 'schedule' | 'boq' | 'plans' | 'subbies' | 'client' | 'score'
+type Tab = 'dashboard' | 'schedule' | 'boq' | 'plans' | 'subbies' | 'client' | 'score'
 const TABS: { key: Tab; label: string }[] = [
+  { key: 'dashboard', label: 'Dashboard' },
   { key: 'schedule', label: 'Schedule' },
   { key: 'boq', label: 'BOQ' },
   { key: 'subbies', label: 'Subbies' },
@@ -28,7 +29,15 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
   const [project, setProject] = useState<SiteProject | null>(null)
   const [gantt, setGantt] = useState<GanttEntry[]>([])
   const [denied, setDenied] = useState(false)
-  const [tab, setTab] = useState<Tab>('schedule')
+  const [tab, setTab] = useState<Tab>('dashboard')
+  // Shared scorecard/dashboard data — fetched once up front (the Dashboard needs it on landing),
+  // consumed by both the Dashboard strip and the Scorecard tab.
+  const [actuals, setActuals] = useState<WeeklyActual[] | null>(null)
+  const [estimate, setEstimate] = useState<Estimate | null>(null)
+  const [subbies, setSubbies] = useState<SubcontractorPackage[]>([])
+  const [xeroHours, setXeroHours] = useState<number | null>(null)
+  const [xeroSupply, setXeroSupply] = useState<number | null>(null)
+  const [milestones, setMilestones] = useState<SiteMilestone[]>([])
 
   useEffect(() => {
     siteMe().then(m => {
@@ -38,8 +47,18 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
         setProject(p)
       })
       getSiteGantt(params.id).then(setGantt)
+      getSiteActuals(params.id).then(setActuals)
+      getSiteBoq(params.id).then(setEstimate)
+      getSiteSubbies(params.id).then(s => setSubbies(s || []))
+      getSiteHours(params.id).then(h => { setXeroHours(h.totalHours); setXeroSupply(h.supplyCost) })
+      getSiteMilestones(params.id).then(setMilestones)
     })
   }, [params.id, router])
+
+  const card = useMemo(() => computeScorecard({
+    estimate, actuals: actuals || [], subbies, gantt, today: toISO(new Date()),
+    actualLabourHours: xeroHours, actualSupplyCost: xeroSupply,
+  }), [estimate, actuals, subbies, gantt, xeroHours, xeroSupply])
 
   if (denied) return (
     <Centered>
@@ -67,12 +86,13 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
       </header>
 
       <div className="mt-4">
+        {tab === 'dashboard' && <Dashboard project={project} gantt={gantt} card={card} milestones={milestones} openTab={setTab} />}
         {tab === 'schedule' && <Schedule gantt={gantt} projectId={project.id} />}
         {tab === 'boq' && <Boq projectId={project.id} />}
         {tab === 'subbies' && <Subbies projectId={project.id} />}
         {tab === 'plans' && <Plans projectId={project.id} />}
         {tab === 'client' && <ClientAndSite project={project} />}
-        {tab === 'score' && <Scorecard projectId={project.id} gantt={gantt} />}
+        {tab === 'score' && <Scorecard card={card} actuals={actuals} xeroHours={xeroHours} />}
       </div>
     </div>
   )
@@ -95,9 +115,8 @@ function fmt(iso: string): string {
 }
 function money(n: number): string { return '$' + Math.round(n).toLocaleString('en-AU') }
 
-// ── Schedule (this-week strip + programme summary + link to the editable gantt) ────
-function Schedule({ gantt, projectId }: { gantt: GanttEntry[]; projectId: string }) {
-  // What's on this week — the merged-in "This Week" view, now a compact strip at the top.
+// ── This week (dashboard strip; also reused at the top of Schedule) ────────────────
+function ThisWeekStrip({ gantt }: { gantt: GanttEntry[] }) {
   const mon = thisMonday()
   const monIso = toISO(mon), friIso = toISO(addDays(mon, 4)), sunIso = toISO(addDays(mon, 6))
   const thisWeek = gantt.flatMap(e =>
@@ -105,6 +124,165 @@ function Schedule({ gantt, projectId }: { gantt: GanttEntry[]; projectId: string
       .filter(s => s.startDate && s.endDate && s.startDate <= sunIso && s.endDate >= monIso)
       .map(s => ({ category: e.category, seg: s })))
 
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-2">
+        <h2 className="text-sm font-medium">This week</h2>
+        <span className="text-xs text-fg-muted">{fmt(monIso)} &ndash; {fmt(friIso)}</span>
+      </div>
+      {thisWeek.length === 0 ? (
+        <p className="text-sm text-fg-muted py-4 text-center rounded-lg border border-fg-border/60 border-dashed">
+          No work scheduled this week.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {thisWeek.map((a, i) => (
+            <li key={i} className="rounded-lg border border-fg-border p-3 flex items-center justify-between">
+              <div className="min-w-0">
+                <p className="font-medium truncate">{a.category}</p>
+                <p className="text-xs text-fg-muted">{fmt(a.seg.startDate)} &ndash; {fmt(a.seg.endDate)}{a.seg.label ? ` · ${a.seg.label}` : ''}</p>
+              </div>
+              <span className="text-xs text-fg-muted tabular-nums shrink-0">{money(a.seg.costAllocation)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ── Dashboard (default landing — the at-a-glance cockpit view) ─────────────────────
+function Dashboard({ project, gantt, card, milestones, openTab }: {
+  project: SiteProject; gantt: GanttEntry[]; card: ReturnType<typeof computeScorecard>
+  milestones: SiteMilestone[]; openTab: (t: Tab) => void
+}) {
+  const todayIso = toISO(new Date())
+
+  // Schedule tracking: the gantt's latest bar end (the live forecast completion) vs the office
+  // planned completion. Positive diff = finishing later than planned = behind.
+  const forecastEnd = useMemo(() => {
+    let latest = ''
+    for (const e of gantt) for (const s of entrySegments(e)) {
+      if (s.endDate && s.endDate > latest) latest = s.endDate
+    }
+    return latest
+  }, [gantt])
+  const planned = project.plannedCompletion || ''
+  const slipDays = forecastEnd && planned
+    ? Math.round((new Date(forecastEnd).getTime() - new Date(planned).getTime()) / 86400000)
+    : null
+
+  const upcoming = useMemo(() =>
+    milestones
+      .filter(m => m.date && m.date >= todayIso)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(0, 3)
+      .map(m => ({ ...m, inDays: Math.round((new Date(m.date).getTime() - new Date(todayIso).getTime()) / 86400000) })),
+    [milestones, todayIso])
+
+  const overall = STATUS_UI[card.status]
+
+  return (
+    <section className="space-y-6">
+      {/* Job details */}
+      <div className="rounded-xl border border-fg-border p-4 space-y-1.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium truncate">{project.clientName || '-'}</p>
+            <p className="text-xs text-fg-muted">{project.address || ''}</p>
+          </div>
+          <button onClick={() => openTab('client')} className="text-xs underline text-fg-muted shrink-0">Details</button>
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs pt-1">
+          {project.clientPhone && <a href={`tel:${project.clientPhone}`} className="underline">{project.clientPhone}</a>}
+          {project.clientEmail && <a href={`mailto:${project.clientEmail}`} className="underline break-all">{project.clientEmail}</a>}
+          {project.address && (
+            <a href={`https://maps.google.com/?q=${encodeURIComponent(project.address)}`} target="_blank" rel="noopener noreferrer"
+              className="underline text-fg-heading">Map</a>
+          )}
+        </div>
+      </div>
+
+      {/* Scorecard strip */}
+      <button onClick={() => openTab('score')} className="w-full text-left">
+        <div className={`rounded-xl border-2 ${overall.ring} p-3 flex items-center gap-4`}>
+          <div className="shrink-0">
+            <p className="text-[9px] uppercase tracking-wide text-fg-muted">Score</p>
+            <p className={`text-2xl font-light leading-none ${overall.text}`}>{card.score === null ? '--' : card.score}</p>
+          </div>
+          <div className="flex-1 min-w-0 space-y-1.5">
+            {card.levers.map(l => {
+              const ui = STATUS_UI[l.status]
+              return (
+                <div key={l.key} className="flex items-center gap-2">
+                  <span className="text-[10px] w-16 shrink-0 text-fg-muted">{l.label === 'Subcontractors' ? 'Subbies' : l.label}</span>
+                  <div className="flex-1 h-1.5 rounded-full bg-fg-border/40 overflow-hidden">
+                    <div className={`h-full ${ui.bar}`} style={{ width: `${Math.round(Math.min(1, l.consumedPct) * 100)}%` }} />
+                  </div>
+                  <span className="text-[10px] tabular-nums text-fg-muted w-9 text-right shrink-0">
+                    {l.budget > 0 ? `${Math.round(l.consumedPct * 100)}%` : '-'}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </button>
+
+      {/* Schedule tracking */}
+      <div className="rounded-xl border border-fg-border p-4">
+        <div className="flex items-baseline justify-between mb-2">
+          <h2 className="text-sm font-medium">Schedule</h2>
+          {slipDays !== null ? (
+            <span className={`text-xs font-medium ${slipDays > 2 ? 'text-red-600' : slipDays > 0 ? 'text-amber-600' : 'text-green-700'}`}>
+              {slipDays > 0 ? `${slipDays} day${slipDays === 1 ? '' : 's'} behind` : slipDays < 0 ? `${-slipDays} day${slipDays === -1 ? '' : 's'} ahead` : 'On plan'}
+            </span>
+          ) : forecastEnd ? (
+            <span className="text-xs text-fg-muted">Finishes {fmt(forecastEnd)}</span>
+          ) : (
+            <span className="text-xs text-fg-muted">Not scheduled yet</span>
+          )}
+        </div>
+        <div className="flex justify-between text-[11px] text-fg-muted mb-1">
+          <span>Job progress</span><span>{Math.round(card.progressPct * 100)}%</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-fg-border/50 overflow-hidden">
+          <div className="h-full bg-fg-heading" style={{ width: `${Math.round(card.progressPct * 100)}%` }} />
+        </div>
+        {forecastEnd && planned && (
+          <p className="text-[11px] text-fg-muted mt-2">Tracking to {fmt(forecastEnd)} &middot; planned {fmt(planned)}</p>
+        )}
+        <button onClick={() => openTab('schedule')} className="text-xs underline text-fg-muted mt-2">Open schedule</button>
+      </div>
+
+      {/* This week */}
+      <ThisWeekStrip gantt={gantt} />
+
+      {/* Next milestones */}
+      {upcoming.length > 0 && (
+        <div>
+          <h2 className="text-sm font-medium mb-2">Next milestones</h2>
+          <ul className="space-y-2">
+            {upcoming.map(m => (
+              <li key={m.id} className="rounded-lg border border-fg-border p-3 flex items-center justify-between">
+                <div className="min-w-0 flex items-center gap-2">
+                  <span className="text-sm" style={{ color: m.colour ?? '#8A8580' }}>&#9670;</span>
+                  <p className="font-medium truncate">{m.label}</p>
+                </div>
+                <span className="text-xs text-fg-muted tabular-nums shrink-0">
+                  {fmt(m.date)} &middot; {m.inDays === 0 ? 'today' : `in ${m.inDays}d`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  )
+}
+
+// ── Schedule (programme summary + link to the editable gantt) ──────────────────────
+function Schedule({ gantt, projectId }: { gantt: GanttEntry[]; projectId: string }) {
   // The full programme — every category's overall start/end, sorted by start.
   const rows = gantt.map(e => {
     const segs = entrySegments(e).filter(s => s.startDate && s.endDate)
@@ -117,31 +295,7 @@ function Schedule({ gantt, projectId }: { gantt: GanttEntry[]; projectId: string
 
   return (
     <section className="space-y-6">
-      {/* This week */}
-      <div>
-        <div className="flex items-baseline justify-between mb-2">
-          <h2 className="text-sm font-medium">This week</h2>
-          <span className="text-xs text-fg-muted">{fmt(monIso)} &ndash; {fmt(friIso)}</span>
-        </div>
-        {thisWeek.length === 0 ? (
-          <p className="text-sm text-fg-muted py-4 text-center rounded-lg border border-fg-border/60 border-dashed">
-            No work scheduled this week.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {thisWeek.map((a, i) => (
-              <li key={i} className="rounded-lg border border-fg-border p-3 flex items-center justify-between">
-                <div className="min-w-0">
-                  <p className="font-medium truncate">{a.category}</p>
-                  <p className="text-xs text-fg-muted">{fmt(a.seg.startDate)} &ndash; {fmt(a.seg.endDate)}{a.seg.label ? ` · ${a.seg.label}` : ''}</p>
-                </div>
-                <span className="text-xs text-fg-muted tabular-nums shrink-0">{money(a.seg.costAllocation)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
+      {/* The this-week strip lives on the Dashboard now; Schedule is the programme + editor. */}
       {/* Editable programme */}
       <div>
         <Link href={`/site/${projectId}/schedule`}
@@ -399,24 +553,10 @@ const STATUS_UI: Record<ScoreStatus, { bar: string; text: string; ring: string; 
   na:    { bar: 'bg-fg-border', text: 'text-fg-muted',  ring: 'border-fg-border', label: 'Too early' },
 }
 
-function Scorecard({ projectId, gantt }: { projectId: string; gantt: GanttEntry[] }) {
-  const [actuals, setActuals] = useState<WeeklyActual[] | null>(null)
-  const [estimate, setEstimate] = useState<Estimate | null>(null)
-  const [subbies, setSubbies] = useState<SubcontractorPackage[]>([])
-  const [xeroHours, setXeroHours] = useState<number | null>(null)
-  const [xeroSupply, setXeroSupply] = useState<number | null>(null)
-
-  useEffect(() => {
-    getSiteActuals(projectId).then(setActuals)
-    getSiteBoq(projectId).then(setEstimate)
-    getSiteSubbies(projectId).then(s => setSubbies(s || []))
-    getSiteHours(projectId).then(h => { setXeroHours(h.totalHours); setXeroSupply(h.supplyCost) })
-  }, [projectId])
-
-  const card = useMemo(() => computeScorecard({
-    estimate, actuals: actuals || [], subbies, gantt, today: toISO(new Date()),
-    actualLabourHours: xeroHours, actualSupplyCost: xeroSupply,
-  }), [estimate, actuals, subbies, gantt, xeroHours, xeroSupply])
+// Data is fetched once by the workspace (the Dashboard strip shares it) and passed in.
+function Scorecard({ card, actuals, xeroHours }: {
+  card: ReturnType<typeof computeScorecard>; actuals: WeeklyActual[] | null; xeroHours: number | null
+}) {
   const overall = STATUS_UI[card.status]
 
   // Labour reads in HOURS (allowance and used). Labour is always priced at the standard rate, so

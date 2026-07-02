@@ -98,6 +98,13 @@ export async function getSiteHours(id: string): Promise<{ totalHours: number | n
   return d?.ok ? { totalHours: d.totalHours, weeks: d.weeks, supplyCost: d.supplyCost ?? null } : { totalHours: null, weeks: [], supplyCost: null }
 }
 
+// Gantt milestones (read-only for the dashboard's "next milestones" card).
+export interface SiteMilestone { id: string; label: string; date: string; colour?: string; value?: number }
+export async function getSiteMilestones(id: string): Promise<SiteMilestone[]> {
+  const d = await getJson<{ ok: boolean; milestones: SiteMilestone[] }>(`/api/site/projects/${id}/milestones`)
+  return d?.milestones ?? []
+}
+
 // ── Plans (private Supabase Storage bucket, one folder per project) ──────────────
 
 export interface SitePlan { name: string; path: string; size: number; updatedAt: string; url: string }
