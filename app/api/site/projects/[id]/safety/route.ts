@@ -26,14 +26,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
   const [swmsRes, ackRes, tbRes, incRes] = await Promise.all([
     supabaseAdmin.from('sf_swms').select('*').eq('project_id', params.id).eq('status', 'active').order('created_at', { ascending: true }),
-    supabaseAdmin.from('sf_swms_acks').select('swms_id'),
+    supabaseAdmin.from('sf_swms_acks').select('swms_id, person_name'),
     supabaseAdmin.from('sf_toolbox_meetings').select('*').eq('project_id', params.id).order('held_at', { ascending: false }).limit(20),
     supabaseAdmin.from('sf_incidents').select('*').eq('project_id', params.id).order('occurred_at', { ascending: false }).limit(20),
   ])
   const ackCounts = new Map<string, number>()
+  const ackNames = new Map<string, string[]>()
   for (const r of ackRes.data ?? []) {
     const k = r.swms_id as string
     ackCounts.set(k, (ackCounts.get(k) ?? 0) + 1)
+    ackNames.set(k, [...(ackNames.get(k) ?? []), (r.person_name as string) || ''])
   }
   // Subbie compliance badges: this project's subbie packages -> linked master companies -> doc status.
   const { data: pkgRows } = await supabaseAdmin.from('fg_subcontractors')
@@ -54,7 +56,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }))
 
   const docs = {
-    swms: (swmsRes.data ?? []).map(r => ({ ...mapSwms(r), ackCount: ackCounts.get(r.id as string) ?? 0 })),
+    swms: (swmsRes.data ?? []).map(r => ({
+      ...mapSwms(r),
+      ackCount: ackCounts.get(r.id as string) ?? 0,
+      ackNames: ackNames.get(r.id as string) ?? [],
+    })),
     toolbox: (tbRes.data ?? []).map(mapToolbox),
     incidents: (incRes.data ?? []).map(mapIncident),
     subbieCompliance,

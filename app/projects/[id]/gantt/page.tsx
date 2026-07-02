@@ -13,7 +13,7 @@ import {
   saveWeeklyRevenue,
   loadProgressClaims,
 } from '@/lib/storage'
-import { upsertGanttEntries, replaceGanttRevenueRemote, getProjects, upsertProject, upsertGanttMilestones, getAllGanttMilestones, getAllGanttEntries } from '@/lib/storageAsync'
+import { upsertGanttEntries, replaceGanttRevenueRemote, getProjects, upsertProject, upsertGanttMilestones, getAllGanttMilestones, getAllGanttEntries, upsertGanttBaselinesRemote } from '@/lib/storageAsync'
 import { saveProject } from '@/lib/storage'
 import {
   formatCurrency,
@@ -1683,9 +1683,11 @@ export default function GanttPage() {
   }
 
   // Capture the current schedule as the baseline (planning-day reference). Re-set it any time (e.g.
-  // fortnightly) to take a fresh snapshot; per-category slip is measured against the latest.
+  // fortnightly) to take a fresh snapshot; per-category slip is measured against the latest. Also
+  // mirrored to Supabase so the foreman dashboard's slip card has the reference schedule.
   const persistBaselines = (list: BaselineSnap[]) => {
     try { localStorage.setItem(`fg_gantt_baselines_${id}`, JSON.stringify(list)) } catch { /* ignore */ }
+    void upsertGanttBaselinesRemote(id, list)
   }
   const handleSetBaseline = () => {
     const snap: BaselineSnap = { id: generateId(), capturedAt: new Date().toISOString(), entries: latestEntriesRef.current }

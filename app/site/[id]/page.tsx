@@ -3,13 +3,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { entrySegments, entryClaimSegments } from '@/lib/ganttForecast'
+import { entrySegments, entryClaimSegments, segmentWeekShare } from '@/lib/ganttForecast'
 import { activeLineItems, estimateLabourHours, STD_LABOUR_RATE } from '@/lib/estimateCalculations'
 import { computeScorecard, type ScoreStatus } from '@/lib/siteScorecard'
+import { isVicPublicHoliday, vicPublicHolidayName } from '@/lib/publicHolidays'
 import {
   siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, getSiteBoq,
   getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours, getSiteMilestones, getSiteSafety, postSiteSafety,
-  type SiteProject, type SitePlan, type SiteMilestone, type SiteSafety,
+  getSiteBaseline, getSiteVariations, createSiteVariation,
+  type SiteProject, type SitePlan, type SiteMilestone, type SiteSafety, type SiteBaseline, type SiteVariation,
 } from '@/lib/siteData'
 import { SEVERITY_LABEL } from '@/lib/safetyDocs'
 import type { GanttEntry, WeeklyActual, SubcontractorPackage, Estimate } from '@/types'
@@ -39,7 +41,15 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
   const [subbies, setSubbies] = useState<SubcontractorPackage[]>([])
   const [xeroHours, setXeroHours] = useState<number | null>(null)
   const [xeroSupply, setXeroSupply] = useState<number | null>(null)
+  const [hoursWeeks, setHoursWeeks] = useState<{ weekEnding: string; hours: number }[]>([])
   const [milestones, setMilestones] = useState<SiteMilestone[]>([])
+  const [safety, setSafety] = useState<SiteSafety | null>(null)
+  const [plans, setPlans] = useState<SitePlan[]>([])
+  const [baseline, setBaseline] = useState<SiteBaseline | null>(null)
+  const [variations, setVariations] = useState<SiteVariation[]>([])
+
+  const refreshSafety = () => getSiteSafety(params.id).then(setSafety)
+  const refreshVariations = () => getSiteVariations(params.id).then(setVariations)
 
   useEffect(() => {
     siteMe().then(m => {
@@ -52,9 +62,14 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
       getSiteActuals(params.id).then(setActuals)
       getSiteBoq(params.id).then(setEstimate)
       getSiteSubbies(params.id).then(s => setSubbies(s || []))
-      getSiteHours(params.id).then(h => { setXeroHours(h.totalHours); setXeroSupply(h.supplyCost) })
+      getSiteHours(params.id).then(h => { setXeroHours(h.totalHours); setXeroSupply(h.supplyCost); setHoursWeeks(h.weeks) })
       getSiteMilestones(params.id).then(setMilestones)
+      getSiteSafety(params.id).then(setSafety)
+      getSitePlans(params.id).then(setPlans)
+      getSiteBaseline(params.id).then(setBaseline)
+      getSiteVariations(params.id).then(setVariations)
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id, router])
 
   const card = useMemo(() => computeScorecard({
@@ -88,12 +103,16 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
       </header>
 
       <div className="mt-4">
-        {tab === 'dashboard' && <Dashboard project={project} gantt={gantt} card={card} milestones={milestones} openTab={setTab} />}
+        {tab === 'dashboard' && (
+          <Dashboard project={project} gantt={gantt} card={card} milestones={milestones} openTab={setTab}
+            safety={safety} plans={plans} baseline={baseline} hoursWeeks={hoursWeeks}
+            variations={variations} refreshVariations={refreshVariations} />
+        )}
         {tab === 'schedule' && <Schedule gantt={gantt} projectId={project.id} />}
         {tab === 'boq' && <Boq projectId={project.id} />}
         {tab === 'subbies' && <Subbies projectId={project.id} />}
         {tab === 'plans' && <Plans projectId={project.id} />}
-        {tab === 'safety' && <Safety projectId={project.id} />}
+        {tab === 'safety' && <Safety projectId={project.id} safety={safety} refresh={refreshSafety} />}
         {tab === 'client' && <ClientAndSite project={project} />}
         {tab === 'score' && <Scorecard card={card} actuals={actuals} xeroHours={xeroHours} />}
       </div>
@@ -117,6 +136,173 @@ function fmt(iso: string): string {
   const d = new Date(iso); return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
 }
 function money(n: number): string { return '$' + Math.round(n).toLocaleString('en-AU') }
+
+// ── Variations (foreman-raised, capped at $1000, client approves digitally) ─────────
+function VariationsCard({ projectId, variations, refresh }: {
+  projectId: string; variations: SiteVariation[]; refresh: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [description, setDescription] = useState('')
+  const [amount, setAmount] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [error, setError] = useState('')
+
+  const amt = parseFloat(amount) || 0
+  const overCap = amt > 1000
+
+  const submit = async () => {
+    if (!description.trim() || !(amt > 0) || overCap) return
+    setBusy(true); setError(''); setMsg('')
+    const res = await createSiteVariation(projectId, { description: description.trim(), amount: amt })
+    setBusy(false)
+    if (res.ok) {
+      setDescription(''); setAmount(''); setOpen(false)
+      setMsg(res.emailed
+        ? `Sent to ${res.clientEmail} for approval.`
+        : res.clientEmail
+          ? 'Created - email delivery is not configured yet, share the approval link below.'
+          : 'Created - the client has no email on file, share the approval link below.')
+      refresh()
+    } else {
+      setError(res.error === 'no_base_estimate' ? 'No estimate on this job yet - the office needs to set one up.' : 'Could not create the variation.')
+    }
+  }
+
+  const share = async (url: string) => {
+    try {
+      if (navigator.share) await navigator.share({ title: 'Variation approval', url })
+      else { await navigator.clipboard.writeText(url); setMsg('Approval link copied.') }
+    } catch { /* cancelled */ }
+  }
+
+  const statusChip = (v: SiteVariation) =>
+    v.status === 'accepted'
+      ? <span className="text-[10px] uppercase tracking-wide text-green-700 shrink-0">Approved{v.acceptedByName ? ` · ${v.acceptedByName}` : ''}</span>
+      : v.status === 'declined'
+        ? <span className="text-[10px] uppercase tracking-wide text-fg-muted shrink-0">Declined</span>
+        : <span className="text-[10px] uppercase tracking-wide text-amber-600 shrink-0">Awaiting client</span>
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-medium">Variations</h2>
+        <button onClick={() => setOpen(o => !o)} className="text-xs underline text-fg-heading">
+          {open ? 'Cancel' : '+ New variation'}
+        </button>
+      </div>
+      {msg && <p className="text-xs text-green-700 mb-2">{msg}</p>}
+
+      {open && (
+        <div className="rounded-xl border border-fg-border p-3 mb-3 space-y-2">
+          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
+            placeholder="What's the change? (e.g. Extra drainage run behind the western wall - 6lm ag pipe + gravel)"
+            className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
+          <input value={amount} onChange={e => setAmount(e.target.value)} type="number" inputMode="decimal" min={0}
+            placeholder="Price ex GST ($)"
+            className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
+          {overCap && (
+            <p className="text-xs text-red-600">
+              Over $1,000 - variations this size go through the office to price and send.
+            </p>
+          )}
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          <button onClick={submit} disabled={busy || !description.trim() || !(amt > 0) || overCap}
+            className="w-full rounded-lg bg-fg-heading text-white py-2.5 text-sm font-medium disabled:opacity-40">
+            {busy ? 'Sending...' : 'Send to client for approval'}
+          </button>
+          <p className="text-[10px] text-fg-muted">The client gets a link to approve or decline online. The office sees it too.</p>
+        </div>
+      )}
+
+      {variations.length === 0 ? (
+        !open && <p className="text-sm text-fg-muted">None raised from site.</p>
+      ) : (
+        <ul className="space-y-2">
+          {variations.map(v => (
+            <li key={v.id} className="rounded-lg border border-fg-border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium truncate">VMO-{v.number}{v.reason ? ` · ${v.reason.slice(0, 60)}` : ''}</p>
+                {statusChip(v)}
+              </div>
+              <div className="flex items-center justify-between mt-1">
+                <span className="text-xs text-fg-muted tabular-nums">{money(v.amount)} ex GST</span>
+                {v.approvalUrl && (
+                  <button onClick={() => share(v.approvalUrl!)} className="text-xs underline text-fg-heading">
+                    Share approval link
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ── Weather (Open-Meteo, keyless; geocodes the site suburb) ─────────────────────────
+interface WeatherDay { date: string; code: number; tMax: number; rainMm: number; rainProb: number }
+const weatherIcon = (code: number): string => {
+  if (code === 0) return '☀'
+  if (code <= 3) return '⛅'
+  if (code <= 48) return '🌫'
+  if (code <= 67 || (code >= 80 && code <= 82)) return '🌧'
+  if (code <= 77) return '❄'
+  if (code >= 95) return '⛈'
+  return '☁'
+}
+function WeatherStrip({ address }: { address: string }) {
+  const [days, setDays] = useState<WeatherDay[] | null>(null)
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      try {
+        // Street addresses don't geocode - use the suburb (the part after the last comma).
+        const parts = (address || '').split(',').map(s => s.trim()).filter(Boolean)
+        const suburb = parts[parts.length - 1]
+        if (!suburb) return
+        const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(suburb)}&count=1&language=en&countryCode=AU`)
+          .then(r => r.json())
+        const hit = geo?.results?.[0]
+        if (!hit || !active) return
+        const fc = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${hit.latitude}&longitude=${hit.longitude}` +
+          `&daily=weather_code,temperature_2m_max,precipitation_sum,precipitation_probability_max&timezone=Australia%2FMelbourne&forecast_days=5`)
+          .then(r => r.json())
+        if (!active || !fc?.daily?.time) return
+        setDays(fc.daily.time.map((date: string, i: number) => ({
+          date,
+          code: fc.daily.weather_code?.[i] ?? 0,
+          tMax: Math.round(fc.daily.temperature_2m_max?.[i] ?? 0),
+          rainMm: Math.round((fc.daily.precipitation_sum?.[i] ?? 0) * 10) / 10,
+          rainProb: fc.daily.precipitation_probability_max?.[i] ?? 0,
+        })))
+      } catch { /* weather is a nicety - fail silently */ }
+    })()
+    return () => { active = false }
+  }, [address])
+
+  if (!days) return null
+  return (
+    <div className="rounded-xl border border-fg-border p-3">
+      <div className="grid grid-cols-5 gap-1 text-center">
+        {days.map((d, i) => {
+          const wet = d.rainProb >= 60 || d.rainMm >= 5
+          return (
+            <div key={d.date} className={`rounded-lg py-1.5 ${wet ? 'bg-blue-50' : ''}`}>
+              <p className="text-[10px] text-fg-muted">{i === 0 ? 'Today' : new Date(`${d.date}T00:00:00`).toLocaleDateString('en-AU', { weekday: 'short' })}</p>
+              <p className="text-base leading-tight">{weatherIcon(d.code)}</p>
+              <p className="text-[11px] tabular-nums font-medium">{d.tMax}&deg;</p>
+              <p className={`text-[9px] tabular-nums ${wet ? 'text-blue-700 font-medium' : 'text-fg-muted'}`}>
+                {d.rainProb > 0 ? `${d.rainProb}%` : ''}{d.rainMm > 0 ? ` ${d.rainMm}mm` : ''}
+              </p>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 // ── Week strip (dashboard: This week + Next week = the fortnight programme) ─────────
 // ONE card per category (a split category's Materials/Labour/Sub lines each carry their own
@@ -203,9 +389,12 @@ function ThisWeekStrip({ gantt, offset = 0, title = 'This week' }: { gantt: Gant
 }
 
 // ── Dashboard (default landing — the at-a-glance cockpit view) ─────────────────────
-function Dashboard({ project, gantt, card, milestones, openTab }: {
+function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, baseline, hoursWeeks, variations, refreshVariations }: {
   project: SiteProject; gantt: GanttEntry[]; card: ReturnType<typeof computeScorecard>
   milestones: SiteMilestone[]; openTab: (t: Tab) => void
+  safety: SiteSafety | null; plans: SitePlan[]; baseline: SiteBaseline | null
+  hoursWeeks: { weekEnding: string; hours: number }[]
+  variations: SiteVariation[]; refreshVariations: () => void
 }) {
   const todayIso = toISO(new Date())
 
@@ -231,6 +420,113 @@ function Dashboard({ project, gantt, card, milestones, openTab }: {
       .map(m => ({ ...m, inDays: Math.round((new Date(m.date).getTime() - new Date(todayIso).getTime()) / 86400000) })),
     [milestones, todayIso])
 
+  // Crew hours pulse: this week's logged Xero hours vs the labour hours the gantt scheduled
+  // for this week (labour claims x their week share, at the standard rate).
+  const hoursPulse = useMemo(() => {
+    const mon = thisMonday()
+    const monIso = toISO(mon), friIso = toISO(addDays(mon, 4))
+    const logged = hoursWeeks.find(w => w.weekEnding === friIso)?.hours ?? 0
+    let plannedCost = 0
+    for (const e of gantt) for (const { costType, seg } of entryClaimSegments(e)) {
+      if (costType !== 'labour') continue
+      plannedCost += (seg.costAllocation || 0) * segmentWeekShare(seg, monIso, friIso)
+    }
+    const plannedHrs = plannedCost / STD_LABOUR_RATE
+    return plannedHrs > 0 || logged > 0 ? { logged: Math.round(logged), planned: Math.round(plannedHrs) } : null
+  }, [gantt, hoursWeeks])
+
+  // Call-ups: work starting within the next ~2 weeks that hasn't begun - confirm subbies, order materials.
+  const startingSoon = useMemo(() => {
+    const horizon = toISO(addDays(new Date(), 14))
+    const out: { category: string; label: string; start: string; inDays: number }[] = []
+    for (const e of gantt) for (const { costType, seg } of entryClaimSegments(e)) {
+      if (!seg.startDate || seg.startDate <= todayIso || seg.startDate > horizon) continue
+      out.push({
+        category: e.category,
+        label: costType ? costType.charAt(0).toUpperCase() + costType.slice(1) : '',
+        start: seg.startDate,
+        inDays: Math.round((new Date(seg.startDate).getTime() - new Date(todayIso).getTime()) / 86400000),
+      })
+    }
+    out.sort((a, b) => a.start.localeCompare(b.start))
+    // One line per category (earliest start), max 5.
+    const seen = new Set<string>()
+    return out.filter(o => !seen.has(o.category) && seen.add(o.category)).slice(0, 5)
+  }, [gantt, todayIso])
+
+  // Per-category slip vs the latest office baseline (start-date slip, worst first).
+  const slipList = useMemo(() => {
+    if (!baseline) return null
+    const currentStart = new Map<string, string>()
+    for (const e of gantt) for (const s of entrySegments(e)) {
+      if (!s.startDate) continue
+      const ex = currentStart.get(e.category)
+      if (!ex || s.startDate < ex) currentStart.set(e.category, s.startDate)
+    }
+    const rows: { category: string; days: number }[] = []
+    for (const b of baseline.categories) {
+      const cur = currentStart.get(b.category)
+      if (!cur) continue
+      const days = Math.round((new Date(cur).getTime() - new Date(b.start).getTime()) / 86400000)
+      if (days > 0) rows.push({ category: b.category, days })
+    }
+    return rows.sort((a, b) => b.days - a.days).slice(0, 3)
+  }, [baseline, gantt])
+
+  // Heads up: the act-on-it list. Monday toolbox rule, SWMS ack gaps, subbie docs, holidays,
+  // open incidents, freshly-updated drawings.
+  const nudges = useMemo(() => {
+    const out: { text: string; level: 'red' | 'amber' | 'info'; tab?: Tab }[] = []
+    const now = new Date()
+    const mon = thisMonday()
+
+    if (safety) {
+      // Toolbox talk every Monday.
+      const monIso = toISO(mon)
+      const hadThisWeek = safety.toolbox.some(t => toISO(new Date(t.heldAt)) >= monIso)
+      if (!hadThisWeek) {
+        const dow = now.getDay()
+        if (dow === 1) out.push({ text: 'Toolbox talk due today (every Monday)', level: 'red', tab: 'safety' })
+        else if (dow > 1 && dow <= 5) out.push({ text: 'Toolbox talk overdue - it was due Monday', level: 'red', tab: 'safety' })
+      }
+      // SWMS acknowledgement gaps: workers on site today who haven't accepted an active SWMS.
+      const todaysWorkers = Array.from(new Set(
+        safety.today.filter(v => v.role === 'worker').map(v => v.personName.trim().toLowerCase())))
+      for (const w of safety.swms) {
+        const acked = new Set(w.ackNames.map(n => n.trim().toLowerCase()))
+        const missing = todaysWorkers.filter(n => !acked.has(n))
+        if (missing.length > 0) {
+          out.push({ text: `${missing.length} on site ${missing.length === 1 ? 'hasn’t' : 'haven’t'} acknowledged "${w.activityName}"`, level: 'amber', tab: 'safety' })
+        }
+      }
+      // Subbie docs.
+      for (const sc of safety.subbieCompliance) {
+        if (sc.status === 'missing_or_expired') out.push({ text: `${sc.name}: compliance docs missing or expired`, level: 'red', tab: 'safety' })
+        else if (sc.status === 'expiring') out.push({ text: `${sc.name}: compliance docs expiring soon`, level: 'amber', tab: 'safety' })
+      }
+      // Open incidents.
+      const open = safety.incidents.filter(i => i.status === 'open').length
+      if (open > 0) out.push({ text: `${open} open incident${open === 1 ? '' : 's'}`, level: 'amber', tab: 'safety' })
+    }
+
+    // VIC public holidays in the next fortnight.
+    for (let i = 0; i <= 14; i++) {
+      const d = addDays(new Date(), i)
+      const iso = toISO(d)
+      if (isVicPublicHoliday(iso)) {
+        const name = vicPublicHolidayName(iso) || 'Public holiday'
+        out.push({ text: `${name} ${i === 0 ? 'today' : `on ${fmt(iso)}`} - no work day`, level: 'info' })
+      }
+    }
+
+    // Drawings updated in the last 7 days.
+    const weekAgo = addDays(new Date(), -7).toISOString()
+    const freshPlans = plans.filter(p => p.updatedAt && p.updatedAt >= weekAgo).length
+    if (freshPlans > 0) out.push({ text: `${freshPlans} drawing${freshPlans === 1 ? '' : 's'} updated this week - check before building`, level: 'info', tab: 'plans' })
+
+    return out
+  }, [safety, plans])
+
   const overall = STATUS_UI[card.status]
 
   return (
@@ -253,6 +549,26 @@ function Dashboard({ project, gantt, card, milestones, openTab }: {
           )}
         </div>
       </div>
+
+      {/* Heads up - the act-on-it list */}
+      {nudges.length > 0 && (
+        <div className="rounded-xl border border-fg-border overflow-hidden">
+          <p className="text-[10px] uppercase tracking-wide text-fg-muted px-3 pt-3">Heads up</p>
+          <ul className="divide-y divide-fg-border/40 mt-1">
+            {nudges.map((n, i) => (
+              <li key={i}>
+                <button onClick={() => n.tab && openTab(n.tab)} disabled={!n.tab}
+                  className="w-full flex items-start gap-2 px-3 py-2 text-left">
+                  <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${n.level === 'red' ? 'bg-red-500' : n.level === 'amber' ? 'bg-amber-500' : 'bg-fg-border'}`} />
+                  <span className={`text-xs leading-snug ${n.level === 'red' ? 'text-red-700 font-medium' : n.level === 'amber' ? 'text-amber-700' : 'text-fg-muted'}`}>
+                    {n.text}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Scorecard strip */}
       <button onClick={() => openTab('score')} className="w-full text-left">
@@ -303,12 +619,56 @@ function Dashboard({ project, gantt, card, milestones, openTab }: {
         {forecastEnd && planned && (
           <p className="text-[11px] text-fg-muted mt-2">Tracking to {fmt(forecastEnd)} &middot; planned {fmt(planned)}</p>
         )}
+        {/* Crew hours pulse: logged Xero timesheet hours vs the labour hours scheduled this week */}
+        {hoursPulse && (
+          <div className="flex justify-between items-baseline text-[11px] mt-2 pt-2 border-t border-fg-border/40">
+            <span className="text-fg-muted">Crew hours this week</span>
+            <span className={`tabular-nums font-medium ${hoursPulse.planned > 0 && hoursPulse.logged < hoursPulse.planned * 0.7 ? 'text-amber-600' : 'text-fg-heading'}`}>
+              {hoursPulse.logged}h logged{hoursPulse.planned > 0 ? ` · ~${hoursPulse.planned}h scheduled` : ''}
+            </span>
+          </div>
+        )}
+        {/* Categories running late vs the office baseline */}
+        {slipList && slipList.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-fg-border/40 space-y-1">
+            {slipList.map(sl => (
+              <div key={sl.category} className="flex justify-between items-baseline text-[11px]">
+                <span className="text-fg-muted truncate pr-2">{sl.category}</span>
+                <span className={`tabular-nums shrink-0 ${sl.days > 5 ? 'text-red-600' : 'text-amber-600'}`}>+{sl.days}d vs baseline</span>
+              </div>
+            ))}
+          </div>
+        )}
         <button onClick={() => openTab('schedule')} className="text-xs underline text-fg-muted mt-2">Open schedule</button>
       </div>
+
+      {/* Weather (site suburb, next 5 days) */}
+      <WeatherStrip address={project.address} />
 
       {/* The fortnight programme: this week + next week */}
       <ThisWeekStrip gantt={gantt} />
       <ThisWeekStrip gantt={gantt} offset={1} title="Next week" />
+
+      {/* Call-ups: work starting soon - confirm subbies, order materials */}
+      {startingSoon.length > 0 && (
+        <div>
+          <h2 className="text-sm font-medium mb-2">Starting soon</h2>
+          <ul className="space-y-2">
+            {startingSoon.map((c, i) => (
+              <li key={i} className="rounded-lg border border-fg-border p-3 flex items-center justify-between">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{c.category}</p>
+                  <p className="text-xs text-fg-muted">Confirm subbies / order materials</p>
+                </div>
+                <span className="text-xs text-fg-muted tabular-nums shrink-0">{fmt(c.start)} &middot; in {c.inDays}d</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Variations: the crew raise small ones (<= $1000) and the client approves digitally */}
+      <VariationsCard projectId={project.id} variations={variations} refresh={refreshVariations} />
 
       {/* Next milestones */}
       {upcoming.length > 0 && (
@@ -569,13 +929,11 @@ function Plans({ projectId }: { projectId: string }) {
 }
 
 // ── Safety (site register + SWMS + toolbox + incidents - the foreman's WHS hub) ────
-function Safety({ projectId }: { projectId: string }) {
-  const [safety, setSafety] = useState<SiteSafety | null>(null)
+// Data is fetched once by the workspace (the Dashboard nudges share it) and passed in.
+function Safety({ projectId, safety, refresh }: { projectId: string; safety: SiteSafety | null; refresh: () => void }) {
   const [ackFor, setAckFor] = useState<string | null>(null)   // swmsId with the ack form open
   const [showToolbox, setShowToolbox] = useState(false)
   const [showIncident, setShowIncident] = useState(false)
-  const refresh = () => getSiteSafety(projectId).then(setSafety)
-  useEffect(() => { refresh() /* eslint-disable-line react-hooks/exhaustive-deps */ }, [projectId])
 
   if (safety === null) return <p className="text-sm text-fg-muted py-6 text-center">Loading...</p>
   const { site, onSiteNow, today, inductionCount, swms, toolbox, incidents, subbieCompliance } = safety

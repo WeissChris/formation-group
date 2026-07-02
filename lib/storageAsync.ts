@@ -756,6 +756,22 @@ export async function upsertGanttMilestones(projectId: string, milestones: Miles
   }
 }
 
+// ── GANTT BASELINES (per-project timestamped list, one row per project) ────────
+// localStorage (`fg_gantt_baselines_${projectId}`) is written by the gantt page itself; this mirrors
+// the whole list into the per-project Supabase row so the FOREMAN DASHBOARD can compute per-category
+// slip server-side (baselines were localStorage-only before). Replace-semantics like the milestones.
+export async function upsertGanttBaselinesRemote(projectId: string, baselines: unknown[]): Promise<void> {
+  if (ganttSiteProjectId === projectId) return   // setting baselines is an office act; site mode stays local
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_gantt_baselines').upsert({
+      project_id: projectId,
+      baselines,
+      updated_at: new Date().toISOString(),
+    })
+    if (error) console.error('[Formation] gantt baselines upsert (Supabase) error:', error.message)
+  }
+}
+
 /** All projects' milestone arrays — used by the gantt/programme mounts + login hydrate to restore. */
 export async function getAllGanttMilestones(): Promise<{ projectId: string; milestones: Milestone[] }[]> {
   if (isSupabaseConfigured() && supabase) {

@@ -115,7 +115,7 @@ export interface SiteSafety {
   onSiteNow: SiteVisit[]
   today: SiteVisit[]
   inductionCount: number
-  swms: (Swms & { ackCount: number })[]
+  swms: (Swms & { ackCount: number; ackNames: string[] })[]
   toolbox: ToolboxMeeting[]
   incidents: Incident[]
   subbieCompliance: { name: string; status: 'ok' | 'expiring' | 'missing_or_expired' | 'unlinked' }[]
@@ -129,6 +129,41 @@ export async function getSiteSafety(id: string): Promise<SiteSafety> {
         subbieCompliance: d.subbieCompliance ?? [],
       }
     : { site: null, board: null, onSiteNow: [], today: [], inductionCount: 0, swms: [], toolbox: [], incidents: [], subbieCompliance: [] }
+}
+
+// The latest office baseline, reduced to per-category start/end - the dashboard slip card's
+// reference schedule. null until the office sets a baseline on the gantt.
+export interface SiteBaseline { capturedAt: string; categories: { category: string; start: string; end: string }[] }
+export async function getSiteBaseline(id: string): Promise<SiteBaseline | null> {
+  const d = await getJson<{ ok: boolean; baseline: SiteBaseline | null }>(`/api/site/projects/${id}/baseline`)
+  return d?.ok ? d.baseline : null
+}
+
+// ── Variations (foreman-raised, capped $1000, client digital approval) ───────────
+export interface SiteVariation {
+  id: string
+  number: number
+  reason: string
+  amount: number
+  status: string   // 'sent' -> pending; 'accepted'; 'declined'
+  acceptedByName?: string
+  acceptedAt?: string | null
+  declinedAt?: string | null
+  approvalUrl?: string | null
+}
+export async function getSiteVariations(id: string): Promise<SiteVariation[]> {
+  const d = await getJson<{ ok: boolean; variations: SiteVariation[] }>(`/api/site/projects/${id}/variations`)
+  return d?.variations ?? []
+}
+export async function createSiteVariation(id: string, payload: { description: string; amount: number }): Promise<
+  { ok: true; variation: SiteVariation; emailed: boolean; dryRun: boolean; clientEmail: string | null } |
+  { ok: false; error: string; cap?: number }
+> {
+  const res = await fetch(`/api/site/projects/${id}/variations`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  })
+  const body = await res.json().catch(() => ({}))
+  return res.ok ? body : { ok: false, error: body.error || 'failed', cap: body.cap }
 }
 
 /** Foreman safety writes (toolbox / incident / swms_ack) - see the route for shapes. */
