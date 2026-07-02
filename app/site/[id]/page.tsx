@@ -982,7 +982,11 @@ function Scorecard({ card, actuals, xeroHours }: {
                   <div className={`h-full ${ui.bar}`} style={{ width: `${Math.round(pct * 100)}%` }} />
                 </div>
                 <p className={`text-[10px] mt-0.5 ${ui.text}`}>
-                  {l.budget > 0 ? `${Math.round(l.consumedPct * 100)}% of allowance ${l.key === 'subbies' ? 'committed' : 'used'}` : 'No allowance'}
+                  {l.budget > 0
+                    ? l.key === 'subbies'
+                      ? `${Math.round(l.consumedPct * 100)}% of allowance committed`
+                      : `${Math.round(l.consumedPct * 100)}% of allowance used · ${Math.round(l.progressPct * 100)}% of its work elapsed`
+                    : 'No allowance'}
                 </p>
               </div>
             )

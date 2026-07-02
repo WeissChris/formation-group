@@ -12,7 +12,7 @@
 
 import type { Estimate, WeeklyActual, SubcontractorPackage, GanttEntry } from '@/types'
 import { activeLineItems, costBreakdown, STD_LABOUR_RATE } from './estimateCalculations'
-import { entrySegments } from './ganttForecast'
+import { entrySegments, entryClaimSegments, type CostTypeKey } from './ganttForecast'
 import { workingDaysBetween } from './ganttSchedule'
 
 export type ScoreStatus = 'good' | 'watch' | 'over' | 'na'
@@ -23,6 +23,10 @@ export interface ScorecardLever {
   budget: number        // allowed cost ($)
   actual: number        // to-date / committed ($)
   consumedPct: number   // actual / budget (0..n); 0 when no budget
+  /** How far THIS lever's own scheduled work has elapsed (0..1) - the fair comparison base.
+   *  Labour used is judged against labour-work elapsed, not the whole job (a subbie-heavy
+   *  early schedule made 28% labour look like a huge under-run at "68% progress"). */
+  progressPct: number
   status: ScoreStatus
 }
 
@@ -48,6 +52,26 @@ export function segmentElapsed(startIso: string, endIso: string, today: string):
   const total = workingDaysBetween(startIso, endIso)
   if (total <= 0) return 0
   return Math.max(0, Math.min(1, workingDaysBetween(startIso, today) / total))
+}
+
+/**
+ * Schedule progress for ONE discipline group: elapsed cost allocation / total cost allocation
+ * across the claims whose costType is in `kinds`. Uses entryClaimSegments so split type-lines
+ * carry their discipline; unsplit own-bars (no costType) are blended and excluded here.
+ * Returns null when the discipline has no dated, costed claims - caller falls back to blended.
+ */
+export function disciplineProgress(gantt: GanttEntry[], today: string, kinds: CostTypeKey[]): number | null {
+  let total = 0, done = 0
+  for (const e of gantt) {
+    for (const { costType, seg } of entryClaimSegments(e)) {
+      if (!costType || !kinds.includes(costType)) continue
+      const c = seg.costAllocation || 0
+      if (c <= 0 || !seg.startDate || !seg.endDate) continue
+      total += c
+      done += c * segmentElapsed(seg.startDate, seg.endDate, today)
+    }
+  }
+  return total > 0 ? done / total : null
 }
 
 /** Schedule progress 0..1 = planned cost elapsed / total planned cost across every scheduled bar. */
@@ -122,30 +146,38 @@ export function computeScorecard({ estimate, actuals, subbies, gantt, today, act
   const committedSubbies = subbies.reduce((s, p) => s + (p.approvedValue || 0) + (p.variations || 0), 0)
 
   const progress = scheduleProgress(gantt, today)
+  // Per-discipline progress: labour used is judged against LABOUR-work elapsed (and materials
+  // against supply-work elapsed), not the blended job progress - on a subbie-heavy early
+  // schedule the blended figure runs way ahead of the labour programme, which made low labour
+  // usage look like a massive under-run and pinned the score at its ceiling. Falls back to the
+  // blended figure when a discipline has no typed, dated claims (rare - categories auto-split).
+  const labourProgress = disciplineProgress(gantt, today, ['labour']) ?? progress
+  const materialsProgress = disciplineProgress(gantt, today, ['material', 'equipment']) ?? progress
 
   const mkLever = (
-    key: ScorecardLever['key'], label: string, budget: number, actual: number,
+    key: ScorecardLever['key'], label: string, budget: number, actual: number, leverProgress: number,
   ): ScorecardLever => {
     const consumedPct = budget > 0 ? actual / budget : 0
-    return { key, label, budget, actual, consumedPct, status: leverStatus(budget, consumedPct, progress) }
+    return { key, label, budget, actual, consumedPct, progressPct: leverProgress, status: leverStatus(budget, consumedPct, leverProgress) }
   }
 
   const subConsumed = budgetSubbies > 0 ? committedSubbies / budgetSubbies : 0
   const levers: ScorecardLever[] = [
-    mkLever('labour', 'Labour', budgetLabour, actLabour),
-    mkLever('materials', 'Materials', budgetMaterials, actMaterials),
+    mkLever('labour', 'Labour', budgetLabour, actLabour, labourProgress),
+    mkLever('materials', 'Materials', budgetMaterials, actMaterials, materialsProgress),
     { key: 'subbies', label: 'Subcontractors', budget: budgetSubbies, actual: committedSubbies,
-      consumedPct: subConsumed, status: committedStatus(budgetSubbies, subConsumed) },
+      consumedPct: subConsumed, progressPct: 1, status: committedStatus(budgetSubbies, subConsumed) },
   ]
 
-  // Projected final cost. Labour + materials extrapolate from the run-rate (actual / progress);
-  // subbies are committed up-front so their projected final IS what's been committed (or the budget
-  // if nothing committed yet). With too little progress we assume a lever lands on budget.
-  const runRate = (actual: number, budget: number) =>
-    progress >= MIN_PROGRESS_TO_SCORE && actual > 0 ? actual / progress : budget
+  // Projected final cost. Labour + materials extrapolate from the run-rate against THEIR OWN
+  // discipline's elapsed schedule (actual / disciplineProgress); subbies are committed up-front
+  // so their projected final IS what's been committed (or the budget if nothing committed yet).
+  // With too little of a discipline elapsed we assume it lands on budget.
+  const runRate = (actual: number, budget: number, leverProgress: number) =>
+    leverProgress >= MIN_PROGRESS_TO_SCORE && actual > 0 ? actual / leverProgress : budget
   const projectedCost =
-    runRate(actLabour, budgetLabour) +
-    runRate(actMaterials, budgetMaterials) +
+    runRate(actLabour, budgetLabour, labourProgress) +
+    runRate(actMaterials, budgetMaterials, materialsProgress) +
     (committedSubbies > 0 ? committedSubbies : budgetSubbies)
 
   const hasBudget = budgetCost > 0

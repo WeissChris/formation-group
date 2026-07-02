@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Estimate, EstimateLineItem, GanttEntry, WeeklyActual, SubcontractorPackage } from '@/types'
-import { computeScorecard, scheduleProgress, segmentElapsed } from './siteScorecard'
+import { computeScorecard, scheduleProgress, segmentElapsed, disciplineProgress } from './siteScorecard'
 
 // 2026-08-03 = Mon, 2026-08-07 = Fri, 2026-08-14 = Fri. No VIC public holidays in this fortnight.
 const li = (type: EstimateLineItem['type'], total: number, i: number): EstimateLineItem => ({
@@ -120,5 +120,37 @@ describe('computeScorecard', () => {
       today: '2026-08-07', actualSupplyCost: null,
     })
     expect(sc.levers.find(l => l.key === 'materials')?.actual).toBe(4000)
+  })
+
+  it('judges labour against LABOUR-work elapsed, not the blended job progress', () => {
+    // Subbie-heavy schedule mostly elapsed; the labour type-line has not started yet. Low labour
+    // usage must NOT read as a huge under-run (the "score pinned at 120" distortion).
+    const splitGantt: GanttEntry[] = [{
+      id: 'e', projectId: 'p', estimateId: 'est', category: 'Cat', crewType: 'Formation',
+      budgetedRevenue: 0, budgetedCost: 30000, segments: [],
+      subtasks: [
+        { id: 'sub', label: 'Subcontractor', costType: 'subcontractor',
+          segments: [{ id: 's1', startDate: '2026-07-27', endDate: '2026-08-06', weekCount: 2, revenueAllocation: 10000, costAllocation: 10000 }] },
+        { id: 'lab', label: 'Labour', costType: 'labour',
+          segments: [{ id: 's2', startDate: '2026-08-10', endDate: '2026-08-21', weekCount: 2, revenueAllocation: 10000, costAllocation: 10000 }] },
+        { id: 'mat', label: 'Materials', costType: 'material',
+          segments: [{ id: 's3', startDate: '2026-08-10', endDate: '2026-08-21', weekCount: 2, revenueAllocation: 10000, costAllocation: 10000 }] },
+      ],
+    }]
+    const today = '2026-08-07'   // subbie work done; labour + materials not started
+    expect(disciplineProgress(splitGantt, today, ['labour'])).toBe(0)
+    expect(scheduleProgress(splitGantt, today)).toBeGreaterThan(0.3)   // blended runs ahead
+
+    const sc = computeScorecard({
+      estimate, actuals: [], subbies: [subbie(10000)], gantt: splitGantt, today,
+      actualLabourHours: 5,   // negligible hours - labour hasn't started
+    })
+    const lab = sc.levers.find(l => l.key === 'labour')!
+    expect(lab.progressPct).toBe(0)
+    expect(lab.status).toBe('na')            // too early for ITS schedule, not a huge under-run
+    // Projection assumes labour lands ON budget (no extrapolation from a not-started discipline),
+    // so the score cannot be inflated by the early subbie-heavy blended progress.
+    expect(sc.projectedCost).toBeCloseTo(30000, 0)
+    expect(sc.score).toBe(100)
   })
 })
