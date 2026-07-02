@@ -84,7 +84,7 @@ export default function EditProjectPage() {
     // localStorage immediately and pushes to Supabase.
     const updated: Project = {
       ...project,
-      name: form.name.toUpperCase(),
+      name: form.name.trim(),   // typed casing kept - was force-uppercased, which locked names to capitals
       clientName: form.clientName,
       clientPhone: form.clientPhone.trim() || undefined,
       clientEmail: form.clientEmail.trim() || undefined,
@@ -133,7 +133,7 @@ export default function EditProjectPage() {
 
         <div className="space-y-6">
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Project Name" value={form.name} onChange={v => set('name', v)} error={errors.name} className="uppercase" />
+            <Field label="Project Name" value={form.name} onChange={v => set('name', v)} error={errors.name} />
             <Field label="Client Name" value={form.clientName} onChange={v => set('clientName', v)} error={errors.clientName} />
           </div>
 

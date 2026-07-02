@@ -117,12 +117,12 @@ function fmt(iso: string): string {
 }
 function money(n: number): string { return '$' + Math.round(n).toLocaleString('en-AU') }
 
-// ── This week (dashboard strip) ─────────────────────────────────────────────────────
+// ── Week strip (dashboard: This week + Next week = the fortnight programme) ─────────
 // ONE card per category (a split category's Materials/Labour/Sub lines each carry their own
 // bar, which used to render as repeating cards) - combined dates + total cost on the card,
-// with the individual scope lines in a tap-to-expand dropdown.
-function ThisWeekStrip({ gantt }: { gantt: GanttEntry[] }) {
-  const mon = thisMonday()
+// with the individual scope lines in a tap-to-expand dropdown. `offset` = weeks from now.
+function ThisWeekStrip({ gantt, offset = 0, title = 'This week' }: { gantt: GanttEntry[]; offset?: number; title?: string }) {
+  const mon = addDays(thisMonday(), offset * 7)
   const monIso = toISO(mon), friIso = toISO(addDays(mon, 4)), sunIso = toISO(addDays(mon, 6))
   const [open, setOpen] = useState<Record<string, boolean>>({})
 
@@ -150,12 +150,12 @@ function ThisWeekStrip({ gantt }: { gantt: GanttEntry[] }) {
   return (
     <div>
       <div className="flex items-baseline justify-between mb-2">
-        <h2 className="text-sm font-medium">This week</h2>
+        <h2 className="text-sm font-medium">{title}</h2>
         <span className="text-xs text-fg-muted">{fmt(monIso)} &ndash; {fmt(friIso)}</span>
       </div>
       {groups.length === 0 ? (
         <p className="text-sm text-fg-muted py-4 text-center rounded-lg border border-fg-border/60 border-dashed">
-          No work scheduled this week.
+          No work scheduled {title === 'This week' ? 'this week' : title.toLowerCase()}.
         </p>
       ) : (
         <ul className="space-y-2">
@@ -305,8 +305,9 @@ function Dashboard({ project, gantt, card, milestones, openTab }: {
         <button onClick={() => openTab('schedule')} className="text-xs underline text-fg-muted mt-2">Open schedule</button>
       </div>
 
-      {/* This week */}
+      {/* The fortnight programme: this week + next week */}
       <ThisWeekStrip gantt={gantt} />
+      <ThisWeekStrip gantt={gantt} offset={1} title="Next week" />
 
       {/* Next milestones */}
       {upcoming.length > 0 && (

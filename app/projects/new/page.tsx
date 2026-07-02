@@ -71,7 +71,7 @@ export default function NewProjectPage() {
     const project: Project = {
       id: generateId(),
       entity,
-      name: form.name.toUpperCase(),
+      name: form.name.trim(),   // typed casing kept - was force-uppercased, which locked names to capitals
       clientName: form.clientName,
       address: form.address,
       contractValue: parseFloat(form.contractValue.replace(/[^0-9.]/g, '')) || 0,
@@ -137,7 +137,7 @@ export default function NewProjectPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Project Name" value={form.name} onChange={v => set('name', v)} error={errors.name} placeholder="e.g. Samara" className="uppercase" />
+            <Field label="Project Name" value={form.name} onChange={v => set('name', v)} error={errors.name} placeholder="e.g. Samara" />
             <Field label="Client Name" value={form.clientName} onChange={v => set('clientName', v)} error={errors.clientName} placeholder="e.g. Ramondetta" />
           </div>
 
