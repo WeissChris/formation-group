@@ -138,8 +138,17 @@ export function aggregateTimesheetHours(
   return { rows, linesMatched }
 }
 
-/** Page through ALL AU Payroll timesheets (100/page, capped, 429-aware - mirrors fetchBills). */
-async function fetchTimesheets(accessToken: string, tenantId: string): Promise<XeroTimesheet[]> {
+/**
+ * Page through recent AU Payroll timesheets (100/page, capped, 429-aware - mirrors fetchBills).
+ *
+ * `modifiedSince` is CRITICAL: the endpoint pages the ENTIRE timesheet history oldest-first
+ * (back to 2015 here), and paging it all inside sync-now blew Vercel's 300s maxDuration - the
+ * function was killed before any hour rows were written. If-Modified-Since cuts the pull to
+ * timesheets touched in the window (they're entered weekly, so modified ~= worked); a month of
+ * buffer over the lookback covers late entries. Weeks outside the lookback are filtered in
+ * aggregation regardless.
+ */
+async function fetchTimesheets(accessToken: string, tenantId: string, modifiedSince: Date): Promise<XeroTimesheet[]> {
   const collected: XeroTimesheet[] = []
   let page = 1
   let retries = 0
@@ -149,8 +158,10 @@ async function fetchTimesheets(accessToken: string, tenantId: string): Promise<X
         Authorization: `Bearer ${accessToken}`,
         'Xero-tenant-id': tenantId,
         Accept: 'application/json',
+        'If-Modified-Since': modifiedSince.toUTCString(),
       },
     })
+    if (resp.status === 304) break   // nothing modified in the window
     if (resp.status === 429) {
       if (retries >= 2) throw new Error('rate_limited')
       retries++
@@ -210,8 +221,10 @@ export async function runHoursSync(force = false): Promise<HoursSyncResult> {
     const since = new Date()
     since.setMonth(since.getMonth() - HOURS_LOOKBACK_MONTHS)
     const sinceIso = since.toISOString().slice(0, 10)
+    const modifiedSince = new Date(since)
+    modifiedSince.setMonth(modifiedSince.getMonth() - 1)   // buffer for late-entered timesheets
 
-    const timesheets = await fetchTimesheets(tokens.accessToken, tokens.tenantId)
+    const timesheets = await fetchTimesheets(tokens.accessToken, tokens.tenantId, modifiedSince)
     const { rows, linesMatched } = aggregateTimesheetHours(timesheets, projectByTrackingId, sinceIso)
 
     // Replace-per-project (mirrors the cost feed): delete each updated project's rows, insert fresh.
