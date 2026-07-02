@@ -139,13 +139,14 @@ export async function getSiteBaseline(id: string): Promise<SiteBaseline | null> 
   return d?.ok ? d.baseline : null
 }
 
-// ── Subbie bookings (booked tick + comment per gantt category with sub work) ─────
-export interface SubbieBooking { category: string; booked: boolean; comment: string; updatedAt?: string }
+// ── Subbie bookings (booked tick + append-only time-stamped comment log per category) ─
+export interface BookingComment { text: string; by: string; at: string }
+export interface SubbieBooking { category: string; booked: boolean; comments: BookingComment[]; updatedAt?: string }
 export async function getSiteBookings(id: string): Promise<SubbieBooking[]> {
   const d = await getJson<{ ok: boolean; bookings: SubbieBooking[] }>(`/api/site/projects/${id}/bookings`)
   return d?.bookings ?? []
 }
-export async function saveSiteBooking(id: string, payload: { category: string; booked?: boolean; comment?: string }): Promise<boolean> {
+export async function saveSiteBooking(id: string, payload: { category: string; booked?: boolean; addComment?: string }): Promise<boolean> {
   const res = await fetch(`/api/site/projects/${id}/bookings`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   })

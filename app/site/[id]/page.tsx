@@ -148,10 +148,10 @@ function fmt(iso: string): string {
 }
 function money(n: number): string { return '$' + Math.round(n).toLocaleString('en-AU') }
 
-// ── Subbie contact box (booked tick + comment; due dates flow from the gantt) ───────
+// ── Subbie contact box (booked tick + time-stamped comment log; due dates from the gantt) ──
 function SubbieBookingsCard({ projectId, scopes, refresh }: {
   projectId: string
-  scopes: { category: string; due: string; inDays: number; booked: boolean; comment: string }[]
+  scopes: { category: string; due: string; inDays: number; booked: boolean; comments: { text: string; by: string; at: string }[] }[]
   refresh: () => void
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({})
@@ -163,14 +163,19 @@ function SubbieBookingsCard({ projectId, scopes, refresh }: {
     setSavingFor(null)
     refresh()
   }
-  const saveComment = async (s: (typeof scopes)[number]) => {
-    const draft = drafts[s.category]
-    if (draft === undefined || draft === s.comment) return
+  const addComment = async (s: (typeof scopes)[number]) => {
+    const draft = (drafts[s.category] || '').trim()
+    if (!draft) return
     setSavingFor(s.category)
-    await saveSiteBooking(projectId, { category: s.category, comment: draft })
+    const ok = await saveSiteBooking(projectId, { category: s.category, addComment: draft })
     setSavingFor(null)
-    refresh()
+    if (ok) {
+      setDrafts(d => ({ ...d, [s.category]: '' }))
+      refresh()
+    }
   }
+  const stamp = (at: string) =>
+    new Date(at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
 
   return (
     <div>
@@ -192,18 +197,37 @@ function SubbieBookingsCard({ projectId, scopes, refresh }: {
                   {s.booked ? 'Booked' : `due ${fmt(s.due)}${s.inDays >= 0 ? ` · in ${s.inDays}d` : ' · OVERDUE'}`}
                 </span>
               </div>
-              <input
-                value={drafts[s.category] ?? s.comment}
-                onChange={e => setDrafts(d => ({ ...d, [s.category]: e.target.value }))}
-                onBlur={() => saveComment(s)}
-                placeholder="Comment - e.g. left a message, pushed to Thursday..."
-                className="w-full mt-2 border border-fg-border/60 rounded-lg px-2.5 py-1.5 text-xs bg-white placeholder:text-fg-muted/50"
-              />
+
+              {/* The comment log - every entry visible, stamped with who + when (newest first). */}
+              {s.comments.length > 0 && (
+                <ul className="mt-2 space-y-1 border-l-2 border-fg-border/50 pl-2.5">
+                  {[...s.comments].reverse().map((c, i) => (
+                    <li key={i} className="text-xs leading-snug">
+                      <span className="text-fg-heading">{c.text}</span>
+                      <span className="text-[10px] text-fg-muted"> — {c.by}, {stamp(c.at)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="flex gap-2 mt-2">
+                <input
+                  value={drafts[s.category] ?? ''}
+                  onChange={e => setDrafts(d => ({ ...d, [s.category]: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') addComment(s) }}
+                  placeholder="Add a comment - e.g. left a message, pushed to Thursday..."
+                  className="flex-1 min-w-0 border border-fg-border/60 rounded-lg px-2.5 py-1.5 text-xs bg-white placeholder:text-fg-muted/50"
+                />
+                <button onClick={() => addComment(s)} disabled={savingFor === s.category || !(drafts[s.category] || '').trim()}
+                  className="shrink-0 rounded-lg bg-fg-heading text-white px-3 py-1.5 text-xs font-medium disabled:opacity-40">
+                  {savingFor === s.category ? '...' : 'Add'}
+                </button>
+              </div>
             </li>
           )
         })}
       </ul>
-      <p className="text-[10px] text-fg-muted mt-1.5">Due dates come from the schedule - tick each subbie once they&apos;re contacted and booked in. Comments save automatically.</p>
+      <p className="text-[10px] text-fg-muted mt-1.5">Due dates come from the schedule - tick each subbie once they&apos;re contacted and booked in.</p>
     </div>
   )
 }
@@ -501,7 +525,7 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
         category, due,
         inDays: Math.round((new Date(due).getTime() - new Date(todayIso).getTime()) / 86400000),
         booked: state.get(category)?.booked ?? false,
-        comment: state.get(category)?.comment ?? '',
+        comments: state.get(category)?.comments ?? [],
       }))
       .sort((a, b) => Number(a.booked) - Number(b.booked) || a.due.localeCompare(b.due))
   }, [gantt, bookings, todayIso])
