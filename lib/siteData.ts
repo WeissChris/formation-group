@@ -105,6 +105,22 @@ export async function getSiteMilestones(id: string): Promise<SiteMilestone[]> {
   return d?.milestones ?? []
 }
 
+// Safety snapshot for the cockpit's Safety tab (linked sf_site + board + register).
+import type { SafetySite, SiteBoard, SiteVisit } from '@/lib/safety'
+export interface SiteSafety {
+  site: SafetySite | null
+  board: SiteBoard | null
+  onSiteNow: SiteVisit[]
+  today: SiteVisit[]
+  inductionCount: number
+}
+export async function getSiteSafety(id: string): Promise<SiteSafety> {
+  const d = await getJson<{ ok: boolean } & SiteSafety>(`/api/site/projects/${id}/safety`)
+  return d?.ok
+    ? { site: d.site, board: d.board ?? null, onSiteNow: d.onSiteNow ?? [], today: d.today ?? [], inductionCount: d.inductionCount ?? 0 }
+    : { site: null, board: null, onSiteNow: [], today: [], inductionCount: 0 }
+}
+
 // ── Plans (private Supabase Storage bucket, one folder per project) ──────────────
 
 export interface SitePlan { name: string; path: string; size: number; updatedAt: string; url: string }

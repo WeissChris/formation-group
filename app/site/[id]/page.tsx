@@ -8,18 +8,19 @@ import { activeLineItems, estimateLabourHours, STD_LABOUR_RATE } from '@/lib/est
 import { computeScorecard, type ScoreStatus } from '@/lib/siteScorecard'
 import {
   siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, getSiteBoq,
-  getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours, getSiteMilestones,
-  type SiteProject, type SitePlan, type SiteMilestone,
+  getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours, getSiteMilestones, getSiteSafety,
+  type SiteProject, type SitePlan, type SiteMilestone, type SiteSafety,
 } from '@/lib/siteData'
 import type { GanttEntry, WeeklyActual, SubcontractorPackage, Estimate } from '@/types'
 
-type Tab = 'dashboard' | 'schedule' | 'boq' | 'plans' | 'subbies' | 'client' | 'score'
+type Tab = 'dashboard' | 'schedule' | 'boq' | 'plans' | 'subbies' | 'safety' | 'client' | 'score'
 const TABS: { key: Tab; label: string }[] = [
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'schedule', label: 'Schedule' },
   { key: 'boq', label: 'BOQ' },
   { key: 'subbies', label: 'Subbies' },
   { key: 'plans', label: 'Plans' },
+  { key: 'safety', label: 'Safety' },
   { key: 'client', label: 'Client & site' },
   { key: 'score', label: 'Scorecard' },
 ]
@@ -91,6 +92,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
         {tab === 'boq' && <Boq projectId={project.id} />}
         {tab === 'subbies' && <Subbies projectId={project.id} />}
         {tab === 'plans' && <Plans projectId={project.id} />}
+        {tab === 'safety' && <Safety projectId={project.id} />}
         {tab === 'client' && <ClientAndSite project={project} />}
         {tab === 'score' && <Scorecard card={card} actuals={actuals} xeroHours={xeroHours} />}
       </div>
@@ -512,6 +514,74 @@ function Plans({ projectId }: { projectId: string }) {
           ))}
         </ul>
       )}
+    </section>
+  )
+}
+
+// ── Safety (linked sf_site: register, inductions, board + sign-in links) ───────────
+function Safety({ projectId }: { projectId: string }) {
+  const [safety, setSafety] = useState<SiteSafety | null>(null)
+  useEffect(() => { getSiteSafety(projectId).then(setSafety) }, [projectId])
+
+  if (safety === null) return <p className="text-sm text-fg-muted py-6 text-center">Loading...</p>
+  if (!safety.site) return (
+    <p className="text-sm text-fg-muted py-8 text-center">
+      No safety site is linked to this job yet - ask the office to create one (Safety page in the main app).
+    </p>
+  )
+  const { site, onSiteNow, today, inductionCount } = safety
+  const time = (iso: string) => new Date(iso).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })
+
+  return (
+    <section className="space-y-5">
+      <div className="rounded-xl border border-fg-border p-4">
+        <p className="text-[10px] uppercase tracking-wide text-fg-muted">Safety site</p>
+        <p className="text-sm font-medium mt-0.5">{site.address}</p>
+        <p className="text-xs text-fg-muted">{site.shortRef} · {inductionCount} inducted</p>
+        <div className="flex flex-wrap gap-2 mt-3">
+          <a href={`/api/safety/sites/${site.id}/board-pdf`} target="_blank" rel="noopener noreferrer"
+            className="rounded-lg bg-fg-heading text-white px-3 py-2 text-xs font-medium">Site board PDF</a>
+          <a href={`/signin/${site.shortRef}`} target="_blank" rel="noopener noreferrer"
+            className="rounded-lg border border-fg-border px-3 py-2 text-xs">Open sign-in page</a>
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-sm font-medium mb-2">On site now ({onSiteNow.length})</h2>
+        {onSiteNow.length === 0 ? (
+          <p className="text-sm text-fg-muted py-4 text-center rounded-lg border border-fg-border/60 border-dashed">Nobody signed in.</p>
+        ) : (
+          <ul className="space-y-2">
+            {onSiteNow.map(v => (
+              <li key={v.id} className="rounded-lg border border-fg-border p-3 flex items-center justify-between">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{v.personName}</p>
+                  <p className="text-xs text-fg-muted">{v.company || v.role}{v.role === 'visitor' ? ' · visitor' : ''}</p>
+                </div>
+                <span className="text-xs text-fg-muted tabular-nums shrink-0">in {time(v.signedInAt)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div>
+        <h2 className="text-sm font-medium mb-2">Today</h2>
+        {today.length === 0 ? (
+          <p className="text-sm text-fg-muted">No sign-ins today.</p>
+        ) : (
+          <ul className="divide-y divide-fg-border/50">
+            {today.map(v => (
+              <li key={v.id} className="flex items-center justify-between py-2 text-sm">
+                <span className="truncate pr-2">{v.personName}{v.company ? <span className="text-fg-muted"> · {v.company}</span> : ''}</span>
+                <span className="text-xs text-fg-muted tabular-nums shrink-0">
+                  {time(v.signedInAt)}{v.signedOutAt ? ` – ${time(v.signedOutAt)}` : ' – on site'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   )
 }
