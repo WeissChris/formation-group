@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { siteSessionFrom, loadOwnedProjectRow } from '@/lib/siteServer'
 import { entrySegments } from '@/lib/ganttForecast'
+import { workingDaysBetween } from '@/lib/ganttSchedule'
 import type { GanttEntry } from '@/types'
 
 export const runtime = 'nodejs'
@@ -34,5 +35,19 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     return start ? { category: e.category, start, end } : null
   }).filter(Boolean)
 
-  return NextResponse.json({ ok: true, baseline: { capturedAt: latest.capturedAt ?? '', categories } })
+  // The ORIGINAL plan anchor for the schedule-creep penalty: the FIRST baseline's completion +
+  // working-day duration. Anchored to the first snapshot so re-baselining can't wash creep away.
+  const first = list.find(b => b.entries?.length)
+  let original: { endDate: string; durationDays: number } | null = null
+  if (first?.entries?.length) {
+    let start = '', end = ''
+    for (const e of first.entries) for (const s of entrySegments(e)) {
+      if (!s.startDate || !s.endDate) continue
+      if (!start || s.startDate < start) start = s.startDate
+      if (!end || s.endDate > end) end = s.endDate
+    }
+    if (start && end) original = { endDate: end, durationDays: Math.max(1, workingDaysBetween(start, end)) }
+  }
+
+  return NextResponse.json({ ok: true, baseline: { capturedAt: latest.capturedAt ?? '', categories, original } })
 }

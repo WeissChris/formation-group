@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { siteSessionFrom } from '@/lib/siteServer'
 import { entrySegments, entryClaimSegments } from '@/lib/ganttForecast'
 import { computeScorecard, segmentElapsed, type Scorecard } from '@/lib/siteScorecard'
+import { workingDaysBetween } from '@/lib/ganttSchedule'
 import { STD_LABOUR_RATE } from '@/lib/estimateCalculations'
 import { isLabourAccount } from '@/lib/labour'
 import { MonthlyReportPdf, type MonthlyReport, type ProjectReport } from '@/lib/monthlyReportPdf'
@@ -85,10 +86,25 @@ export async function GET(request: NextRequest) {
       .filter(r => !isLabourAccount((r.account_name as string) || '') && !/subcontract/i.test((r.account_name as string) || ''))
       .reduce((s, r) => s + (Number(r.amount_ex_gst) || 0), 0)
 
+    // The ORIGINAL plan anchor (first baseline) - timeline creep deducts from the score.
+    const baseListAll = Array.isArray(baseRes.data?.baselines) ? baseRes.data!.baselines as { entries?: GanttEntry[] }[] : []
+    const firstBase = baseListAll.find(b => b.entries?.length)
+    let originalAnchor: { endDate: string; durationDays: number } | null = null
+    if (firstBase?.entries?.length) {
+      let bStart = '', bEnd = ''
+      for (const e of firstBase.entries) for (const s of entrySegments(e)) {
+        if (!s.startDate || !s.endDate) continue
+        if (!bStart || s.startDate < bStart) bStart = s.startDate
+        if (!bEnd || s.endDate > bEnd) bEnd = s.endDate
+      }
+      if (bStart && bEnd) originalAnchor = { endDate: bEnd, durationDays: Math.max(1, workingDaysBetween(bStart, bEnd)) }
+    }
+
     const card: Scorecard = computeScorecard({
       estimate, actuals: [], subbies, gantt, today: todayIso,
       actualLabourHours: hoursRows.length ? totalHours : null,
       actualSupplyCost: (costsRes.data ?? []).length ? supplyCost : null,
+      baseline: originalAnchor,
     })
 
     // Done / upcoming from the claims.
@@ -169,10 +185,17 @@ export async function GET(request: NextRequest) {
       }))
       .sort((a, b) => a.number - b.number)
 
+    const scheduleNote = card.schedule
+      ? card.schedule.overrunDays > 0
+        ? `${card.schedule.overrunDays}d over the original plan (${Math.round(card.schedule.overrunPct * 100)}%)${card.schedule.penalty > 0 ? ` - score penalty -${card.schedule.penalty} (cost score ${card.costScore})` : ' - within grace'}`
+        : 'On or under the original baseline plan'
+      : 'No baseline set - timeline creep not scored'
+
     reports.push({
       name: (p.name as string) || '', address: (p.address as string) || '', status: (p.status as string) || '',
       progressPct: card.progressPct,
       score: card.score,
+      scheduleNote,
       scoreLabel: card.score === null ? '' : card.score >= 100 ? 'ahead of budget' : card.score >= 88 ? 'watch' : 'over budget',
       forecastEnd, plannedEnd, slipDays,
       hoursLastMonth,

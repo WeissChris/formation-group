@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Estimate, EstimateLineItem, GanttEntry, WeeklyActual, SubcontractorPackage } from '@/types'
-import { computeScorecard, scheduleProgress, segmentElapsed, disciplineProgress } from './siteScorecard'
+import { computeScorecard, scheduleProgress, segmentElapsed, disciplineProgress, schedulePenalty } from './siteScorecard'
 
 // 2026-08-03 = Mon, 2026-08-07 = Fri, 2026-08-14 = Fri. No VIC public holidays in this fortnight.
 const li = (type: EstimateLineItem['type'], total: number, i: number): EstimateLineItem => ({
@@ -32,6 +32,30 @@ describe('segmentElapsed / scheduleProgress', () => {
   })
   it('weights progress by segment cost', () => {
     expect(scheduleProgress(ganttHalf, '2026-08-07')).toBeCloseTo(0.5, 6)
+  })
+})
+
+describe('schedulePenalty (timeline creep vs the ORIGINAL baseline, duration-weighted)', () => {
+  // Baselines: a 3-week job = 15 working days; a ~3-month job = 65 working days.
+  it('a week over a 3-WEEK job is punished hard (~33% overrun)', () => {
+    // Baseline ends Fri 2026-08-21; forecast ends Fri 2026-08-28 (5 working days later).
+    const p = schedulePenalty('2026-08-21', 15, '2026-08-28')
+    expect(p.overrunDays).toBe(5)
+    expect(p.overrunPct).toBeCloseTo(5 / 15, 4)
+    expect(p.penalty).toBe(23)   // (33.3% - 10% grace) -> 23 pts
+  })
+  it('a week over a 3-MONTH job is inside the grace (free)', () => {
+    const p = schedulePenalty('2026-08-21', 65, '2026-08-28')
+    expect(p.overrunPct).toBeCloseTo(5 / 65, 4)   // ~7.7%
+    expect(p.penalty).toBe(0)
+  })
+  it('two weeks over a 3-month job costs a nudge; the cap holds for runaways', () => {
+    expect(schedulePenalty('2026-08-21', 65, '2026-09-04').penalty).toBe(5)    // ~15.4% -> 5
+    expect(schedulePenalty('2026-08-21', 15, '2026-12-24').penalty).toBe(25)   // cap
+  })
+  it('on or under the baseline = no penalty', () => {
+    expect(schedulePenalty('2026-08-21', 15, '2026-08-21').penalty).toBe(0)
+    expect(schedulePenalty('2026-08-21', 15, '2026-08-14').penalty).toBe(0)
   })
 })
 
@@ -120,6 +144,29 @@ describe('computeScorecard', () => {
       today: '2026-08-07', actualSupplyCost: null,
     })
     expect(sc.levers.find(l => l.key === 'materials')?.actual).toBe(4000)
+  })
+
+  it('deducts the schedule penalty from the cost score when a baseline anchor is given', () => {
+    // ganttHalf's bar ends 2026-08-14. Original baseline: 15 working days ending 2026-08-07 ->
+    // forecast is 5 working days (33%) over -> -23 pts on a cost score of 100.
+    const sc = computeScorecard({
+      estimate, actuals: [actual(5000, 5000)], subbies: [subbie(10000)], gantt: ganttHalf,
+      today: '2026-08-07',
+      baseline: { endDate: '2026-08-07', durationDays: 15 },
+    })
+    expect(sc.costScore).toBe(100)
+    expect(sc.schedule?.overrunDays).toBe(5)
+    expect(sc.schedule?.penalty).toBe(23)
+    expect(sc.score).toBe(77)
+    expect(sc.status).toBe('over')
+  })
+
+  it('no baseline anchor -> no schedule penalty (schedule: null)', () => {
+    const sc = computeScorecard({
+      estimate, actuals: [actual(5000, 5000)], subbies: [subbie(10000)], gantt: ganttHalf, today: '2026-08-07',
+    })
+    expect(sc.schedule).toBeNull()
+    expect(sc.score).toBe(sc.costScore)
   })
 
   it('judges labour against LABOUR-work elapsed, not the blended job progress', () => {

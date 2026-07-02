@@ -30,10 +30,20 @@ export interface ScorecardLever {
   status: ScoreStatus
 }
 
+export interface SchedulePenalty {
+  baselineEnd: string
+  forecastEnd: string
+  overrunDays: number          // working days past the ORIGINAL baseline completion (0 = on/under)
+  overrunPct: number           // overrunDays / baseline working-day duration
+  penalty: number              // points deducted from the cost score (0..SCHEDULE_PENALTY_CAP)
+}
+
 export interface Scorecard {
   progressPct: number          // 0..1 — schedule progress (planned cost elapsed)
   levers: ScorecardLever[]
   score: number | null         // 0-120 delivery index (100 = on budget); null when too early to judge
+  costScore: number | null     // the score BEFORE the schedule penalty (cost efficiency only)
+  schedule: SchedulePenalty | null   // null when no baseline anchor was supplied
   status: ScoreStatus          // overall colour
   budgetCost: number           // total allowed cost
   projectedCost: number        // projected final cost at current run-rate
@@ -43,6 +53,30 @@ export interface Scorecard {
 // Below this schedule progress there isn't enough signal to score — actuals lag and tiny denominators
 // make ratios wild. We still show the levers, but the overall score reads "too early".
 const MIN_PROGRESS_TO_SCORE = 0.08
+
+// ── Schedule (timeline-creep) penalty ─────────────────────────────────────────
+// Cost levers run against the LIVE gantt (honest cost efficiency for resequenced work), but the
+// live gantt can't see creep — a foreman who keeps nudging bars right is always "on schedule" by
+// his own definition. So the score also carries a penalty vs the ORIGINAL plan (the FIRST
+// baseline), weighted by the job's length (Chris): the measure is % overrun of the baseline
+// duration, so a week over a 3-week job (~33%) hurts far more than a week over a 3-month job
+// (~8%, inside the grace). 10% overrun is free; beyond it, 1 point per 1%, capped.
+const SCHEDULE_GRACE_PCT = 0.10
+const SCHEDULE_PENALTY_CAP = 25
+
+/** The schedule penalty for a forecast finish vs the original baseline. Pure — tested. */
+export function schedulePenalty(
+  baselineEnd: string, baselineDurationDays: number, forecastEnd: string,
+): SchedulePenalty {
+  let overrunDays = 0
+  if (forecastEnd > baselineEnd) {
+    // workingDaysBetween is inclusive of both ends; the overrun excludes the baseline day itself.
+    overrunDays = Math.max(0, workingDaysBetween(baselineEnd, forecastEnd) - 1)
+  }
+  const overrunPct = baselineDurationDays > 0 ? overrunDays / baselineDurationDays : 0
+  const penalty = Math.min(SCHEDULE_PENALTY_CAP, Math.max(0, Math.round((overrunPct - SCHEDULE_GRACE_PCT) * 100)))
+  return { baselineEnd, forecastEnd, overrunDays, overrunPct, penalty }
+}
 
 /** Fraction of a segment's cost that has elapsed by `today` (working-day based, 0..1). */
 export function segmentElapsed(startIso: string, endIso: string, today: string): number {
@@ -125,9 +159,12 @@ export interface ScorecardInput {
    *  accounts). When present (non-null) the materials lever runs on it instead of the retired
    *  foreman cost log (fg_actuals), which nothing feeds any more. Null = not synced yet. */
   actualSupplyCost?: number | null
+  /** The ORIGINAL plan anchor (the FIRST gantt baseline): its completion date + working-day
+   *  duration. When present, timeline creep deducts from the score (schedulePenalty). */
+  baseline?: { endDate: string; durationDays: number } | null
 }
 
-export function computeScorecard({ estimate, actuals, subbies, gantt, today, actualLabourHours, actualSupplyCost }: ScorecardInput): Scorecard {
+export function computeScorecard({ estimate, actuals, subbies, gantt, today, actualLabourHours, actualSupplyCost, baseline }: ScorecardInput): Scorecard {
   const items = estimate ? activeLineItems(estimate) : []
   const b = costBreakdown(items)
   const budgetMaterials = b.material + b.equipment   // supply-type spend the foreman logs together
@@ -180,14 +217,26 @@ export function computeScorecard({ estimate, actuals, subbies, gantt, today, act
     runRate(actMaterials, budgetMaterials, materialsProgress) +
     (committedSubbies > 0 ? committedSubbies : budgetSubbies)
 
+  // Timeline creep vs the ORIGINAL baseline (forecast finish = the live gantt's latest bar end).
+  let schedule: SchedulePenalty | null = null
+  if (baseline?.endDate && baseline.durationDays > 0) {
+    let forecastEnd = ''
+    for (const e of gantt) for (const s of entrySegments(e)) {
+      if (s.endDate && s.endDate > forecastEnd) forecastEnd = s.endDate
+    }
+    if (forecastEnd) schedule = schedulePenalty(baseline.endDate, baseline.durationDays, forecastEnd)
+  }
+
   const hasBudget = budgetCost > 0
   let score: number | null = null
+  let costScore: number | null = null
   let status: ScoreStatus = 'na'
   if (hasBudget && progress >= MIN_PROGRESS_TO_SCORE) {
     // 100 = projected exactly on budget; >100 = coming in under; <100 = over. Clamped to a sane band.
-    score = Math.round(clamp(100 * budgetCost / Math.max(projectedCost, 1), 40, 120))
+    costScore = Math.round(clamp(100 * budgetCost / Math.max(projectedCost, 1), 40, 120))
+    score = Math.round(clamp(costScore - (schedule?.penalty ?? 0), 40, 120))
     status = score >= 100 ? 'good' : score >= 88 ? 'watch' : 'over'
   }
 
-  return { progressPct: progress, levers, score, status, budgetCost, projectedCost, hasBudget }
+  return { progressPct: progress, levers, score, costScore, schedule, status, budgetCost, projectedCost, hasBudget }
 }

@@ -19,6 +19,7 @@ export interface ProjectReport {
   progressPct: number            // blended schedule progress 0..1
   score: number | null
   scoreLabel: string
+  scheduleNote: string           // timeline vs the ORIGINAL baseline (creep penalty breakdown)
   levers: { label: string; used: string; base: string }[]   // pre-formatted (hours / $ / committed)
   forecastEnd: string
   plannedEnd: string
@@ -110,6 +111,10 @@ export function MonthlyReportPdf({ report }: { report: MonthlyReport }) {
                 {p.slipDays === null ? '-' : p.slipDays > 0 ? `${p.slipDays}d behind` : p.slipDays < 0 ? `${-p.slipDays}d ahead` : 'On plan'}
               </Text>
             </View>
+          </View>
+          <View style={s.row}>
+            <Text style={{ width: '30%', color: GREY }}>Timeline vs original plan</Text>
+            <Text style={{ width: '70%', color: /penalty/.test(p.scheduleNote) ? RED : /No baseline/.test(p.scheduleNote) ? GREY : GREEN }}>{p.scheduleNote}</Text>
           </View>
           {p.levers.map((l, i) => (
             <View key={i} style={s.row}>

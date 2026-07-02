@@ -132,8 +132,13 @@ export async function getSiteSafety(id: string): Promise<SiteSafety> {
 }
 
 // The latest office baseline, reduced to per-category start/end - the dashboard slip card's
-// reference schedule. null until the office sets a baseline on the gantt.
-export interface SiteBaseline { capturedAt: string; categories: { category: string; start: string; end: string }[] }
+// reference schedule - plus the ORIGINAL (first-baseline) anchor for the schedule-creep score
+// penalty. null until the office sets a baseline on the gantt.
+export interface SiteBaseline {
+  capturedAt: string
+  categories: { category: string; start: string; end: string }[]
+  original?: { endDate: string; durationDays: number } | null
+}
 export async function getSiteBaseline(id: string): Promise<SiteBaseline | null> {
   const d = await getJson<{ ok: boolean; baseline: SiteBaseline | null }>(`/api/site/projects/${id}/baseline`)
   return d?.ok ? d.baseline : null

@@ -79,7 +79,8 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
   const card = useMemo(() => computeScorecard({
     estimate, actuals: actuals || [], subbies, gantt, today: toISO(new Date()),
     actualLabourHours: xeroHours, actualSupplyCost: xeroSupply,
-  }), [estimate, actuals, subbies, gantt, xeroHours, xeroSupply])
+    baseline: baseline?.original ?? null,   // timeline creep vs the ORIGINAL plan costs points
+  }), [estimate, actuals, subbies, gantt, xeroHours, xeroSupply, baseline])
 
   if (denied) return (
     <Centered>
@@ -742,6 +743,20 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
                 {card.score !== null ? ` · target 100` : ''}
               </span>
             </div>
+            {/* Schedule-creep penalty vs the ORIGINAL baseline (duration-weighted). */}
+            {card.schedule && card.score !== null && (
+              <div className="flex justify-between items-baseline text-[11px]">
+                <span className="text-fg-muted">Timeline vs original plan</span>
+                <span className={`tabular-nums ${card.schedule.penalty > 0 ? 'text-red-600' : 'text-green-700'}`}>
+                  {card.schedule.overrunDays > 0
+                    ? `${card.schedule.overrunDays}d over (${Math.round(card.schedule.overrunPct * 100)}%)${card.schedule.penalty > 0 ? ` · −${card.schedule.penalty} pts (cost score ${card.costScore})` : ' · within grace'}`
+                    : 'On or under the original plan'}
+                </span>
+              </div>
+            )}
+            {!card.schedule && card.score !== null && (
+              <p className="text-[10px] text-amber-700">No baseline set - timeline creep isn&apos;t scored yet (office: set one on the gantt).</p>
+            )}
             {card.levers.map(l => (
               <div key={l.key} className="flex justify-between items-baseline text-[11px]">
                 <span className="text-fg-muted">{l.label === 'Subcontractors' ? 'Subbies' : l.label}</span>
