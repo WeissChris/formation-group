@@ -4,10 +4,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { entrySegments } from '@/lib/ganttForecast'
-import { activeLineItems, estimateLabourHours } from '@/lib/estimateCalculations'
+import { activeLineItems, estimateLabourHours, STD_LABOUR_RATE } from '@/lib/estimateCalculations'
 import { computeScorecard, type ScoreStatus } from '@/lib/siteScorecard'
 import {
-  siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, saveSiteActual, getSiteBoq,
+  siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, getSiteBoq,
   getSitePlans, uploadSitePlan, deleteSitePlan,
   type SiteProject, type SitePlan,
 } from '@/lib/siteData'
@@ -400,20 +400,12 @@ const STATUS_UI: Record<ScoreStatus, { bar: string; text: string; ring: string; 
 }
 
 function Scorecard({ projectId, gantt }: { projectId: string; gantt: GanttEntry[] }) {
-  const categories = useMemo(() => gantt.map(e => e.category), [gantt])
   const [actuals, setActuals] = useState<WeeklyActual[] | null>(null)
   const [estimate, setEstimate] = useState<Estimate | null>(null)
   const [subbies, setSubbies] = useState<SubcontractorPackage[]>([])
-  const [category, setCategory] = useState('')
-  const [weekEnding, setWeekEnding] = useState(toISO(addDays(thisMonday(), 4)))
-  const [supply, setSupply] = useState('')
-  const [labour, setLabour] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [saved, setSaved] = useState(false)
 
-  const refresh = () => getSiteActuals(projectId).then(setActuals)
   useEffect(() => {
-    refresh()
+    getSiteActuals(projectId).then(setActuals)
     getSiteBoq(projectId).then(setEstimate)
     getSiteSubbies(projectId).then(s => setSubbies(s || []))
   }, [projectId])
@@ -423,16 +415,13 @@ function Scorecard({ projectId, gantt }: { projectId: string; gantt: GanttEntry[
   }), [estimate, actuals, subbies, gantt])
   const overall = STATUS_UI[card.status]
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!category) return
-    setBusy(true); setSaved(false)
-    const ok = await saveSiteActual(projectId, {
-      category, weekEnding, supplyCost: Number(supply) || 0, labourCost: Number(labour) || 0,
-    })
-    setBusy(false)
-    if (ok) { setSupply(''); setLabour(''); setSaved(true); refresh() }
-  }
+  // Labour reads in HOURS (allowance and used). Labour is always priced at the standard rate, so
+  // hours = $ / STD_LABOUR_RATE — the same conversion the BOQ + Labour Checker use. When Xero
+  // timesheets connect, the actual becomes real logged hours instead of a $-derived equivalent.
+  const hrs = (dollars: number) => `${Math.round(dollars / STD_LABOUR_RATE).toLocaleString('en-AU')}h`
+  const leverAmount = (l: (typeof card.levers)[number]) =>
+    l.key === 'labour' ? <>{hrs(l.actual)} <span className="opacity-60">/ {hrs(l.budget)}</span></>
+      : <>{money(l.actual)} <span className="opacity-60">/ {money(l.budget)}</span></>
 
   return (
     <section className="space-y-5">
@@ -468,58 +457,27 @@ function Scorecard({ projectId, gantt }: { projectId: string; gantt: GanttEntry[
               <div key={l.key}>
                 <div className="flex justify-between items-baseline text-sm">
                   <span className="font-medium">{l.label}</span>
-                  <span className="tabular-nums text-fg-muted text-xs">{money(l.actual)} <span className="opacity-60">/ {money(l.budget)}</span></span>
+                  <span className="tabular-nums text-fg-muted text-xs">{leverAmount(l)}</span>
                 </div>
                 <div className="h-2 rounded-full bg-fg-border/40 overflow-hidden mt-1">
                   <div className={`h-full ${ui.bar}`} style={{ width: `${Math.round(pct * 100)}%` }} />
                 </div>
                 <p className={`text-[10px] mt-0.5 ${ui.text}`}>
-                  {l.budget > 0 ? `${Math.round(l.consumedPct * 100)}% of allowance used` : 'No allowance'}
+                  {l.budget > 0 ? `${Math.round(l.consumedPct * 100)}% of allowance ${l.key === 'subbies' ? 'committed' : 'used'}` : 'No allowance'}
                 </p>
               </div>
             )
           })}
-          <p className="text-[11px] text-fg-muted">Labour is measured in dollars for now; it switches to hours once Xero timesheets are connected.</p>
+          <p className="text-[11px] text-fg-muted">Costs and labour hours flow in from Xero - nothing to log here.</p>
         </div>
       ) : (
         <p className="text-sm text-fg-muted text-center py-2">No estimate to score against yet.</p>
       )}
 
-      <form onSubmit={submit} className="space-y-3 rounded-xl border border-fg-border p-4">
-        <p className="text-sm font-medium">Log costs</p>
-        <select value={category} onChange={e => setCategory(e.target.value)}
-          className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white">
-          <option value="">Pick a category...</option>
-          {categories.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <label className="block text-xs text-fg-muted">Week ending
-          <input type="date" value={weekEnding} onChange={e => setWeekEnding(e.target.value)}
-            className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white mt-1" />
-        </label>
-        <div className="flex gap-2">
-          <label className="block text-xs text-fg-muted flex-1">Supply $
-            <input type="number" inputMode="decimal" value={supply} onChange={e => setSupply(e.target.value)}
-              className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white mt-1" />
-          </label>
-          <label className="block text-xs text-fg-muted flex-1">Labour $
-            <input type="number" inputMode="decimal" value={labour} onChange={e => setLabour(e.target.value)}
-              className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white mt-1" />
-          </label>
-        </div>
-        <button type="submit" disabled={busy || !category}
-          className="w-full rounded-lg bg-fg-heading text-white py-2.5 text-sm font-medium disabled:opacity-40">
-          {busy ? 'Saving...' : 'Save entry'}
-        </button>
-        {saved && <p className="text-xs text-green-600 text-center">Saved.</p>}
-      </form>
-
-      <div>
-        <p className="text-xs text-fg-muted mb-2">Logged so far</p>
-        {actuals === null ? (
-          <p className="text-sm text-fg-muted">Loading...</p>
-        ) : actuals.length === 0 ? (
-          <p className="text-sm text-fg-muted">Nothing logged yet.</p>
-        ) : (
+      {/* Read-only record of the costs counted above (fed from Xero / the office - no site logging). */}
+      {actuals !== null && actuals.length > 0 && (
+        <div>
+          <p className="text-xs text-fg-muted mb-2">Costs recorded</p>
           <ul className="divide-y divide-fg-border/50">
             {[...actuals].sort((a, b) => b.weekEnding.localeCompare(a.weekEnding)).map(a => (
               <li key={a.id} className="flex items-center justify-between py-2 text-sm">
@@ -528,8 +486,8 @@ function Scorecard({ projectId, gantt }: { projectId: string; gantt: GanttEntry[
               </li>
             ))}
           </ul>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   )
 }

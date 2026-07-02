@@ -64,13 +64,23 @@ export function scheduleProgress(gantt: GanttEntry[], today: string): number {
   return total > 0 ? done / total : 0
 }
 
-/** A lever is judged by how its consumption compares to how far the job has progressed. */
+/** A run-rate lever (labour/materials) is judged by how its consumption compares to progress. */
 function leverStatus(budget: number, consumedPct: number, progress: number): ScoreStatus {
   if (budget <= 0) return 'na'
   if (progress < 0.05 && consumedPct < 0.05) return 'na'   // nothing meaningful yet
   const ahead = consumedPct - progress                      // spending faster than progressing
   if (ahead <= 0.05) return 'good'
   if (ahead <= 0.15) return 'watch'
+  return 'over'
+}
+
+/** Subbies are COMMITTED up-front (the whole package counts on day one), so they are judged straight
+ *  against the allowance — committed == budget is ON budget, not "spent it all already". */
+function committedStatus(budget: number, consumedPct: number): ScoreStatus {
+  if (budget <= 0) return 'na'
+  if (consumedPct <= 0) return 'na'          // nothing committed yet
+  if (consumedPct <= 1.02) return 'good'     // small tolerance for rounding
+  if (consumedPct <= 1.1) return 'watch'
   return 'over'
 }
 
@@ -105,10 +115,12 @@ export function computeScorecard({ estimate, actuals, subbies, gantt, today }: S
     return { key, label, budget, actual, consumedPct, status: leverStatus(budget, consumedPct, progress) }
   }
 
+  const subConsumed = budgetSubbies > 0 ? committedSubbies / budgetSubbies : 0
   const levers: ScorecardLever[] = [
     mkLever('labour', 'Labour', budgetLabour, actLabour),
     mkLever('materials', 'Materials', budgetMaterials, actMaterials),
-    mkLever('subbies', 'Subcontractors', budgetSubbies, committedSubbies),
+    { key: 'subbies', label: 'Subcontractors', budget: budgetSubbies, actual: committedSubbies,
+      consumedPct: subConsumed, status: committedStatus(budgetSubbies, subConsumed) },
   ]
 
   // Projected final cost. Labour + materials extrapolate from the run-rate (actual / progress);

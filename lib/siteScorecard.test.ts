@@ -45,6 +45,15 @@ describe('computeScorecard', () => {
     expect(sc.status).toBe('good')
     expect(sc.budgetCost).toBe(30000)
     expect(sc.projectedCost).toBeCloseTo(30000, 4)
+    // Subbies are committed up-front: fully committed AT the allowance is ON budget, not over.
+    expect(sc.levers.find(l => l.key === 'subbies')?.status).toBe('good')
+  })
+
+  it('flags subbies only when committed OVER the allowance', () => {
+    const sc = computeScorecard({
+      estimate, actuals: [actual(5000, 5000)], subbies: [subbie(11500)], gantt: ganttHalf, today: '2026-08-07',
+    })
+    expect(sc.levers.find(l => l.key === 'subbies')?.status).toBe('over')   // 115% committed
   })
 
   it('drops the score and flags over when labour is running hot', () => {
