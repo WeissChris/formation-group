@@ -18,6 +18,9 @@ export function getSupabaseServer(): SupabaseClient | null {
   if (!url || !anonKey) return null
   const cookieStore = cookies()
   return createServerClient(url, anonKey, {
+    // Same no-store guard as lib/supabaseAdmin.ts: keep server-side Supabase reads out of Next's
+    // fetch Data Cache so auth/session lookups can never serve a stale snapshot.
+    global: { fetch: (input, init) => fetch(input, { ...init, cache: 'no-store' }) },
     cookies: {
       get(name: string) {
         return cookieStore.get(name)?.value

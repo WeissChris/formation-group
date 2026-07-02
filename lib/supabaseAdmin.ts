@@ -18,6 +18,13 @@ const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
 export const supabaseAdmin: SupabaseClient | null = (url && serviceKey)
   ? createClient(url, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
+      // CRITICAL: opt every PostgREST call out of Next's Data Cache. supabase-js rides on global
+      // fetch, and Next 14 route handlers cache fetch GETs - so WITHOUT no-store, different routes
+      // serve different stale snapshots of the DB. Proven live on fg_xero_tokens: /api/xero/status
+      // kept returning a Formation row 35+ minutes after disconnect deleted it (stale "Connected"
+      // hid the Connect button, so reconnect was impossible), and a refresh reading a cached,
+      // already-rotated refresh token gets invalid_grant - the "tokens randomly die" failure.
+      global: { fetch: (input, init) => fetch(input, { ...init, cache: 'no-store' }) },
     })
   : null
 
