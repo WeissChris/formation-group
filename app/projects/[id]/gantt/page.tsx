@@ -2317,8 +2317,9 @@ export default function GanttPage() {
       <div className="hidden gantt-print-only mb-4">
         <p className="text-[11px] tracking-[0.2em] uppercase text-fg-heading font-medium">Formation Landscapes</p>
         <h1 className="text-xl font-light text-fg-heading mt-1">{project.name} — Programme</h1>
-        {/* "Revenue & schedule · date" subtitle is internal only — the client version drops it entirely. */}
-        {!clientPrint && <p className="text-xs text-fg-muted mt-0.5">Revenue &amp; schedule · {new Date().toLocaleDateString()}</p>}
+        {/* "Revenue & schedule · date" subtitle is internal only — the client version drops it entirely,
+            and the /site (foreman) print says "Site programme" instead of mentioning revenue. */}
+        {!clientPrint && <p className="text-xs text-fg-muted mt-0.5">{siteMode ? 'Site programme' : 'Revenue & schedule'} · {new Date().toLocaleDateString()}</p>}
       </div>
 
       {/* Breadcrumb (office only — the cockpit has its own nav) */}
@@ -2340,7 +2341,7 @@ export default function GanttPage() {
       {/* Header */}
       <div className="gantt-no-print flex items-start justify-between mb-8 flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-light tracking-wide text-fg-heading">Gantt &amp; Revenue Schedule</h1>
+          <h1 className="text-2xl font-light tracking-wide text-fg-heading">{siteMode ? 'Site Programme' : <>Gantt &amp; Revenue Schedule</>}</h1>
           <p className="text-sm font-light text-fg-muted mt-1">{project.name}</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -2514,9 +2515,9 @@ export default function GanttPage() {
             )}
           </div>
           <button onClick={handleSave}
-            title="Saves the timeline and rebuilds the revenue forecast from it — they stay in sync"
+            title={siteMode ? 'Saves the timeline - the office programme updates from it' : 'Saves the timeline and rebuilds the revenue forecast from it — they stay in sync'}
             className="px-4 py-2 bg-fg-dark text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-fg-darker transition-colors">
-            Save timeline + forecast
+            {siteMode ? 'Save timeline' : 'Save timeline + forecast'}
           </button>
         </div>
       </div>
