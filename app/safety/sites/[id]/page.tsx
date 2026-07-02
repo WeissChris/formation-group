@@ -36,6 +36,7 @@ const BOARD_FIELDS: { key: keyof SiteBoard; label: string }[] = [
 export default function SafetySiteDetail({ params }: { params: { id: string } }) {
   const [detail, setDetail] = useState<Detail | null>(null)
   const [board, setBoard] = useState<SiteBoard | null>(null)
+  const [address, setAddress] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -45,6 +46,7 @@ export default function SafetySiteDetail({ params }: { params: { id: string } })
     .then(d => {
       if (!d.ok) { setError('Site not found.'); return }
       setDetail(d)
+      setAddress(d.site.address || '')
       setBoard(d.board ?? {
         siteId: params.id, principalContractor: '', principalContractorNumber: '', buildingSurveyor: '',
         buildingRegistrationNumber: '', buildingPermit: '', supervisorNameNumber: '', hsManagerNameNumber: '',
@@ -60,10 +62,10 @@ export default function SafetySiteDetail({ params }: { params: { id: string } })
     setSaving(true); setSaved(false); setError('')
     const res = await fetch(`/api/safety/sites/${params.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ board }),
+      body: JSON.stringify({ board, address }),
     })
     setSaving(false)
-    if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2500) }
+    if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2500); refresh() }
     else setError('Save failed.')
   }
 
@@ -108,6 +110,11 @@ export default function SafetySiteDetail({ params }: { params: { id: string } })
         <div>
           <h2 className="text-sm font-medium text-fg-heading mb-3">Site board</h2>
           <div className="space-y-3 border border-fg-border bg-white p-4">
+            <label className="block text-2xs uppercase tracking-wide text-fg-muted">
+              Site Address (shown on the board + sign-in page)
+              <input value={address} onChange={e => setAddress(e.target.value)}
+                className="w-full border border-fg-border px-2 py-1.5 text-sm text-fg-heading bg-white mt-1 normal-case tracking-normal" />
+            </label>
             {BOARD_FIELDS.map(f => (
               <label key={f.key} className="block text-2xs uppercase tracking-wide text-fg-muted">
                 {f.label}
