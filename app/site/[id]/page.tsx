@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { entrySegments } from '@/lib/ganttForecast'
+import { entrySegments, entryClaimSegments } from '@/lib/ganttForecast'
 import { activeLineItems, estimateLabourHours, STD_LABOUR_RATE } from '@/lib/estimateCalculations'
 import { computeScorecard, type ScoreStatus } from '@/lib/siteScorecard'
 import {
@@ -117,14 +117,35 @@ function fmt(iso: string): string {
 }
 function money(n: number): string { return '$' + Math.round(n).toLocaleString('en-AU') }
 
-// ── This week (dashboard strip; also reused at the top of Schedule) ────────────────
+// ── This week (dashboard strip) ─────────────────────────────────────────────────────
+// ONE card per category (a split category's Materials/Labour/Sub lines each carry their own
+// bar, which used to render as repeating cards) - combined dates + total cost on the card,
+// with the individual scope lines in a tap-to-expand dropdown.
 function ThisWeekStrip({ gantt }: { gantt: GanttEntry[] }) {
   const mon = thisMonday()
   const monIso = toISO(mon), friIso = toISO(addDays(mon, 4)), sunIso = toISO(addDays(mon, 6))
-  const thisWeek = gantt.flatMap(e =>
-    entrySegments(e)
-      .filter(s => s.startDate && s.endDate && s.startDate <= sunIso && s.endDate >= monIso)
-      .map(s => ({ category: e.category, seg: s })))
+  const [open, setOpen] = useState<Record<string, boolean>>({})
+
+  const groups = useMemo(() => {
+    const out: { category: string; start: string; end: string; cost: number; items: { label: string; start: string; end: string; cost: number }[] }[] = []
+    for (const e of gantt) {
+      const claims = entryClaimSegments(e).filter(c =>
+        c.seg.startDate && c.seg.endDate && c.seg.startDate <= sunIso && c.seg.endDate >= monIso)
+      if (claims.length === 0) continue
+      const items = claims.map(c => ({
+        label: c.label || (c.costType ? c.costType.charAt(0).toUpperCase() + c.costType.slice(1) : 'Scope'),
+        start: c.seg.startDate, end: c.seg.endDate, cost: c.seg.costAllocation || 0,
+      }))
+      out.push({
+        category: e.category,
+        start: items.reduce((m, i) => i.start < m ? i.start : m, items[0].start),
+        end: items.reduce((m, i) => i.end > m ? i.end : m, items[0].end),
+        cost: items.reduce((s, i) => s + i.cost, 0),
+        items,
+      })
+    }
+    return out.sort((a, b) => a.start.localeCompare(b.start))
+  }, [gantt, monIso, sunIso])   // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>
@@ -132,21 +153,48 @@ function ThisWeekStrip({ gantt }: { gantt: GanttEntry[] }) {
         <h2 className="text-sm font-medium">This week</h2>
         <span className="text-xs text-fg-muted">{fmt(monIso)} &ndash; {fmt(friIso)}</span>
       </div>
-      {thisWeek.length === 0 ? (
+      {groups.length === 0 ? (
         <p className="text-sm text-fg-muted py-4 text-center rounded-lg border border-fg-border/60 border-dashed">
           No work scheduled this week.
         </p>
       ) : (
         <ul className="space-y-2">
-          {thisWeek.map((a, i) => (
-            <li key={i} className="rounded-lg border border-fg-border p-3 flex items-center justify-between">
-              <div className="min-w-0">
-                <p className="font-medium truncate">{a.category}</p>
-                <p className="text-xs text-fg-muted">{fmt(a.seg.startDate)} &ndash; {fmt(a.seg.endDate)}{a.seg.label ? ` · ${a.seg.label}` : ''}</p>
-              </div>
-              <span className="text-xs text-fg-muted tabular-nums shrink-0">{money(a.seg.costAllocation)}</span>
-            </li>
-          ))}
+          {groups.map(g => {
+            const expandable = g.items.length > 1
+            const isOpen = !!open[g.category]
+            return (
+              <li key={g.category} className="rounded-lg border border-fg-border overflow-hidden">
+                <button className="w-full p-3 flex items-center justify-between text-left"
+                  onClick={() => expandable && setOpen(o => ({ ...o, [g.category]: !o[g.category] }))}>
+                  <div className="min-w-0 flex items-center gap-1.5">
+                    {expandable && (
+                      <span className={`shrink-0 text-fg-muted text-xs transition-transform ${isOpen ? 'rotate-90' : ''}`}>&#9656;</span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{g.category}</p>
+                      <p className="text-xs text-fg-muted">
+                        {fmt(g.start)} &ndash; {fmt(g.end)}{expandable ? ` · ${g.items.length} scopes` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-fg-muted tabular-nums shrink-0">{money(g.cost)}</span>
+                </button>
+                {expandable && isOpen && (
+                  <ul className="border-t border-fg-border/50 divide-y divide-fg-border/40 bg-fg-card/20">
+                    {g.items.map((it, i) => (
+                      <li key={i} className="px-3 py-2 pl-8 flex items-center justify-between">
+                        <div className="min-w-0">
+                          <p className="text-sm truncate">{it.label}</p>
+                          <p className="text-[11px] text-fg-muted">{fmt(it.start)} &ndash; {fmt(it.end)}</p>
+                        </div>
+                        <span className="text-[11px] text-fg-muted tabular-nums shrink-0">{money(it.cost)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
