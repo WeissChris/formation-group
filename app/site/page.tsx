@@ -69,7 +69,8 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (m: { supervisorId: string; n
           </div>
           <div>
             <label className="block text-xs text-fg-muted mb-1.5">Passcode</label>
-            <input type="password" inputMode="numeric" autoComplete="current-password"
+            {/* Full keyboard, not the number pad - passcodes can contain letters. */}
+            <input type="password" autoComplete="current-password"
               value={passcode} onChange={e => setPasscode(e.target.value)}
               className="w-full border border-fg-border rounded-lg px-3 py-3 text-base bg-white" />
           </div>
