@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { siteSessionFrom, loadOwnedProjectRow } from '@/lib/siteServer'
 import { mapSafetySite, mapSiteBoard, mapSiteVisit } from '@/lib/safety'
 import { mapSwms, mapToolbox, mapIncident } from '@/lib/safetyDocs'
+import { mapPrequalDocument, companyCompliance } from '@/lib/safetyCompliance'
 
 export const runtime = 'nodejs'
 
@@ -34,10 +35,29 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const k = r.swms_id as string
     ackCounts.set(k, (ackCounts.get(k) ?? 0) + 1)
   }
+  // Subbie compliance badges: this project's subbie packages -> linked master companies -> doc status.
+  const { data: pkgRows } = await supabaseAdmin.from('fg_subcontractors')
+    .select('name, safety_company_id').eq('project_id', params.id)
+  const companyIds = Array.from(new Set((pkgRows ?? []).map(p => p.safety_company_id).filter(Boolean))) as string[]
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const complianceByCompany = new Map<string, string>()
+  if (companyIds.length > 0) {
+    const { data: docRows } = await supabaseAdmin.from('sf_prequal_documents').select('*').in('company_id', companyIds)
+    const allDocs = (docRows ?? []).map(mapPrequalDocument)
+    for (const cid of companyIds) {
+      complianceByCompany.set(cid, companyCompliance(allDocs.filter(d => d.companyId === cid), todayIso).status)
+    }
+  }
+  const subbieCompliance = (pkgRows ?? []).map(p => ({
+    name: p.name as string,
+    status: p.safety_company_id ? (complianceByCompany.get(p.safety_company_id as string) ?? 'missing_or_expired') : 'unlinked',
+  }))
+
   const docs = {
     swms: (swmsRes.data ?? []).map(r => ({ ...mapSwms(r), ackCount: ackCounts.get(r.id as string) ?? 0 })),
     toolbox: (tbRes.data ?? []).map(mapToolbox),
     incidents: (incRes.data ?? []).map(mapIncident),
+    subbieCompliance,
   }
 
   if (!siteId) return NextResponse.json({ ok: true, site: null, ...docs })

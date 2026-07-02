@@ -21,7 +21,8 @@ import { upsertProject, upsertProposal, upsertEstimate, upsertRevenue, upsertDes
 // '/site' is the supervisor cockpit — it has its OWN login (per-supervisor passcode) so it must skip
 // the admin gate, exactly like the public token/PIN routes. '/signin/' is the safety board's QR
 // sign-in page for workers/visitors — public by design (identity = name + phone, no account).
-const PUBLIC_PATHS = ['/proposal/', '/foreman/', '/variation/', '/site', '/signin/']
+// '/upload/' is the subcontractor document upload (token emailed to them, no account).
+const PUBLIC_PATHS = ['/proposal/', '/foreman/', '/variation/', '/site', '/signin/', '/upload/']
 
 export default function LoginGate({ children }: { children: ReactNode }) {
   const pathname = usePathname()

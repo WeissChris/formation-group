@@ -118,6 +118,7 @@ export interface SiteSafety {
   swms: (Swms & { ackCount: number })[]
   toolbox: ToolboxMeeting[]
   incidents: Incident[]
+  subbieCompliance: { name: string; status: 'ok' | 'expiring' | 'missing_or_expired' | 'unlinked' }[]
 }
 export async function getSiteSafety(id: string): Promise<SiteSafety> {
   const d = await getJson<{ ok: boolean } & SiteSafety>(`/api/site/projects/${id}/safety`)
@@ -125,8 +126,9 @@ export async function getSiteSafety(id: string): Promise<SiteSafety> {
     ? {
         site: d.site, board: d.board ?? null, onSiteNow: d.onSiteNow ?? [], today: d.today ?? [],
         inductionCount: d.inductionCount ?? 0, swms: d.swms ?? [], toolbox: d.toolbox ?? [], incidents: d.incidents ?? [],
+        subbieCompliance: d.subbieCompliance ?? [],
       }
-    : { site: null, board: null, onSiteNow: [], today: [], inductionCount: 0, swms: [], toolbox: [], incidents: [] }
+    : { site: null, board: null, onSiteNow: [], today: [], inductionCount: 0, swms: [], toolbox: [], incidents: [], subbieCompliance: [] }
 }
 
 /** Foreman safety writes (toolbox / incident / swms_ack) - see the route for shapes. */

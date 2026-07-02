@@ -578,8 +578,14 @@ function Safety({ projectId }: { projectId: string }) {
   useEffect(() => { refresh() /* eslint-disable-line react-hooks/exhaustive-deps */ }, [projectId])
 
   if (safety === null) return <p className="text-sm text-fg-muted py-6 text-center">Loading...</p>
-  const { site, onSiteNow, today, inductionCount, swms, toolbox, incidents } = safety
+  const { site, onSiteNow, today, inductionCount, swms, toolbox, incidents, subbieCompliance } = safety
   const time = (iso: string) => new Date(iso).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })
+  const compDot: Record<string, string> = {
+    ok: 'bg-green-500', expiring: 'bg-amber-500', missing_or_expired: 'bg-red-500', unlinked: 'bg-fg-border',
+  }
+  const compLabel: Record<string, string> = {
+    ok: 'compliant', expiring: 'docs expiring', missing_or_expired: 'docs missing/expired', unlinked: 'not linked',
+  }
 
   return (
     <section className="space-y-6">
@@ -634,6 +640,24 @@ function Safety({ projectId }: { projectId: string }) {
               </ul>
             </details>
           )}
+        </div>
+      )}
+
+      {/* Subbie compliance */}
+      {subbieCompliance.length > 0 && (
+        <div>
+          <h2 className="text-sm font-medium mb-2">Subbie compliance</h2>
+          <ul className="space-y-1.5">
+            {subbieCompliance.map((sc, i) => (
+              <li key={i} className="flex items-center justify-between rounded-lg border border-fg-border px-3 py-2">
+                <span className="text-sm truncate pr-2 flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${compDot[sc.status]}`} />
+                  {sc.name}
+                </span>
+                <span className="text-[10px] uppercase tracking-wide text-fg-muted shrink-0">{compLabel[sc.status]}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

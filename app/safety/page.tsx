@@ -63,7 +63,9 @@ export default function SafetyPage() {
       <div className="flex items-end justify-between flex-wrap gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-light tracking-wide text-fg-heading">Safety</h1>
-          <p className="text-sm font-light text-fg-muted mt-1">Sites, boards, sign-in registers - one QR per address.</p>
+          <p className="text-sm font-light text-fg-muted mt-1">
+            Sites, boards, sign-in registers - one QR per address. <Link href="/safety/contractors" className="underline hover:text-fg-heading">Contractor compliance &rarr;</Link>
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <select value={pick} onChange={e => setPick(e.target.value)}
