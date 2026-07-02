@@ -125,7 +125,14 @@ function Centered({ children }: { children: React.ReactNode }) {
 }
 
 // ── date helpers ────────────────────────────────────────────────────────────────
-function toISO(d: Date): string { return d.toISOString().slice(0, 10) }
+// LOCAL date, not toISOString (UTC): Melbourne is UTC+10, so the UTC conversion shifted every
+// date back a day - the week strip read "28 June - 2 July" for the 29 June - 3 July week, and
+// the crew-hours lookup missed the Friday row entirely.
+function toISO(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
 function thisMonday(): Date {
   const d = new Date(); const day = d.getDay(); const diff = (day === 0 ? -6 : 1) - day
   d.setDate(d.getDate() + diff); d.setHours(0, 0, 0, 0); return d
@@ -258,15 +265,30 @@ function WeatherStrip({ address }: { address: string }) {
     let active = true
     ;(async () => {
       try {
-        // Street addresses don't geocode - use the suburb (the part after the last comma).
-        const parts = (address || '').split(',').map(s => s.trim()).filter(Boolean)
-        const suburb = parts[parts.length - 1]
-        if (!suburb) return
-        const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(suburb)}&count=1&language=en&countryCode=AU`)
-          .then(r => r.json())
-        const hit = geo?.results?.[0]
-        if (!hit || !active) return
-        const fc = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${hit.latitude}&longitude=${hit.longitude}` +
+        if (!address?.trim()) return
+        // Geocode via Nominatim (knows AU street addresses + small towns, unlike Open-Meteo's
+        // gazetteer). Cached per address in localStorage so it's one lookup per site, ever.
+        const cacheKey = `sf_geo_${address.trim().toLowerCase()}`
+        let coords: { lat: number; lon: number } | null = null
+        try { coords = JSON.parse(localStorage.getItem(cacheKey) || 'null') } catch { /* ignore */ }
+        if (!coords) {
+          const geo = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=au&q=${encodeURIComponent(address)}`)
+            .then(r => r.json())
+          let hit = Array.isArray(geo) ? geo[0] : null
+          if (!hit) {
+            // Fall back to the suburb (last comma part) + Victoria.
+            const parts = address.split(',').map(s => s.trim()).filter(Boolean)
+            const suburb = parts[parts.length - 1]
+            const geo2 = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=au&q=${encodeURIComponent(`${suburb}, Victoria`)}`)
+              .then(r => r.json())
+            hit = Array.isArray(geo2) ? geo2[0] : null
+          }
+          if (!hit) return
+          coords = { lat: parseFloat(hit.lat), lon: parseFloat(hit.lon) }
+          try { localStorage.setItem(cacheKey, JSON.stringify(coords)) } catch { /* ignore */ }
+        }
+        if (!active) return
+        const fc = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}` +
           `&daily=weather_code,temperature_2m_max,precipitation_sum,precipitation_probability_max&timezone=Australia%2FMelbourne&forecast_days=5`)
           .then(r => r.json())
         if (!active || !fc?.daily?.time) return
