@@ -1,0 +1,82 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "This is an AI-drafted v0 template. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner (or Chris's insurer's risk team) and approved. The drafter (Claude) is not a WHS consultant."
+  },
+  "activity_name": "Site set-up and safety barriers",
+  "high_risk_categories": [],
+  "applicable_to_brands": ["lume", "formation"],
+  "hazards": [
+    {
+      "library_ref": "physical:manual-handling-fence",
+      "title": "Manual handling — temporary fencing panels",
+      "risk": "Lifting/carrying 2.4m fence panels and feet; awkward shape, ~25kg per panel",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:two-person-lift-fence-panels", "title": "Two-person lift for all fence panels and feet" },
+        { "hoc_level": 5, "library_ref": "ppe:work-gloves",                   "title": "Cut-resistant work gloves" }
+      ]
+    },
+    {
+      "library_ref": "physical:public-vehicle-conflict",
+      "title": "Public vehicle / pedestrian conflict",
+      "risk": "Set-up disturbs public footpath / nature strip / driveway crossover; vehicle or pedestrian struck-by",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:cones-tape-public-edge", "title": "Witches hats + barrier tape on public edge before any disturbance" },
+        { "hoc_level": 4, "library_ref": "admin:council-permit-footpath",      "title": "Council permit for any footpath occupation; comply with conditions" },
+        { "hoc_level": 5, "library_ref": "ppe:hi-vis-long-sleeve",             "title": "Hi-vis long sleeve at all times during set-up" }
+      ]
+    },
+    {
+      "library_ref": "physical:existing-site-hazards",
+      "title": "Existing site hazards (uneven ground, glass, used needles, debris)",
+      "risk": "Walking / falling / cuts / sharps exposure during initial walk and clean",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:pre-start-site-walk", "title": "Site supervisor + crew walk site before any other activity; flag and remove hazards" },
+        { "hoc_level": 5, "library_ref": "ppe:safety-boots",          "title": "Steel-cap safety boots" }
+      ]
+    },
+    {
+      "library_ref": "physical:existing-pool-drowning",
+      "title": "Existing pool on site — drowning",
+      "risk": "Worker fall into existing pool; child / neighbour access during construction window",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:maintain-pool-barrier", "title": "Existing pool barrier remains in place and inspected; any breach permitted only with temporary equivalent barrier" },
+        { "hoc_level": 4, "library_ref": "admin:no-go-zone-pool",            "title": "Pool surrounds marked no-go for non-essential workers" },
+        { "hoc_level": 3, "library_ref": "engineering:temporary-pool-cover",  "title": "Solid temporary cover or hard-stand if barrier must come down for access" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",       "title": "Safety footwear" },
+    { "library_ref": "body:hi-vis-long-sleeve", "title": "Hi-vis long sleeve" },
+    { "library_ref": "hands:work-gloves",       "title": "Work gloves" },
+    { "library_ref": "eyes:safety-glasses",     "title": "Safety glasses" },
+    { "library_ref": "sun:spf50",               "title": "SPF50+ sunscreen + wide-brim or legionnaire hat" }
+  ],
+  "tasks": [
+    "Pre-start: supervisor walks site with owner / their rep; confirm scope, services, sensitive plantings/structures.",
+    "Confirm DBYD search current within 30 days; carry plan on site.",
+    "If footpath / nature strip occupation required, confirm Council permit on site and complies with conditions.",
+    "Remove existing site hazards: glass, sharps, debris; bag and bin per council disposal rules.",
+    "Confirm existing pool barrier (if any) is intact and compliant; do not breach without temporary equivalent.",
+    "Mark out site boundary, equipment lay-down area, spoil stockpile area, materials area, vehicle parking, pedestrian path.",
+    "Erect temporary perimeter fencing (1.8m chain-mesh) on all street-facing and shared-neighbour boundaries; cable-tie all panels; weighted/staked feet.",
+    "Install signage at the entry gate: site safety QR code (induction), 'Construction Site — Authorised Entry Only', 'PPE Required', site supervisor + emergency contact phone numbers.",
+    "Position first aid kit and fire extinguisher at gate; note location on the SSSP.",
+    "Confirm welfare: toilet provision (portable or with owner permission to use dwelling), shade, drinking water.",
+    "Position waste bin / skip in agreed location.",
+    "Photograph completed set-up; upload to project Hub for owner sign-off."
+  ],
+  "signers_required": [
+    { "role": "supervisor",             "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity","must_sign_before": "scan_in",         "count": "all" }
+  ]
+}

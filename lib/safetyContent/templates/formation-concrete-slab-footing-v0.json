@@ -1,0 +1,79 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved."
+  },
+  "activity_name": "Concrete slab / footing pour — landscape (paving slabs, pergola footings, BBQ pads)",
+  "high_risk_categories": ["near_chemicals", "mobile_plant_near_persons"],
+  "applicable_to_brands": ["formation"],
+  "hazards": [
+    {
+      "library_ref": "chemical:concrete-burns",
+      "title": "Concrete burns / dermatitis",
+      "risk": "Wet concrete skin / eye contact",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:chemical-gloves",       "title": "Chemical-resistant gloves" },
+        { "hoc_level": 5, "library_ref": "ppe:safety-glasses-tight",  "title": "Tight-fitting safety glasses" },
+        { "hoc_level": 4, "library_ref": "admin:wash-station-available","title": "Clean water + soap on site" }
+      ]
+    },
+    {
+      "library_ref": "physical:plant-mobile-general",
+      "title": "Concrete truck / pump truck movements",
+      "risk": "Struck-by / outrigger crush in residential yard",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:spotter-for-plant",         "title": "Spotter for truck movements" },
+        { "hoc_level": 3, "library_ref": "engineering:exclusion-zones-mobile-plant","title": "Exclusion zone around outrigger footprint" },
+        { "hoc_level": 4, "library_ref": "admin:traffic-management-plan",    "title": "Traffic plan; council permit if street position required" }
+      ]
+    },
+    {
+      "library_ref": "physical:manual-handling-vibrator",
+      "title": "Vibration — poker vibrator",
+      "risk": "HAV from extended vibrator use",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:rotate-operators",      "title": "Rotate vibrator operator every 20 min" },
+        { "hoc_level": 5, "library_ref": "ppe:anti-vibration-gloves",   "title": "Anti-vibration gloves" }
+      ]
+    },
+    {
+      "library_ref": "physical:slips-trips-wet",
+      "title": "Slips on wet edge",
+      "risk": "Wet slab edges during pour and finish",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:safety-boots-grippy", "title": "Aggressive-tread safety boots" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",          "title": "Safety footwear" },
+    { "library_ref": "body:hi-vis-long-sleeve",    "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses-tight",  "title": "Safety glasses (splash-rated)" },
+    { "library_ref": "hands:chemical-gloves",      "title": "Chemical-resistant gloves" },
+    { "library_ref": "knee:knee-pads",             "title": "Knee pads (finishing)" }
+  ],
+  "tasks": [
+    "Pre-start: formwork inspection; reinforcement signed off; penetrations boxed.",
+    "Weather check — defer if rain or > 32C without pour-protection plan.",
+    "Pump / truck position confirmed; outriggers down on packers; exclusion zone marked.",
+    "Wash station and eye-wash ready.",
+    "Pour starts; vibrate per spec; rotate operators.",
+    "Screed and finish: float / broom / trowel per spec.",
+    "Cure plan in place — covers / spray / wet hessian per spec.",
+    "Hose / pump line cleared end of pour.",
+    "Wash water captured to skip / bund; NOT to street, drains, or garden.",
+    "Records: docket numbers, slump test, ambient temp, photographs."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved. All work above ELV (50V AC / 120V DC ripple-free) must be performed by a licensed electrician per AS/NZS 3000."
+  },
+  "activity_name": "Landscape lighting + electrical (licensed)",
+  "high_risk_categories": ["near_energised_electrical"],
+  "applicable_to_brands": ["formation"],
+  "hazards": [
+    {
+      "library_ref": "physical:electric-shock",
+      "title": "Electric shock — energised cabling",
+      "risk": "Contact with energised wiring during work, especially in damp / wet ground",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:isolate-and-tag",     "title": "All circuits isolated, LOTO before work" },
+        { "hoc_level": 4, "library_ref": "admin:licensed-electrician",      "title": "Licensed electrician for any work above ELV" },
+        { "hoc_level": 4, "library_ref": "admin:test-before-touch",         "title": "Test-before-touch on every conductor" },
+        { "hoc_level": 3, "library_ref": "engineering:rcd-on-circuits",     "title": "All outdoor circuits RCD-protected" }
+      ]
+    },
+    {
+      "library_ref": "physical:strike-underground-service",
+      "title": "Strike of buried cable",
+      "risk": "Garden bed digging hitting existing buried cable",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:byda-search", "title": "BYDA + on-site scan; hand-dig where existing cables suspected" }
+      ]
+    },
+    {
+      "library_ref": "physical:cut-laceration",
+      "title": "Cut from conduit / wiring tools",
+      "risk": "Hand laceration",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:work-gloves", "title": "Cut-resistant gloves" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",       "title": "Safety footwear" },
+    { "library_ref": "body:hi-vis-long-sleeve", "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",     "title": "Safety glasses" },
+    { "library_ref": "hands:work-gloves",       "title": "Work gloves" }
+  ],
+  "tasks": [
+    "Pre-start: licensed electrician on site; confirm licence + current.",
+    "Confirm switchboard isolation point; apply LOTO.",
+    "BYDA + on-site scan before any garden digging.",
+    "Trench cable runs (typically 300mm depth; 450mm under driveways) with warning tape.",
+    "Lay conduit + cable per AS/NZS 3000; ELV runs separated from mains where required.",
+    "Install fittings per manufacturer; IP-rated for location.",
+    "Test continuity, insulation resistance, RCD trip.",
+    "Electrician issues Electrical Safety Certificate of Compliance; upload to Hub.",
+    "Backfill trenches; reinstate garden / paving."
+  ],
+  "signers_required": [
+    { "role": "licensed_electrician", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

@@ -1,0 +1,89 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved. Shotcrete is high-velocity material projection — eye and respiratory protection are non-negotiable."
+  },
+  "activity_name": "Shotcrete / sprayed concrete — pool shell",
+  "high_risk_categories": [
+    "involving_a_pressurised_gas_or_fluid",
+    "near_chemicals"
+  ],
+  "applicable_to_brands": ["lume"],
+  "hazards": [
+    {
+      "library_ref": "chemical:concrete-burns",
+      "title": "Concrete burns / dermatitis (worse than wet pour due to particle velocity)",
+      "risk": "High-velocity wet shotcrete impacting skin / eyes",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:full-face-shield",      "title": "Full face shield (not just glasses) for nozzleman and assistants" },
+        { "hoc_level": 5, "library_ref": "ppe:waterproof-suit",       "title": "Waterproof spray suit or heavy overalls + long sleeves" },
+        { "hoc_level": 5, "library_ref": "ppe:chemical-gloves",       "title": "Long chemical-resistant gauntlet gloves" },
+        { "hoc_level": 4, "library_ref": "admin:wash-station-available","title": "Wash station immediately available; eye-wash bottle in kit" }
+      ]
+    },
+    {
+      "library_ref": "physical:hose-whip-shotcrete",
+      "title": "Hose whip / blockage release",
+      "risk": "Hose blockage release projecting nozzle and material",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:hose-connection-restraints",  "title": "Whip checks on every hose coupling" },
+        { "hoc_level": 4, "library_ref": "admin:no-personnel-in-line",        "title": "No personnel in line with hose end during start-up or clearing blockage" },
+        { "hoc_level": 4, "library_ref": "admin:competent-nozzleman",         "title": "Competent / certified nozzleman; daily equipment inspection" }
+      ]
+    },
+    {
+      "library_ref": "physical:rebound-dust",
+      "title": "Rebound material dust + silica",
+      "risk": "Respirable dust from rebound material; cement and silica content",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:p3-respirator",         "title": "P3 half-face respirator (fit-tested) for nozzleman and assistants" },
+        { "hoc_level": 4, "library_ref": "admin:clear-rebound-progressively","title": "Clear rebound material progressively; do not allow build-up underfoot" }
+      ]
+    },
+    {
+      "library_ref": "physical:noise",
+      "title": "Noise — pump, compressor",
+      "risk": "Sustained > 90 dB(A) at nozzle position",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:hearing-protection", "title": "Class 5 ear muffs for all personnel in pump/compressor area" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",          "title": "Safety footwear (waterproof)" },
+    { "library_ref": "head:hard-hat",              "title": "Hard hat" },
+    { "library_ref": "body:waterproof-suit",       "title": "Waterproof spray suit / heavy overalls" },
+    { "library_ref": "eyes:full-face-shield",      "title": "Full face shield (mandatory)" },
+    { "library_ref": "hearing:class-5-muffs",      "title": "Hearing protection (Class 5)" },
+    { "library_ref": "respiratory:p3-respirator",  "title": "P3 respirator (fit-tested)" },
+    { "library_ref": "hands:chemical-gauntlet",    "title": "Chemical-resistant gauntlet gloves" }
+  ],
+  "tasks": [
+    "Pre-start: reinforcement signed off, drawings on site, mix design confirmed with supplier.",
+    "Equipment pre-start: pump, compressor, hoses, whip checks; spare nozzles on hand.",
+    "Position pump and compressor; agree communication signals between nozzleman and pump operator.",
+    "Toolbox with full crew including delivery driver(s): hand signals, blockage procedure, line-clearing procedure.",
+    "Set up wash station, eye-wash bottle, first aid kit.",
+    "Pump primed per supplier procedure; no personnel in line with hose end.",
+    "Nozzleman applies in sequential layers per spec; assistant manages hose, clears rebound.",
+    "Stop and assess if hose blockage; follow blockage-clear procedure; restart with no personnel in line.",
+    "Continue progressively; ensure consistent layer thickness per spec.",
+    "Finishing: cut joints / form features as required.",
+    "Post-pour: hose / pump cleaned per equipment procedure; wash water captured to bund, not to drain.",
+    "Curing plan in place: wet cure / cure compound per spec, duration noted in Hub.",
+    "Sign off completion in Hub; record any defects + remediation."
+  ],
+  "signers_required": [
+    { "role": "supervisor",              "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "nozzleman_certified",     "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in",         "count": "all" }
+  ]
+}

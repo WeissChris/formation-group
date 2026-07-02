@@ -1,0 +1,87 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved. Demolition of any pre-1990 structure requires asbestos assessment before commencement."
+  },
+  "activity_name": "Demolition of existing landscape elements (paving, walls, structures)",
+  "high_risk_categories": ["involving_asbestos", "collapse_of_structure"],
+  "applicable_to_brands": ["formation"],
+  "hazards": [
+    {
+      "library_ref": "chemical:asbestos",
+      "title": "Asbestos disturbance",
+      "risk": "Pre-1990 sheet / pipe / vinyl / fibro disturbance releases respirable fibres",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:asbestos-assessment",   "title": "Asbestos assessment by competent person for any pre-1990 material; if positive, licensed removalist (Class B for ≤ 10m²; Class A for friable)" },
+        { "hoc_level": 4, "library_ref": "admin:asbestos-plan",               "title": "Asbestos management plan in place before any disturbance" }
+      ]
+    },
+    {
+      "library_ref": "physical:partial-collapse-during-demo",
+      "title": "Uncontrolled collapse during demolition",
+      "risk": "Wall / structure failing before planned demolition sequence",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:demo-sequence-planned",       "title": "Sequence planned top-down; supervisor briefed crew" },
+        { "hoc_level": 3, "library_ref": "engineering:exclusion-zones-mobile-plant","title": "Exclusion zone in fall arc of any structure being demolished" }
+      ]
+    },
+    {
+      "library_ref": "physical:strike-underground-service",
+      "title": "Strike of buried service during slab break-out",
+      "risk": "Existing paving / slab break-out hitting unmapped services",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:byda-search",     "title": "BYDA + on-site scan before break-out" }
+      ]
+    },
+    {
+      "library_ref": "chemical:silica-dust",
+      "title": "Silica dust from breaking concrete / pavers",
+      "risk": "Respirable silica from breaking, grinding, dry cutting",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:on-tool-water-suppression", "title": "Water suppression on breakers, cutters" },
+        { "hoc_level": 5, "library_ref": "ppe:p3-respirator",                   "title": "P3 respirator for dry breakout" }
+      ]
+    },
+    {
+      "library_ref": "physical:manual-handling-debris",
+      "title": "Manual handling — debris removal",
+      "risk": "Heavy/awkward debris into skip",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:mechanical-lift",  "title": "Skid steer / mini excavator + bucket attachment for debris movement" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",          "title": "Safety footwear" },
+    { "library_ref": "head:hard-hat",              "title": "Hard hat" },
+    { "library_ref": "body:hi-vis-long-sleeve",    "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",        "title": "Safety glasses" },
+    { "library_ref": "hearing:class-5-muffs",      "title": "Hearing protection" },
+    { "library_ref": "respiratory:p3-respirator",  "title": "P3 respirator" },
+    { "library_ref": "hands:work-gloves",          "title": "Cut-resistant gloves" }
+  ],
+  "tasks": [
+    "Pre-start: confirm asbestos assessment complete for any pre-1990 material; result + plan on site.",
+    "Confirm BYDA + services located before any break-out.",
+    "Set exclusion zone around demolition area; signage at perimeter.",
+    "Toolbox: walk sequence with crew; agree communication signals with plant operator.",
+    "Demolish top-down; do not undercut supporting elements.",
+    "Water-suppress break-out work for dust control.",
+    "Load debris to skip via mechanical aid; segregate any suspected hazardous material.",
+    "Hand-finish where required.",
+    "Site clean at end of each day; cover any open services."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved."
+  },
+  "activity_name": "Planting + turf laying",
+  "high_risk_categories": [],
+  "applicable_to_brands": ["formation"],
+  "hazards": [
+    {
+      "library_ref": "physical:manual-handling-soil-turf",
+      "title": "Manual handling — soil bags + turf rolls",
+      "risk": "Soil bags 25–30kg; turf rolls ~15kg but many lifts; bending repetitive",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:mechanical-lift", "title": "Wheelbarrow / trolley for bulk movement" },
+        { "hoc_level": 4, "library_ref": "admin:rotate-laying-bending", "title": "Rotate between laying / soil prep to share bending load" }
+      ]
+    },
+    {
+      "library_ref": "biological:snake-spider-bite",
+      "title": "Snake / spider bite",
+      "risk": "Overgrown vegetation / stored materials harbouring snakes / spiders",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:long-pants-boots", "title": "Long pants + boots when reaching into vegetation / piles" },
+        { "hoc_level": 4, "library_ref": "admin:visual-check-before-reach","title": "Visual check before reaching into pile or planted bed" }
+      ]
+    },
+    {
+      "library_ref": "physical:uv-heat",
+      "title": "UV + heat exposure",
+      "risk": "Sustained outdoor work, summer",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:rest-breaks-in-heat", "title": "15-min shade break every hour > 28C WBGT; stop > 32C if no acclimatisation" },
+        { "hoc_level": 5, "library_ref": "ppe:sun-protection",         "title": "SPF50+, wide-brim/legionnaire hat" }
+      ]
+    },
+    {
+      "library_ref": "chemical:plant-treatments",
+      "title": "Fertilisers / soil treatments",
+      "risk": "Skin / eye contact with concentrate; some products are SDS-listed dangerous goods",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:sds-on-site", "title": "SDS for any concentrate on site" },
+        { "hoc_level": 5, "library_ref": "ppe:chemical-gloves","title": "Chemical-resistant gloves" }
+      ]
+    },
+    {
+      "library_ref": "physical:cut-laceration",
+      "title": "Cut hands — secateurs, edge cutters, turf knives",
+      "risk": "Sharp tool cuts",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:work-gloves", "title": "Cut-resistant gloves" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",       "title": "Safety footwear" },
+    { "library_ref": "body:hi-vis-long-sleeve", "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",     "title": "Safety glasses (when edge cutting / pruning)" },
+    { "library_ref": "hands:work-gloves",       "title": "Cut-resistant gloves" },
+    { "library_ref": "sun:spf50",               "title": "Sun protection" }
+  ],
+  "tasks": [
+    "Pre-start: confirm soil prep level + drainage acceptable.",
+    "Visual check beds + storage piles for snakes / spiders before reaching in.",
+    "Soil prep: tilling, amendment, levelling.",
+    "Plant per planting plan; mulch beds.",
+    "Lay turf in staggered courses; tight joints; roll.",
+    "Initial water-in.",
+    "Site clean.",
+    "Maintenance / watering schedule briefed to owner."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

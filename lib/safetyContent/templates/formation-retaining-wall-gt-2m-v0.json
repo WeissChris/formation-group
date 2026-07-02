@@ -1,0 +1,115 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved. Retaining walls > 2m require registered building practitioner design and trigger multiple Reg 5.1.5 high-risk categories."
+  },
+  "activity_name": "Retaining wall construction (over 2m height)",
+  "high_risk_categories": [
+    "fall_gt_2m",
+    "excavation_gt_1_5m",
+    "collapse_of_structure",
+    "mobile_plant_near_persons"
+  ],
+  "applicable_to_brands": ["formation"],
+  "hazards": [
+    {
+      "library_ref": "physical:fall-from-height",
+      "title": "Fall from height > 2m",
+      "risk": "Worker fall from wall top during construction or backfilling",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:build-from-low-side",     "title": "Where possible, sequence work so workers operate from low side (built ground) not high side (open drop)" },
+        { "hoc_level": 3, "library_ref": "engineering:edge-protection-handrail", "title": "Guardrails along open edge ≥ 1m high once height > 2m" },
+        { "hoc_level": 3, "library_ref": "engineering:scaffold-where-required",  "title": "Scaffold with toe-board where work above 2m" },
+        { "hoc_level": 5, "library_ref": "ppe:fall-arrest-harness",              "title": "Fall arrest harness with engineer-approved anchor where edge protection not feasible" }
+      ]
+    },
+    {
+      "library_ref": "physical:trench-collapse",
+      "title": "Footing trench collapse",
+      "risk": "Retaining wall footing > 1.5m deep; trench collapse onto worker",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:shoring-benching-battering", "title": "Shoring, benching, or battering to safe angle for confirmed soil type" },
+        { "hoc_level": 3, "library_ref": "engineering:spoil-clear-of-zone-of-influence","title": "Spoil ≥ 1000mm from trench edge" }
+      ]
+    },
+    {
+      "library_ref": "physical:wall-collapse-during-build",
+      "title": "Partial wall collapse during construction",
+      "risk": "Newly built wall (unbacked, before drainage/backfill) collapsing if loaded prematurely",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:engineered-design",        "title": "Wall designed by registered building practitioner; construction strictly to design" },
+        { "hoc_level": 4, "library_ref": "admin:no-load-above-wall-pre-backfill","title": "No equipment, vehicles, or stockpile above wall until backfill complete and signed off" },
+        { "hoc_level": 4, "library_ref": "admin:engineer-hold-point-inspections", "title": "Engineer hold-point inspections at: footing reo, wall reinforcement, drainage, pre-backfill" }
+      ]
+    },
+    {
+      "library_ref": "physical:manual-handling-heavy",
+      "title": "Manual handling — sleepers / blocks / stone",
+      "risk": "Heavy / awkward materials: sleepers, concrete blocks, stone facing",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:mechanical-lift",   "title": "Hiab, skid steer, or excavator with lifting attachment for any unit > 20kg" },
+        { "hoc_level": 4, "library_ref": "admin:two-person-lift-heavy",   "title": "Two-person lift where mechanical aid not practical and load > 20kg" }
+      ]
+    },
+    {
+      "library_ref": "physical:plant-mobile-general",
+      "title": "Mobile plant operating in confined yards",
+      "risk": "Skid steer / mini excavator in narrow side access; struck-by",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:exclusion-zones-mobile-plant", "title": "3m exclusion zone; spotter at all times in confined yards" },
+        { "hoc_level": 4, "library_ref": "admin:hrwl-verification",                 "title": "Operator HRWL verified for plant size" }
+      ]
+    },
+    {
+      "library_ref": "physical:airborne-contaminants-silica",
+      "title": "Silica dust — block / stone cutting",
+      "risk": "Cutting blocks, capping, or stone facing without dust control",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:wet-cut-saw",      "title": "Wet-cut saw mandatory for blocks, capping, stone" },
+        { "hoc_level": 5, "library_ref": "ppe:p3-respirator",            "title": "P3 respirator (fit-tested) for sustained cutting" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",          "title": "Safety footwear" },
+    { "library_ref": "head:hard-hat",              "title": "Hard hat" },
+    { "library_ref": "body:hi-vis-long-sleeve",    "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",        "title": "Safety glasses" },
+    { "library_ref": "hearing:class-5-muffs",      "title": "Hearing protection" },
+    { "library_ref": "respiratory:p3-respirator",  "title": "P3 respirator (cutting)" },
+    { "library_ref": "hands:work-gloves",          "title": "Work gloves" },
+    { "library_ref": "fall:harness",               "title": "Fall arrest harness (where edge protection not feasible)" }
+  ],
+  "tasks": [
+    "Confirm engineer-stamped design on site; latest revision.",
+    "Pre-start toolbox: walk through engineer's drawings, hold-points, sequence with full crew.",
+    "BYDA + service location complete; hand-dig within 500mm of services.",
+    "Excavate footing per design; shore/batter if > 1.5m.",
+    "Set up edge protection BEFORE any work at top of wall reaches 2m AGL.",
+    "Reinforcement placement per drawings; engineer inspection HOLD POINT before pour.",
+    "Concrete footing pour (see concrete-pour SWMS for additional controls).",
+    "Wall construction in lifts per design (block / sleeper / poured); no lift above engineer-specified maximum unbraced height.",
+    "Cutting operations: wet-cut only; P3 respirator; cuts done in designated dust-controlled area.",
+    "Drainage installation: ag-pipe at base, drainage aggregate behind wall per design.",
+    "Geofabric per design.",
+    "Engineer inspection HOLD POINT before backfilling.",
+    "Progressive backfill in lifts per design; compaction per spec.",
+    "No vehicle / heavy load above wall until backfill complete and signed off by engineer.",
+    "Final capping; finish to spec.",
+    "Wall handover photographs + engineer's final sign-off uploaded to Hub."
+  ],
+  "signers_required": [
+    { "role": "supervisor",              "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in",         "count": "all" }
+  ]
+}

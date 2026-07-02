@@ -1,0 +1,78 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved. Pool safety barrier compliance is governed by the Vic Building Regulations 2018 + AS 1926.1-2012; this SWMS is the work-safety doc, not the compliance doc."
+  },
+  "activity_name": "Pool safety barrier / fencing installation",
+  "high_risk_categories": [],
+  "applicable_to_brands": ["lume"],
+  "hazards": [
+    {
+      "library_ref": "physical:manual-handling-fence",
+      "title": "Manual handling — glass / steel panels",
+      "risk": "Glass panels heavy (typically 35–80kg) and awkward; steel panels similar weight",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:mechanical-lift-glass",  "title": "Glass-lifting suction tools for all glass panels > 30kg" },
+        { "hoc_level": 4, "library_ref": "admin:two-person-lift-fence-panels", "title": "Two-person lift for all panels; planned route from delivery to position" }
+      ]
+    },
+    {
+      "library_ref": "physical:glass-shatter",
+      "title": "Glass shatter — cuts / lacerations",
+      "risk": "Toughened glass shattering during install if mishandled",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:no-edge-strike",        "title": "No tool strikes to edge; use rubber-faced wedges only" },
+        { "hoc_level": 5, "library_ref": "ppe:work-gloves",                   "title": "Cut-resistant gloves" },
+        { "hoc_level": 4, "library_ref": "admin:exclusion-zone-glass-handling","title": "Exclusion zone around glass-handling area" }
+      ]
+    },
+    {
+      "library_ref": "physical:strike-underground-service",
+      "title": "Hitting service when coring spigot footings",
+      "risk": "Core drilling into paving / slab can hit unmarked services / waterproof layer",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:byda-search",                 "title": "BYDA + on-site scan before any coring" }
+      ]
+    },
+    {
+      "library_ref": "chemical:silica-dust",
+      "title": "Silica dust — coring spigot holes",
+      "risk": "Dust from dry-coring concrete / pavers",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:wet-cut-saw",     "title": "Water-fed coring drill" },
+        { "hoc_level": 5, "library_ref": "ppe:p2-mask",                 "title": "P2 respirator if dry coring (avoid where possible)" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",       "title": "Safety footwear" },
+    { "library_ref": "body:hi-vis-long-sleeve", "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",     "title": "Safety glasses" },
+    { "library_ref": "hands:work-gloves",       "title": "Cut-resistant gloves" }
+  ],
+  "tasks": [
+    "Pre-start: confirm barrier design complies with AS 1926.1 + Vic Building Regs (non-climbable zones, gap dimensions, gate self-close + self-latch).",
+    "Confirm site safety: any temporary barrier during install maintains effective enclosure if pool has water.",
+    "Set out spigot positions per design; check non-climbable zone clearance.",
+    "Core spigot holes (water-fed); flush and clean.",
+    "Set spigots in chemical anchor / grout per manufacturer.",
+    "Allow cure per spec before glass install.",
+    "Install glass panels using suction handles; two-person lift; rubber wedges only.",
+    "Install gates with self-closing / self-latching hardware; latch ≥ 1.5m from ground.",
+    "Compliance inspection: gap tests, non-climbable zone, latch height, self-close test 5 cycles.",
+    "Independent pool safety inspector engaged for Form 11 / certificate of compliance.",
+    "Certificate uploaded to Hub; copy to owner."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

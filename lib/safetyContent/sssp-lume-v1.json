@@ -1,0 +1,221 @@
+{
+  "kind": "sssp",
+  "brand": "lume",
+  "brandName": "Lume Pools",
+  "templateVersion": "v1",
+  "jurisdiction": "VIC",
+  "title": "Site-Specific Safety Plan",
+  "subtitle": "Concrete Swimming Pool Construction",
+  "groups": [
+    {
+      "id": "site-details",
+      "title": "Site Details",
+      "pdfSection": true,
+      "fields": [
+        { "key": "SITE_ADDRESS",          "label": "Site street address",        "type": "string",  "required": true },
+        { "key": "SITE_SUBURB",           "label": "Suburb",                     "type": "string",  "required": true },
+        { "key": "SITE_POSTCODE",         "label": "Postcode",                   "type": "string",  "required": true },
+        { "key": "SITE_LOT_PLAN",         "label": "Lot / plan number",          "type": "string" },
+        { "key": "OWNER_NAME",            "label": "Building Owner name(s)",     "type": "string",  "required": true },
+        { "key": "OWNER_PHONE",           "label": "Building Owner phone",       "type": "phone",   "required": true },
+        { "key": "SITE_SUPERVISOR_NAME",  "label": "Lume site supervisor",       "type": "string",  "required": true },
+        { "key": "SITE_SUPERVISOR_PHONE", "label": "Site supervisor phone",      "type": "phone",   "required": true },
+        { "key": "PRINCIPAL_CONTRACTOR",  "label": "Principal Contractor for the construction project",
+          "type": "enum", "required": true,
+          "enumOptions": [
+            { "value": "lume",    "label": "Lume Pools (us)" },
+            { "value": "builder", "label": "Head builder (separate contract)" },
+            { "value": "owner",   "label": "Owner-builder" }
+          ],
+          "helperText": "Vic OHS Regs s291 — only one principal contractor per construction project. If a head builder is engaged, they are usually the PC and Lume is a subcontractor."
+        },
+        { "key": "OTHER_PC_NAME",         "label": "Other PC company name",      "type": "string",  "visibility": { "field": "PRINCIPAL_CONTRACTOR", "equals": "builder" } },
+        { "key": "WORKSAFE_NOTIFIABLE",   "label": "Is this a notifiable construction project under Vic OHS Act?",
+          "type": "boolean", "required": true,
+          "helperText": "Notifiable if project value > $350,000 OR involves any high-risk construction work listed in Reg 5.1.5 (e.g. risk of fall > 2m, near energised electrical, demolition of load-bearing structure, etc.)."
+        }
+      ]
+    },
+    {
+      "id": "site-context",
+      "title": "Site Context & Existing Conditions",
+      "pdfSection": true,
+      "fields": [
+        { "key": "SITE_ACCESS",           "label": "How will vehicles and plant access the site?", "type": "longtext", "required": true,
+          "helperText": "Driveway only / via side gate / nature strip / requires footpath protection / requires road occupation permit" },
+        { "key": "PUBLIC_FOOTPATH_CROSS", "label": "Will the site disturb or cross a public footpath?", "type": "boolean", "required": true },
+        { "key": "FOOTPATH_PROTECTION",   "label": "Footpath protection plan",   "type": "longtext", "visibility": { "field": "PUBLIC_FOOTPATH_CROSS", "equals": true } },
+        { "key": "NEIGHBOUR_CONSIDERATIONS","label": "Sensitive neighbours / shared boundaries / noise concerns", "type": "longtext" },
+        { "key": "OVERHEAD_POWER",        "label": "Overhead power lines within 6.4m of crane / boom / excavator arc?",
+          "type": "boolean", "required": true,
+          "helperText": "ESV / Vic exclusion zones for non-electrical workers." },
+        { "key": "OVERHEAD_POWER_NOTES",  "label": "Overhead power mitigation",  "type": "longtext", "visibility": { "field": "OVERHEAD_POWER", "equals": true } },
+        { "key": "DBYD_DONE",             "label": "DBYD search completed?",     "type": "boolean", "required": true,
+          "helperText": "Dial Before You Dig — must be repeated if site changes or > 30 days since last search." },
+        { "key": "DBYD_REF",              "label": "DBYD reference",             "type": "string",  "visibility": { "field": "DBYD_DONE", "equals": true } },
+        { "key": "UNDERGROUND_SERVICES",  "label": "Underground services identified",
+          "type": "multienum",
+          "enumOptions": [
+            { "value": "gas",        "label": "Gas" },
+            { "value": "water",      "label": "Water main" },
+            { "value": "sewer",      "label": "Sewer / waste" },
+            { "value": "stormwater", "label": "Stormwater" },
+            { "value": "electrical", "label": "Electrical" },
+            { "value": "telecoms",   "label": "Telecoms / NBN" },
+            { "value": "none",       "label": "None within excavation envelope" }
+          ]
+        },
+        { "key": "ASBESTOS_LIKELY",       "label": "Existing structures likely to contain asbestos to be disturbed?",
+          "type": "boolean", "required": true,
+          "helperText": "Pre-1990 fences, sheds, eaves. If yes, requires licensed removal." },
+        { "key": "ASBESTOS_PLAN",         "label": "Asbestos handling plan",     "type": "longtext", "visibility": { "field": "ASBESTOS_LIKELY", "equals": true } },
+        { "key": "TREES_REMOVED",         "label": "Trees to be removed / pruned (heritage / planning permit considerations)?", "type": "longtext" },
+        { "key": "SOIL_TYPE",             "label": "Soil type / known soil conditions", "type": "enum",
+          "enumOptions": [
+            { "value": "stable_clay",   "label": "Stable clay" },
+            { "value": "reactive_clay", "label": "Reactive clay" },
+            { "value": "sand",          "label": "Sand (loose / collapsible)" },
+            { "value": "fill",          "label": "Fill / unknown" },
+            { "value": "rock",          "label": "Rock — requires breaking" },
+            { "value": "other",         "label": "Other (notes)" }
+          ]
+        },
+        { "key": "WATER_TABLE",           "label": "Known shallow water table or dewatering required?", "type": "boolean" },
+        { "key": "DEWATER_PLAN",          "label": "Dewatering plan",            "type": "longtext", "visibility": { "field": "WATER_TABLE", "equals": true } }
+      ]
+    },
+    {
+      "id": "work-activities",
+      "title": "Planned Work Activities",
+      "pdfSection": true,
+      "fields": [
+        { "key": "ACTIVITIES",            "label": "Activities planned on this site",
+          "type": "multienum", "required": true,
+          "enumOptions": [
+            { "value": "set_out",            "label": "Set-out and survey" },
+            { "value": "demo",               "label": "Demolition of existing structures" },
+            { "value": "tree_works",         "label": "Tree removal / pruning" },
+            { "value": "excavation",         "label": "Excavation for pool shell" },
+            { "value": "shoring",            "label": "Shoring / battered cuts" },
+            { "value": "formwork",           "label": "Formwork installation" },
+            { "value": "rebar",              "label": "Reinforcement placement" },
+            { "value": "shotcrete",          "label": "Shotcrete / sprayed concrete" },
+            { "value": "concrete_pour",      "label": "Concrete pour (poured)" },
+            { "value": "plumbing_rough",     "label": "Plumbing rough-in" },
+            { "value": "electrical_rough",   "label": "Electrical rough-in (bonding, pool light, equipment)" },
+            { "value": "equipment_install",  "label": "Equipment install (pump, filter, heater)" },
+            { "value": "tiling_paving",      "label": "Tiling / paving / coping" },
+            { "value": "fencing",            "label": "Safety barrier / pool fencing" },
+            { "value": "commissioning",      "label": "Commissioning + water fill" },
+            { "value": "surrounds",          "label": "Pool surrounds / landscaping (separate Formation project)" }
+          ]
+        },
+        { "key": "EXCAVATION_DEPTH_M",    "label": "Maximum excavation depth (metres)", "type": "number", "required": true,
+          "helperText": "If > 1.5m the trench is a confined space; if > 2m fall risk classified high-risk under Reg 5.1.5." },
+        { "key": "WORKING_AT_HEIGHT",     "label": "Any working at height > 2m planned?", "type": "boolean", "required": true },
+        { "key": "WAH_DETAIL",            "label": "Where / what tasks",         "type": "longtext", "visibility": { "field": "WORKING_AT_HEIGHT", "equals": true } },
+        { "key": "HOT_WORK_PLANNED",      "label": "Hot work (welding / cutting / grinding) on site?", "type": "boolean" },
+        { "key": "CONFINED_SPACE_PLANNED","label": "Confined-space entry planned (e.g. pump pit, sump)?", "type": "boolean" },
+        { "key": "EQUIPMENT_ONSITE",      "label": "Plant + equipment expected on site",
+          "type": "multienum",
+          "enumOptions": [
+            { "value": "excavator_2t",   "label": "Excavator < 5t" },
+            { "value": "excavator_5t",   "label": "Excavator 5–13t" },
+            { "value": "skid_steer",     "label": "Skid steer / bobcat" },
+            { "value": "tipper_truck",   "label": "Tipper truck" },
+            { "value": "concrete_pump",  "label": "Concrete pump / boom" },
+            { "value": "shotcrete_rig",  "label": "Shotcrete pump / hopper" },
+            { "value": "scissor_lift",   "label": "Scissor lift / EWP" },
+            { "value": "crane",          "label": "Crane / Hiab" },
+            { "value": "compactor",      "label": "Plate compactor / rammer" },
+            { "value": "generator",      "label": "Petrol / diesel generator" },
+            { "value": "compressor",     "label": "Compressor" },
+            { "value": "wet_saw",        "label": "Wet / dry saw" },
+            { "value": "grinder",        "label": "Angle grinder" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "subcontractors",
+      "title": "Sub-contractors Engaged",
+      "pdfSection": true,
+      "fields": [
+        { "key": "SUBBIES",               "label": "Sub-contractors engaged",
+          "type": "table", "tableRows": "variable",
+          "tableColumns": [
+            { "key": "TRADE",        "label": "Trade",               "type": "string", "required": true },
+            { "key": "COMPANY_NAME", "label": "Company",             "type": "string", "required": true },
+            { "key": "CONTACT_NAME", "label": "Contact",             "type": "string" },
+            { "key": "CONTACT_PHONE","label": "Phone",               "type": "phone" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "site-management",
+      "title": "Site Management & Welfare",
+      "pdfSection": true,
+      "fields": [
+        { "key": "SITE_HOURS",            "label": "Site hours",                 "type": "string",  "defaultValue": "Mon–Fri 7am–5pm, Sat 8am–3pm, no Sundays / public holidays",   "required": true },
+        { "key": "SITE_FENCED",           "label": "Site secured by perimeter fencing?", "type": "boolean", "required": true },
+        { "key": "FENCING_DETAIL",        "label": "Fencing / gate detail",      "type": "longtext", "visibility": { "field": "SITE_FENCED", "equals": true } },
+        { "key": "SIGNAGE_AT_GATE",       "label": "Signage at gate (no unauth entry, induction QR, PPE required, emergency contact)?", "type": "boolean", "defaultValue": true },
+        { "key": "WELFARE_TOILET",        "label": "Toilet provision",           "type": "enum",
+          "enumOptions": [
+            { "value": "portable", "label": "Portable toilet on site" },
+            { "value": "house",    "label": "Use of dwelling toilet (with owner permission)" },
+            { "value": "none",     "label": "None — needs resolution" }
+          ], "required": true
+        },
+        { "key": "WELFARE_WATER",         "label": "Drinking water on site",     "type": "boolean", "required": true },
+        { "key": "WELFARE_SHADE",         "label": "Shade / break area",         "type": "longtext" },
+        { "key": "FIRST_AID_KIT",         "label": "First aid kit location",     "type": "string", "required": true },
+        { "key": "FIRST_AID_OFFICERS",    "label": "Trained first-aiders on site (names)", "type": "longtext" },
+        { "key": "FIRE_EXTINGUISHER",     "label": "Fire extinguisher location", "type": "string", "visibility": { "field": "HOT_WORK_PLANNED", "equals": true }, "required": true }
+      ]
+    },
+    {
+      "id": "emergency-plan",
+      "title": "Emergency Plan",
+      "pdfSection": true,
+      "fields": [
+        { "key": "NEAREST_HOSPITAL",      "label": "Nearest emergency hospital", "type": "string", "required": true,
+          "helperText": "Name + suburb. Used in the emergency briefing at induction." },
+        { "key": "ASSEMBLY_POINT",        "label": "Site assembly point in event of evacuation", "type": "string", "required": true },
+        { "key": "EMERGENCY_CONTACT_1",   "label": "Primary on-site emergency contact (name + phone)", "type": "string", "required": true },
+        { "key": "EMERGENCY_CONTACT_2",   "label": "Secondary emergency contact (e.g. Chris Weiss)",  "type": "string", "defaultValue": "Chris Weiss — 04xx xxx xxx" },
+        { "key": "INCIDENT_REPORT_PROCESS","label": "Incident reporting process briefing", "type": "longtext",
+          "defaultValue": "Report to site supervisor immediately. Supervisor logs incident via the Hazard Replacement app. If notifiable (death, serious injury, dangerous occurrence per s37 OHS Act): Chris notifies WorkSafe Victoria on 13 23 60 within required timeframe. Site preserved until cleared." }
+      ]
+    },
+    {
+      "id": "high-risk-controls",
+      "title": "High-Risk Construction Work Controls",
+      "description": "Auto-prompted when activities trigger Reg 5.1.5 high-risk categories. These summaries appear on the SSSP; detailed task-by-task controls live in the relevant SWMS.",
+      "pdfSection": true,
+      "fields": [
+        { "key": "HRCW_FALL_GT_2M",       "label": "Risk of fall greater than 2m — controls summary", "type": "longtext", "visibility": { "field": "WORKING_AT_HEIGHT", "equals": true }, "required": true },
+        { "key": "HRCW_EXCAVATION",       "label": "Excavation > 1.5m — controls summary",            "type": "longtext", "visibility": { "field": "EXCAVATION_DEPTH_M", "min": 1.5 }, "required": true },
+        { "key": "HRCW_NEAR_POWER",       "label": "Work near energised electrical — controls summary", "type": "longtext", "visibility": { "field": "OVERHEAD_POWER", "equals": true }, "required": true },
+        { "key": "HRCW_CONFINED_SPACE",   "label": "Confined space — controls summary",               "type": "longtext", "visibility": { "field": "CONFINED_SPACE_PLANNED", "equals": true }, "required": true },
+        { "key": "HRCW_HOT_WORK",         "label": "Hot work — controls summary",                     "type": "longtext", "visibility": { "field": "HOT_WORK_PLANNED", "equals": true }, "required": true },
+        { "key": "HRCW_ASBESTOS",         "label": "Asbestos — controls summary",                     "type": "longtext", "visibility": { "field": "ASBESTOS_LIKELY", "equals": true }, "required": true },
+        { "key": "HRCW_MOBILE_PLANT",     "label": "Mobile plant operating near persons — controls summary", "type": "longtext", "required": true,
+          "defaultValue": "Spotter required for all excavator / skid-steer movements within 3m of personnel. Reversing alarms operational. Exclusion zone marked. Operators hold valid HRWL where required." }
+      ]
+    },
+    {
+      "id": "review-acknowledgement",
+      "title": "Review",
+      "fields": [
+        { "key": "DRAFTED_BY",   "label": "Drafted by", "type": "string", "required": true, "rendersInPdf": false },
+        { "key": "DRAFTED_DATE", "label": "Drafted on", "type": "date",   "required": true, "rendersInPdf": false },
+        { "key": "REVIEW_DATE",  "label": "Next scheduled review",
+          "type": "date", "required": true,
+          "helperText": "Default: every 90 days or sooner if site conditions or scope change materially.",
+          "rendersInPdf": false }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,136 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved. Pool shell excavation is high-risk construction work under Reg 5.1.5 — this template is critical to get right."
+  },
+  "activity_name": "Excavation for pool shell",
+  "high_risk_categories": [
+    "excavation_gt_1_5m",
+    "mobile_plant_near_persons",
+    "near_energised_electrical_overhead",
+    "collapse_of_structure"
+  ],
+  "applicable_to_brands": ["lume"],
+  "hazards": [
+    {
+      "library_ref": "physical:trench-collapse",
+      "title": "Trench / excavation collapse",
+      "risk": "Worker buried by collapsing excavation face; pool shell typically 1.5–2.5m deep, deeper for spa/wet deck",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:shoring-benching-battering",  "title": "Excavation > 1.5m: shoring (shielding/boxing) OR battering to safe angle for confirmed soil type (engineer-confirmed where uncertain)" },
+        { "hoc_level": 4, "library_ref": "admin:daily-excavation-inspection",       "title": "Daily inspection before work and after any rain; stop work if soil conditions change" },
+        { "hoc_level": 3, "library_ref": "engineering:spoil-clear-of-zone-of-influence", "title": "Spoil and machinery kept clear of zone of influence (min 1000mm from edge)" }
+      ]
+    },
+    {
+      "library_ref": "physical:plant-excavation-earthmoving",
+      "title": "Mobile plant — excavator struck-by / crush",
+      "risk": "Worker on foot struck by excavator or in swing radius",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:exclusion-zones-mobile-plant",   "title": "3m exclusion zone around operating excavator, marked with bunting/cones" },
+        { "hoc_level": 4, "library_ref": "admin:spotter-for-plant",                   "title": "Dedicated spotter at all times during excavation; clear hand signals or radio with operator" },
+        { "hoc_level": 4, "library_ref": "admin:hrwl-verification",                   "title": "Operator HRWL verified at induction; valid for size of machine" },
+        { "hoc_level": 4, "library_ref": "admin:visible-operator-communication",       "title": "No approach to machine until operator acknowledges, bucket grounded, attachments safe" }
+      ]
+    },
+    {
+      "library_ref": "physical:strike-underground-service",
+      "title": "Strike of underground service",
+      "risk": "Excavator damaging gas / water / electrical / sewer / pool plumbing",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:byda-search",                     "title": "BYDA search current within 30 days; printed plans on site" },
+        { "hoc_level": 3, "library_ref": "engineering:hand-dig-within-500mm",     "title": "Hand-dig / pothole within 500mm of any identified service before machine excavation" },
+        { "hoc_level": 4, "library_ref": "admin:services-isolated-before-dig",    "title": "Services isolated where excavation crosses them (utility provider confirmation)" }
+      ]
+    },
+    {
+      "library_ref": "physical:contact-overhead-power",
+      "title": "Contact with overhead power lines",
+      "risk": "Excavator boom contacting energised overhead lines (6.4m exclusion under ESV)",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:reposition-to-avoid-overhead", "title": "Where feasible, position machine and access so boom arc cannot reach overhead lines" },
+        { "hoc_level": 4, "library_ref": "admin:electrical-spotter",                "title": "Electrical spotter if any possibility of breach of 6.4m exclusion; asset owner approval if breach unavoidable" },
+        { "hoc_level": 3, "library_ref": "engineering:tiger-tails-on-lines",         "title": "Tiger tails on overhead lines where exclusion zone routinely approached (asset owner installs)" }
+      ]
+    },
+    {
+      "library_ref": "physical:falls-into-excavation",
+      "title": "Falls into excavation",
+      "risk": "Worker, owner, or third party falling into open excavation; depth typically > 1.5m",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:edge-protection-trench",      "title": "Guardrails or solid covers at end of each working day" },
+        { "hoc_level": 3, "library_ref": "engineering:perimeter-fencing-mandatory",  "title": "Site perimeter fence locked outside working hours" }
+      ]
+    },
+    {
+      "library_ref": "physical:airborne-contaminants-silica",
+      "title": "Silica dust (rock / hard soil)",
+      "risk": "Respirable crystalline silica from rock-breaking or dry-cutting in shell prep",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:on-tool-water-suppression", "title": "Water suppression on hydraulic breakers / rock-cutters" },
+        { "hoc_level": 5, "library_ref": "ppe:p2-mask",                           "title": "P2 respirator at minimum; P3 for sustained dry cutting" }
+      ]
+    },
+    {
+      "library_ref": "physical:noise",
+      "title": "Noise > 85 dB(A)",
+      "risk": "Hearing damage from excavator engine + rock breaker",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:hearing-protection", "title": "Class 5 ear muffs within 5m of operating plant" }
+      ]
+    },
+    {
+      "library_ref": "physical:vibration-adjacent-structures",
+      "title": "Vibration impact on adjacent structures",
+      "risk": "Excavation close to dwelling slab, neighbouring boundary; vibration causing cracking, undermining footings",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:pre-condition-survey",        "title": "Pre-condition photograph survey of adjacent structures and boundaries" },
+        { "hoc_level": 4, "library_ref": "admin:vibration-monitoring",        "title": "Vibration monitoring where excavation within 3m of dwelling slab or boundary wall" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",        "title": "Safety footwear" },
+    { "library_ref": "head:hard-hat",            "title": "Hard hat" },
+    { "library_ref": "body:hi-vis-long-sleeve",  "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",      "title": "Safety glasses" },
+    { "library_ref": "hearing:class-5-muffs",    "title": "Hearing protection (Class 5)" },
+    { "library_ref": "respiratory:p2-mask",      "title": "P2 respirator (P3 if dry-cutting rock)" },
+    { "library_ref": "hands:work-gloves",        "title": "Work gloves" }
+  ],
+  "tasks": [
+    "Pre-start toolbox: walk site with operator and crew; confirm exclusion zone, services located, soil type, depth target, spoil location.",
+    "Confirm BYDA current; plans on site; services isolated where crossing dig.",
+    "Confirm overhead exclusion (6.4m) clear or asset owner controls in place.",
+    "Erect 3m exclusion bunting/cones around excavator working area.",
+    "Operator pre-start check: ROPs/FOPs, hydraulics, attachments, quick-hitch safety pin, reversing alarm, lights/horn.",
+    "Spotter takes position before machine starts; agreed hand signals.",
+    "Excavate top 300mm slowly; visually confirm no shallow services before continuing.",
+    "Continue in lifts (≤ 500mm); maintain shape per setout / engineering drawings.",
+    "Position spoil ≥ 1000mm from excavation edge OR load directly to truck for off-site disposal.",
+    "At 1.5m depth: install shoring OR confirm batter angle for soil (engineer-approved where uncertain).",
+    "Continuously monitor trench wall integrity; stop work if any sloughing, fissure, or change in soil/moisture.",
+    "No worker in excavation while machine operating overhead; no worker in zone of influence of spoil pile.",
+    "Hand-trim final shell shape per drawings.",
+    "End-of-day: edge protection or covers; perimeter fence locked.",
+    "Final inspection by site supervisor + sign-off in Hub before reinforcement commences."
+  ],
+  "signers_required": [
+    { "role": "supervisor",              "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "operator_hrwl",           "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "spotter",                 "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in",         "count": "all" }
+  ]
+}

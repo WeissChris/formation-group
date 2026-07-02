@@ -1,0 +1,107 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved. Welding may require a hot-work permit and high-risk work licences."
+  },
+  "activity_name": "Pergola / structural steel install (welding, lift, fix)",
+  "high_risk_categories": ["fall_gt_2m", "load_or_object-related-rigging"],
+  "applicable_to_brands": ["formation"],
+  "hazards": [
+    {
+      "library_ref": "physical:fall-from-height",
+      "title": "Fall from height — pergola top fix",
+      "risk": "Work at 2.4–3.0m AGL typical for pergolas",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:ewp-or-scaffold",       "title": "EWP or scaffold for any work > 2m AGL" },
+        { "hoc_level": 5, "library_ref": "ppe:fall-arrest-harness",            "title": "Harness anchored to engineered point if edge protection not practical" }
+      ]
+    },
+    {
+      "library_ref": "physical:load-fall-rigging",
+      "title": "Steel member fall during lift",
+      "risk": "Member dropped during lift / installation",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:rigging-tested",         "title": "Sling / lift gear pre-use inspected" },
+        { "hoc_level": 3, "library_ref": "engineering:exclusion-zone-lift-arc","title": "Exclusion zone in fall arc" }
+      ]
+    },
+    {
+      "library_ref": "physical:hot-work-fire",
+      "title": "Hot work — welding / cutting fire risk",
+      "risk": "Spark / slag ignition; especially near timber / vegetation",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:hot-work-permit",        "title": "Hot work permit signed; fire watch posted" },
+        { "hoc_level": 4, "library_ref": "admin:no-hot-work-tfb",        "title": "No hot work on total fire ban days" },
+        { "hoc_level": 4, "library_ref": "admin:fire-extinguisher-within-5m","title": "Fire extinguisher within 5m of hot work" },
+        { "hoc_level": 4, "library_ref": "admin:fire-watch-after-work",   "title": "30-min fire watch after hot work ends" }
+      ]
+    },
+    {
+      "library_ref": "physical:welding-arc-radiation",
+      "title": "Arc eye / arc burns",
+      "risk": "UV from welding arc",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:welding-helmet-auto-darken","title": "Auto-darkening welding helmet" },
+        { "hoc_level": 5, "library_ref": "ppe:welding-jacket-gloves",     "title": "Welding jacket + gloves; long sleeves under" },
+        { "hoc_level": 3, "library_ref": "engineering:welding-screens",   "title": "Welding screens to protect bystanders from arc flash" }
+      ]
+    },
+    {
+      "library_ref": "physical:welding-fumes",
+      "title": "Welding fume inhalation",
+      "risk": "Metal fume + galvanising fume (zinc) particularly dangerous",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:weld-untreated-steel-then-galv","title": "Weld bare steel where possible; galvanise after fabrication" },
+        { "hoc_level": 4, "library_ref": "admin:outdoor-or-leV",         "title": "Outdoor weld where possible; LEV indoors" },
+        { "hoc_level": 5, "library_ref": "ppe:p3-respirator-or-welding-PAPR","title": "P3 respirator (galv steel: PAPR)" }
+      ]
+    },
+    {
+      "library_ref": "physical:manual-handling-steel",
+      "title": "Manual handling — steel members",
+      "risk": "Awkward / heavy steel; pinch points",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:mechanical-lift",       "title": "Mechanical lift for any member > 20kg" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",                "title": "Safety footwear" },
+    { "library_ref": "head:hard-hat",                    "title": "Hard hat" },
+    { "library_ref": "body:hi-vis-long-sleeve",          "title": "Hi-vis long sleeve" },
+    { "library_ref": "body:welding-jacket",              "title": "Welding jacket (welding only)" },
+    { "library_ref": "eyes:welding-helmet",              "title": "Auto-darkening welding helmet" },
+    { "library_ref": "hands:welding-gloves",             "title": "Welding gloves" },
+    { "library_ref": "respiratory:p3-or-papr-welding",   "title": "P3 / PAPR for fume" },
+    { "library_ref": "fall:harness",                     "title": "Fall arrest harness (height > 2m)" }
+  ],
+  "tasks": [
+    "Pre-start: drawings on site; engineer hold-points noted; lift plan documented.",
+    "Pre-start: hot work permit signed; fire watch nominated; extinguisher in position.",
+    "Set up EWP / scaffold; confirm SWL + ground stability.",
+    "Erect welding screens around hot work area.",
+    "Fabricate or position pre-fabricated members in lay-down area.",
+    "Lift members into position with mechanical aid; exclusion zone enforced.",
+    "Fix in sequence per design.",
+    "Welding: ventilated; PPE; bystanders behind screens.",
+    "30-minute fire watch after each hot-work period ends.",
+    "Final inspection; engineer sign-off if required.",
+    "Site clean — slag / off-cuts to skip."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "welder", "must_sign_before": "activity_starts", "count": 1, "conditional": "welding" },
+    { "role": "ewp_operator_ticketed", "must_sign_before": "activity_starts", "count": 1, "conditional": "ewp" },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

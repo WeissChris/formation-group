@@ -1,0 +1,79 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner. Electrical work must be performed by a licensed electrician per AS/NZS 3000 and AS/NZS 3012; equipotential bonding around pools per AS/NZS 3000 Section 6.4. Lume's role is coordination + supervision; the licensed electrician is the responsible person for the work."
+  },
+  "activity_name": "Pool electrical bonding + light + equipment rough-in (licensed electrician)",
+  "high_risk_categories": ["near_energised_electrical", "near_chemicals"],
+  "applicable_to_brands": ["lume"],
+  "hazards": [
+    {
+      "library_ref": "physical:electric-shock",
+      "title": "Electric shock — energised wiring",
+      "risk": "Contact with energised wiring during pre-commissioning testing",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:isolate-and-tag",         "title": "All work performed dead — isolated, locked out, tagged out at switchboard" },
+        { "hoc_level": 4, "library_ref": "admin:licensed-electrician",          "title": "All work performed by licensed electrician per AS/NZS 3000" },
+        { "hoc_level": 4, "library_ref": "admin:test-before-touch",             "title": "Test-before-touch with verified tester on every conductor before work" }
+      ]
+    },
+    {
+      "library_ref": "physical:fall-into-excavation",
+      "title": "Fall into pool shell while installing",
+      "risk": "Electrician working in / around excavation during conduit rough-in and light installation",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:edge-protection-trench",  "title": "Edge protection or covers in place; only opened for direct work" },
+        { "hoc_level": 4, "library_ref": "admin:no-solo-work-in-excavation",    "title": "Buddy on ground level during in-shell work" }
+      ]
+    },
+    {
+      "library_ref": "physical:cut-laceration",
+      "title": "Cuts from conduit cutting / fishing",
+      "risk": "Sharp conduit ends; fishing wire injury",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:work-gloves",     "title": "Cut-resistant gloves" },
+        { "hoc_level": 5, "library_ref": "ppe:safety-glasses",  "title": "Safety glasses" }
+      ]
+    },
+    {
+      "library_ref": "chemical:concrete-burns",
+      "title": "Concrete contact (penetration packing)",
+      "risk": "Wet concrete used to pack conduit penetrations",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:chemical-gloves", "title": "Chemical-resistant gloves when handling wet patching mix" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",       "title": "Safety footwear" },
+    { "library_ref": "head:hard-hat",           "title": "Hard hat (in excavation)" },
+    { "library_ref": "body:hi-vis-long-sleeve", "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",     "title": "Safety glasses" },
+    { "library_ref": "hands:work-gloves",       "title": "Cut-resistant gloves" }
+  ],
+  "tasks": [
+    "Pre-start: licensed electrician on site; confirm licence + recent CPR ticket; drawings on site.",
+    "Confirm isolation point at switchboard; lock-out tag-out applied.",
+    "Install bonding conductor around pool shell per AS/NZS 3000 6.4 (continuous loop, all reinforcement bonded).",
+    "Install conduit runs for pool light, pump, filter, heater, salt chlorinator, controller, garden lighting from approved switchboard location.",
+    "Install pool light niche / point per fitting manufacturer's instructions.",
+    "Pull cables; leave appropriate slack for connection.",
+    "Test continuity of bonding loop; record reading in Hub.",
+    "Test insulation resistance per AS/NZS 3000; record in Hub.",
+    "Electrician issues Electrical Safety Certificate of Compliance on completion; upload to Hub.",
+    "Tag-out remains in place until final commissioning."
+  ],
+  "signers_required": [
+    { "role": "licensed_electrician",    "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "supervisor",              "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in",         "count": "all" }
+  ]
+}

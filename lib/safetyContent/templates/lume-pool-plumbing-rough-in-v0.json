@@ -1,0 +1,78 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved. Pool plumbing must be installed by a licensed plumber where the licensed scope applies (suction, return, balance tank, backwash to sewer)."
+  },
+  "activity_name": "Pool plumbing rough-in (suction, return, vacuum, backwash, balance tank)",
+  "high_risk_categories": ["near_chemicals"],
+  "applicable_to_brands": ["lume"],
+  "hazards": [
+    {
+      "library_ref": "physical:fall-into-excavation",
+      "title": "Fall into pool excavation while running pipe",
+      "risk": "Plumber working at edge or in excavation during rough-in",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:edge-protection-trench",  "title": "Edge protection in place; ladder access only" },
+        { "hoc_level": 4, "library_ref": "admin:no-solo-work-in-excavation",    "title": "No solo work in excavation; partner above ground" }
+      ]
+    },
+    {
+      "library_ref": "chemical:glues-solvents",
+      "title": "PVC primer / cement solvent exposure",
+      "risk": "Inhalation / skin contact with PVC priming fluid and cement",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:sds-on-site",      "title": "SDS for all primers / cements on site" },
+        { "hoc_level": 4, "library_ref": "admin:ventilation",      "title": "Adequate ventilation; outdoor work preferred" },
+        { "hoc_level": 5, "library_ref": "ppe:chemical-gloves",    "title": "Chemical-resistant gloves" },
+        { "hoc_level": 5, "library_ref": "ppe:safety-glasses",     "title": "Safety glasses" }
+      ]
+    },
+    {
+      "library_ref": "physical:cut-laceration",
+      "title": "Cut from pipe saw / file",
+      "risk": "Hand laceration from cutting tools",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:work-gloves", "title": "Cut-resistant gloves" }
+      ]
+    },
+    {
+      "library_ref": "physical:manual-handling-pipes",
+      "title": "Manual handling — pipe and fittings",
+      "risk": "Awkward lifts of long pipe and balance tanks",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:two-person-lift-heavy", "title": "Two-person lift for balance tanks and long pipe runs" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",       "title": "Safety footwear" },
+    { "library_ref": "head:hard-hat",           "title": "Hard hat (in excavation)" },
+    { "library_ref": "body:hi-vis-long-sleeve", "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",     "title": "Safety glasses" },
+    { "library_ref": "hands:chemical-gloves",   "title": "Chemical-resistant gloves" }
+  ],
+  "tasks": [
+    "Pre-start: confirm licensed plumber on site; confirm scope and drawings.",
+    "Lay out pipe runs per drawings: suction(s), return(s), main drain (if applicable), vacuum, backwash.",
+    "Trench / chase as required; coordinate with shell penetrations.",
+    "Cut, prime, and solvent-cement joints per AS/NZS 3500.",
+    "Pressure-test all lines to spec (typically 350 kPa for 24 hours); record test in Hub.",
+    "Connect balance tank with overflow to legal point of discharge.",
+    "Backwash line to sewer via approved trade-waste connection.",
+    "As-built sketch updated and uploaded to Hub.",
+    "Plumber sign-off in Hub before any cover-up / pour."
+  ],
+  "signers_required": [
+    { "role": "licensed_plumber",        "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "supervisor",              "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in",         "count": "all" }
+  ]
+}

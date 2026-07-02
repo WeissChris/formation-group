@@ -105,20 +105,36 @@ export async function getSiteMilestones(id: string): Promise<SiteMilestone[]> {
   return d?.milestones ?? []
 }
 
-// Safety snapshot for the cockpit's Safety tab (linked sf_site + board + register).
+// Safety snapshot for the cockpit's Safety tab: linked sf_site + board + register + the
+// project's safety docs (SWMS with ack counts, toolbox meetings, incidents).
 import type { SafetySite, SiteBoard, SiteVisit } from '@/lib/safety'
+import type { Swms, ToolboxMeeting, Incident } from '@/lib/safetyDocs'
 export interface SiteSafety {
   site: SafetySite | null
   board: SiteBoard | null
   onSiteNow: SiteVisit[]
   today: SiteVisit[]
   inductionCount: number
+  swms: (Swms & { ackCount: number })[]
+  toolbox: ToolboxMeeting[]
+  incidents: Incident[]
 }
 export async function getSiteSafety(id: string): Promise<SiteSafety> {
   const d = await getJson<{ ok: boolean } & SiteSafety>(`/api/site/projects/${id}/safety`)
   return d?.ok
-    ? { site: d.site, board: d.board ?? null, onSiteNow: d.onSiteNow ?? [], today: d.today ?? [], inductionCount: d.inductionCount ?? 0 }
-    : { site: null, board: null, onSiteNow: [], today: [], inductionCount: 0 }
+    ? {
+        site: d.site, board: d.board ?? null, onSiteNow: d.onSiteNow ?? [], today: d.today ?? [],
+        inductionCount: d.inductionCount ?? 0, swms: d.swms ?? [], toolbox: d.toolbox ?? [], incidents: d.incidents ?? [],
+      }
+    : { site: null, board: null, onSiteNow: [], today: [], inductionCount: 0, swms: [], toolbox: [], incidents: [] }
+}
+
+/** Foreman safety writes (toolbox / incident / swms_ack) - see the route for shapes. */
+export async function postSiteSafety(id: string, payload: Record<string, unknown>): Promise<boolean> {
+  const res = await fetch(`/api/site/projects/${id}/safety`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  })
+  return res.ok
 }
 
 // ── Plans (private Supabase Storage bucket, one folder per project) ──────────────

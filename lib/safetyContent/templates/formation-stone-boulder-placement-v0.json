@@ -1,0 +1,81 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved."
+  },
+  "activity_name": "Stone / boulder placement (mechanical lift)",
+  "high_risk_categories": ["load_or_object-related-rigging", "mobile_plant_near_persons"],
+  "applicable_to_brands": ["formation"],
+  "hazards": [
+    {
+      "library_ref": "physical:load-fall-rigging",
+      "title": "Suspended load fall",
+      "risk": "Boulder slipping from sling or grab; crush injury",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:rigging-ticketed",     "title": "Lift planned and performed by ticketed dogger / rigger if > 4t" },
+        { "hoc_level": 4, "library_ref": "admin:sling-tested",         "title": "Slings / grabs in current test date; pre-use inspection" },
+        { "hoc_level": 3, "library_ref": "engineering:exclusion-zone-lift-arc","title": "No personnel under or in fall arc of suspended load" }
+      ]
+    },
+    {
+      "library_ref": "physical:plant-mobile-general",
+      "title": "Hiab / crane / excavator struck-by",
+      "risk": "Worker struck by boom / counterweight swing",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:exclusion-zones-mobile-plant","title": "Exclusion zone; spotter/dogman" },
+        { "hoc_level": 4, "library_ref": "admin:hrwl-verification",                 "title": "Operator HRWL valid for plant + lift" }
+      ]
+    },
+    {
+      "library_ref": "physical:crush-from-roll",
+      "title": "Boulder roll after placement",
+      "risk": "Placed boulder rolling on uneven ground",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:bed-and-key-boulder",    "title": "Boulder bedded into prepared pocket; keyed for stability before sling release" },
+        { "hoc_level": 4, "library_ref": "admin:no-personnel-downhill",  "title": "No personnel downhill of boulder during placement" }
+      ]
+    },
+    {
+      "library_ref": "physical:contact-overhead-power",
+      "title": "Crane boom overhead power contact",
+      "risk": "Hiab / crane boom contacting overhead lines",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:overhead-clearance-pump-boom", "title": "6.4m clearance from energised overhead lines" },
+        { "hoc_level": 4, "library_ref": "admin:electrical-spotter",           "title": "Electrical spotter if breach risk" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",       "title": "Safety footwear" },
+    { "library_ref": "head:hard-hat",           "title": "Hard hat (MANDATORY — overhead lift)" },
+    { "library_ref": "body:hi-vis-long-sleeve", "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",     "title": "Safety glasses" },
+    { "library_ref": "hands:work-gloves",       "title": "Work gloves" }
+  ],
+  "tasks": [
+    "Pre-start: lift plan documented; weight of each boulder confirmed against plant SWL.",
+    "Confirm operator HRWL; rigger ticket if required by lift weight.",
+    "Toolbox: walk plan with operator + dogman + crew; signals.",
+    "Confirm 6.4m overhead clearance; electrical spotter if risk.",
+    "Prepare placement pocket: dig bed, place compacted gravel base.",
+    "Rig boulder: sling or grab per planned procedure; pre-use inspection.",
+    "Lift: dogman signals; no personnel in fall arc.",
+    "Place into pocket; bed and key; signal sling release only when stable.",
+    "Repeat per boulder.",
+    "Site clean."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "operator_hrwl", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "dogman", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

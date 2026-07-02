@@ -1,0 +1,86 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved. Silica controls per AS/NZS 4849.1 + Safe Work Australia silica COP."
+  },
+  "activity_name": "Paving installation (bluestone, granite, concrete pavers, porcelain)",
+  "high_risk_categories": [],
+  "applicable_to_brands": ["formation"],
+  "hazards": [
+    {
+      "library_ref": "chemical:silica-dust",
+      "title": "Respirable crystalline silica — paver / stone cutting",
+      "risk": "Silicosis from cutting bluestone, granite, porcelain — particularly imported engineered stone",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:wet-cut-saw",          "title": "Wet-cut saw MANDATORY; no dry cutting" },
+        { "hoc_level": 4, "library_ref": "admin:dust-controlled-cut-area",   "title": "Dedicated cutting area, bunded for slurry, away from other workers" },
+        { "hoc_level": 5, "library_ref": "ppe:p3-respirator",                "title": "P3 respirator (fit-tested) for cutter" }
+      ]
+    },
+    {
+      "library_ref": "physical:manual-handling-pavers",
+      "title": "Manual handling — pavers / setts",
+      "risk": "Pavers 15–30kg; many lifts per day",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:mechanical-lift",       "title": "Pallet trolley + paver tongs for stockpile movement" },
+        { "hoc_level": 4, "library_ref": "admin:rotate-laying-bending",       "title": "Rotate workers between laying and material movement to share bending load" }
+      ]
+    },
+    {
+      "library_ref": "physical:cut-laceration",
+      "title": "Cut hands on paver edges",
+      "risk": "Sharp cut edges, especially porcelain",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:work-gloves", "title": "Cut-resistant gloves" }
+      ]
+    },
+    {
+      "library_ref": "physical:noise",
+      "title": "Noise — saws, compactor",
+      "risk": "Sustained exposure",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:hearing-protection", "title": "Class 5 ear muffs" }
+      ]
+    },
+    {
+      "library_ref": "physical:plate-compactor-vibration",
+      "title": "Vibration — plate compactor",
+      "risk": "HAV from extended compactor use",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:anti-vibration-gloves", "title": "Anti-vibration gloves; rotate operators" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",          "title": "Safety footwear" },
+    { "library_ref": "body:hi-vis-long-sleeve",    "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",        "title": "Safety glasses" },
+    { "library_ref": "hearing:class-5-muffs",      "title": "Hearing protection" },
+    { "library_ref": "respiratory:p3-respirator",  "title": "P3 respirator (cutting)" },
+    { "library_ref": "hands:work-gloves",          "title": "Cut-resistant gloves" },
+    { "library_ref": "knee:knee-pads",             "title": "Knee pads" }
+  ],
+  "tasks": [
+    "Pre-start: substrate prep checked (compaction, fall, edges).",
+    "Pavers stocked nearby on pallets; cutting area set up away from workers.",
+    "Set out string lines; check fall to drainage.",
+    "Lay base course; check level frequently.",
+    "Continue laying in courses; cut on wet-saw only.",
+    "Compact with plate compactor + rubber pad as required.",
+    "Sand sweep / joint fill per spec.",
+    "Final clean; capture slurry from cutting; not into garden or drain."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved."
+  },
+  "activity_name": "Shoring installation and battered cuts (pool shell)",
+  "high_risk_categories": ["excavation_gt_1_5m", "collapse_of_structure", "mobile_plant_near_persons"],
+  "applicable_to_brands": ["lume"],
+  "hazards": [
+    {
+      "library_ref": "physical:trench-collapse",
+      "title": "Excavation collapse during shoring install",
+      "risk": "Worker in trench during shoring install crushed by sloughing wall before shoring is in place",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:install-from-above",      "title": "Where possible, install shoring panels from above — no worker in unshored trench" },
+        { "hoc_level": 4, "library_ref": "admin:competent-shoring-installer",   "title": "Shoring installer competent / trained; sequence per shoring system manufacturer" }
+      ]
+    },
+    {
+      "library_ref": "physical:manual-handling-shoring",
+      "title": "Manual handling — shoring panels",
+      "risk": "Panels typically 50–200kg; crush / strain injury",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:mechanical-lift",           "title": "Excavator with lifting attachment for all shoring panels" },
+        { "hoc_level": 4, "library_ref": "admin:hand-not-under-panel",            "title": "No hand or limb under suspended panel" }
+      ]
+    },
+    {
+      "library_ref": "physical:batter-failure",
+      "title": "Battered cut failure",
+      "risk": "Batter cut at insufficient angle for soil type; face slips onto worker below",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:engineered-batter-angle",  "title": "Batter angle confirmed against soil type table (1:1 stable clay, 1:1.5 sand/fill, engineer-confirmed where uncertain)" },
+        { "hoc_level": 4, "library_ref": "admin:daily-batter-inspection",        "title": "Daily batter face inspection; stop and reassess after rain or any sloughing" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",          "title": "Safety footwear" },
+    { "library_ref": "head:hard-hat",              "title": "Hard hat" },
+    { "library_ref": "body:hi-vis-long-sleeve",    "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",        "title": "Safety glasses" },
+    { "library_ref": "hands:work-gloves",          "title": "Work gloves" }
+  ],
+  "tasks": [
+    "Pre-start: confirm soil type from excavation; confirm shoring system selection or batter angle against soil-type chart.",
+    "Toolbox: walk through install sequence with crew + excavator operator.",
+    "Excavator lifts panels into position; installer guides from above using ropes/spreader bar.",
+    "Install struts / waler per manufacturer; verify torque/lock per spec.",
+    "Daily inspection of shoring system + soil conditions before crew enters trench.",
+    "For battered cuts: verify angle matches plan; trim back if any sloughing observed.",
+    "Stop work and reassess after rain, vibration, or any movement.",
+    "Removal: reverse sequence; remove from above; backfill progressively as panels are pulled."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

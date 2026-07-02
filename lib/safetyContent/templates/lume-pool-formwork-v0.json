@@ -1,0 +1,76 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved."
+  },
+  "activity_name": "Formwork installation — pool shell",
+  "high_risk_categories": ["fall_gt_2m", "collapse_of_structure"],
+  "applicable_to_brands": ["lume"],
+  "hazards": [
+    {
+      "library_ref": "physical:fall-into-excavation",
+      "title": "Fall into excavation while setting forms",
+      "risk": "Working at edge of pool excavation; depth 1.5–2.5m",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:edge-protection-trench",   "title": "Temporary edge protection / cover at edges not actively being worked" },
+        { "hoc_level": 1, "library_ref": "elimination:work-from-stable-bench",   "title": "Work from compacted bench at top of excavation, not from edge" }
+      ]
+    },
+    {
+      "library_ref": "physical:formwork-collapse",
+      "title": "Formwork collapse during pour",
+      "risk": "Inadequately braced forms collapsing under wet concrete load (pool wall heights typical 1.2–1.6m)",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:engineered-formwork",      "title": "Formwork to engineer's design where wall height > 1.2m or non-standard geometry" },
+        { "hoc_level": 4, "library_ref": "admin:supervisor-inspection-pre-pour", "title": "Supervisor inspection of all bracing, ties, and joints before pour" }
+      ]
+    },
+    {
+      "library_ref": "physical:hand-injury-power-tools",
+      "title": "Power tool hand injury (impact driver, saw)",
+      "risk": "Slip / kickback when cutting forms or driving fasteners",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:correct-tool-per-manufacturer", "title": "Correct tool for task; manufacturer's procedure" },
+        { "hoc_level": 5, "library_ref": "ppe:work-gloves",                     "title": "Cut-resistant gloves; safety glasses" }
+      ]
+    },
+    {
+      "library_ref": "physical:manual-handling-formwork",
+      "title": "Manual handling — formwork panels",
+      "risk": "Plywood sheets / form panels awkward, edge cuts, splinters",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:two-person-lift-fence-panels",  "title": "Two-person lift for sheets > 1.2m" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",       "title": "Safety footwear" },
+    { "library_ref": "head:hard-hat",           "title": "Hard hat" },
+    { "library_ref": "body:hi-vis-long-sleeve", "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",     "title": "Safety glasses" },
+    { "library_ref": "hands:work-gloves",       "title": "Cut-resistant gloves" }
+  ],
+  "tasks": [
+    "Pre-start: confirm excavation signed off; setout pegs in place; engineering drawings on site.",
+    "Set up cutting / lay-down area away from excavation edge.",
+    "Cut forms to size; pre-drill where required.",
+    "Lower forms into position from above; secure progressively.",
+    "Install bracing, ties, and walers per drawing.",
+    "Install penetrations for plumbing/electrical conduit per coordination drawings.",
+    "Apply form-release agent to all surfaces in contact with concrete.",
+    "Supervisor pre-pour inspection: dimensional check, brace integrity, tie torque, penetrations correct.",
+    "Sign off in Hub before reinforcement placement and pour."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

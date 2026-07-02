@@ -1,0 +1,77 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved."
+  },
+  "activity_name": "Retaining wall construction (under 2m height)",
+  "high_risk_categories": ["excavation_gt_1_5m"],
+  "applicable_to_brands": ["formation"],
+  "hazards": [
+    {
+      "library_ref": "physical:trench-collapse",
+      "title": "Footing trench collapse",
+      "risk": "Footings up to 1.5m; soil-dependent collapse risk",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:shoring-benching-battering", "title": "Battering / shoring if trench > 1.5m or soil unstable" },
+        { "hoc_level": 3, "library_ref": "engineering:spoil-clear-of-zone-of-influence","title": "Spoil ≥ 1000mm from trench edge" }
+      ]
+    },
+    {
+      "library_ref": "physical:manual-handling-heavy",
+      "title": "Manual handling — sleepers / blocks",
+      "risk": "Heavy units up to 25kg",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:mechanical-lift",      "title": "Mechanical aid for any unit > 20kg" },
+        { "hoc_level": 4, "library_ref": "admin:two-person-lift-heavy",      "title": "Two-person lift where mechanical not practical" }
+      ]
+    },
+    {
+      "library_ref": "physical:wall-collapse-during-build",
+      "title": "Wall collapse before backfill",
+      "risk": "Newly built wall loaded before backfill or curing",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:no-load-above-wall-pre-backfill", "title": "No loads above wall before backfill complete" }
+      ]
+    },
+    {
+      "library_ref": "chemical:silica-dust",
+      "title": "Silica dust — block / sleeper cutting",
+      "risk": "Cutting blocks or capping",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:wet-cut-saw", "title": "Wet-cut saw for any block or stone cutting" },
+        { "hoc_level": 5, "library_ref": "ppe:p2-mask",             "title": "P2 respirator for cutting" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",       "title": "Safety footwear" },
+    { "library_ref": "head:hard-hat",           "title": "Hard hat (when mechanical lift)" },
+    { "library_ref": "body:hi-vis-long-sleeve", "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",     "title": "Safety glasses" },
+    { "library_ref": "hands:work-gloves",       "title": "Work gloves" },
+    { "library_ref": "respiratory:p2-mask",     "title": "P2 mask (cutting)" }
+  ],
+  "tasks": [
+    "Pre-start: design on site; setout marked.",
+    "Excavate footing; shore or batter if > 1.5m.",
+    "Concrete footing or compacted base per design.",
+    "Build wall in lifts per design; check level + plumb every course.",
+    "Cutting in designated dust-controlled area; wet-cut only.",
+    "Ag-drain + drainage aggregate behind wall.",
+    "Geofabric per design.",
+    "Backfill progressively; compact per spec.",
+    "Capping; finish."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

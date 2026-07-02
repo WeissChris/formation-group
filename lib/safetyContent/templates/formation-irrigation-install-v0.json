@@ -1,0 +1,76 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved. Plumbing connection to mains must be performed by a licensed plumber per AS/NZS 3500."
+  },
+  "activity_name": "Irrigation install (drip, spray, controllers)",
+  "high_risk_categories": [],
+  "applicable_to_brands": ["formation"],
+  "hazards": [
+    {
+      "library_ref": "physical:strike-underground-service",
+      "title": "Strike of buried service during trenching",
+      "risk": "Trenching for laterals hitting existing services",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:byda-search", "title": "BYDA + scan before trenching" }
+      ]
+    },
+    {
+      "library_ref": "chemical:glues-solvents",
+      "title": "PVC primer / cement",
+      "risk": "Inhalation / skin contact",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:ventilation",       "title": "Outdoor work; adequate ventilation" },
+        { "hoc_level": 5, "library_ref": "ppe:chemical-gloves",     "title": "Chemical-resistant gloves" }
+      ]
+    },
+    {
+      "library_ref": "physical:manual-handling-trenching",
+      "title": "Manual handling — trenching / backfilling",
+      "risk": "Repetitive shovelling; MSDs",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:mechanical-trencher", "title": "Mechanical trencher for runs > 10m" },
+        { "hoc_level": 4, "library_ref": "admin:rotate-shovelling",         "title": "Rotate workers on hand-trenching" }
+      ]
+    },
+    {
+      "library_ref": "physical:cut-laceration",
+      "title": "Cuts — pipe cutter / Stanley",
+      "risk": "Hand laceration",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:work-gloves", "title": "Cut-resistant gloves" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",       "title": "Safety footwear" },
+    { "library_ref": "body:hi-vis-long-sleeve", "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",     "title": "Safety glasses" },
+    { "library_ref": "hands:work-gloves",       "title": "Work gloves" }
+  ],
+  "tasks": [
+    "Pre-start: confirm licensed plumber for mains connection.",
+    "BYDA + on-site service scan.",
+    "Set out zones, valve box positions, controller location.",
+    "Trench laterals (mechanical where possible) at 300mm typical.",
+    "Install solenoid valves in valve boxes; mark each zone.",
+    "Run wiring from controller to valves (low voltage; can be DIY but follow AS/NZS 3500 for wet locations).",
+    "Connect to mains via approved backflow prevention (licensed plumber).",
+    "Pressure test laterals; rectify leaks.",
+    "Program controller; brief owner on operation.",
+    "Backfill; reinstate garden."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "licensed_plumber", "must_sign_before": "activity_starts", "count": 1, "for_step": "mains_connection" },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved. Silica controls per AS/NZS 4849.1 + Safe Work Australia silica COP — wet cutting is mandatory."
+  },
+  "activity_name": "Pool tiling, coping and waterline (cutting + setting)",
+  "high_risk_categories": [],
+  "applicable_to_brands": ["lume"],
+  "hazards": [
+    {
+      "library_ref": "chemical:silica-dust",
+      "title": "Respirable crystalline silica — wet/dry cutting tile and stone",
+      "risk": "Silicosis from prolonged dust exposure; many imported tiles + engineered stones have very high silica content",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:low-silica-materials",  "title": "Specify lower-silica materials at design where feasible" },
+        { "hoc_level": 3, "library_ref": "engineering:wet-cut-saw",           "title": "Wet-cut saw MANDATORY for all tile, coping, and stone cutting" },
+        { "hoc_level": 4, "library_ref": "admin:dust-controlled-cut-area",    "title": "Dedicated cutting area away from other workers; bunded for slurry" },
+        { "hoc_level": 5, "library_ref": "ppe:p3-respirator",                 "title": "P3 respirator (fit-tested) for cutter" }
+      ]
+    },
+    {
+      "library_ref": "chemical:concrete-burns",
+      "title": "Tile adhesive / grout — alkaline burns",
+      "risk": "Cement-based adhesive and grout — same alkali burn risk as concrete",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:chemical-gloves",       "title": "Chemical-resistant gloves" },
+        { "hoc_level": 4, "library_ref": "admin:wash-station-available","title": "Wash water available" }
+      ]
+    },
+    {
+      "library_ref": "physical:cut-laceration",
+      "title": "Cuts from tile / stone shards",
+      "risk": "Sharp tile edges; cuts during handling and clean-up",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:work-gloves", "title": "Cut-resistant gloves" }
+      ]
+    },
+    {
+      "library_ref": "physical:slips-trips-wet",
+      "title": "Slips on wet pool floor / coping during set",
+      "risk": "Wet pool floor and coping surfaces during tile / coping work",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:clean-edges-progressively", "title": "Keep wet area to active work zone; squeegee excess" },
+        { "hoc_level": 5, "library_ref": "ppe:safety-boots-grippy",         "title": "Aggressive-tread safety boots" }
+      ]
+    },
+    {
+      "library_ref": "physical:falls-into-excavation",
+      "title": "Falls into empty pool",
+      "risk": "Pool empty during tile / coping; fall risk into shell",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:perimeter-fencing-mandatory", "title": "Perimeter barrier around pool while empty; no access for non-workers" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",          "title": "Safety footwear" },
+    { "library_ref": "body:hi-vis-long-sleeve",    "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",        "title": "Safety glasses" },
+    { "library_ref": "hearing:class-5-muffs",      "title": "Hearing protection (cutting)" },
+    { "library_ref": "respiratory:p3-respirator",  "title": "P3 respirator (cutting, fit-tested)" },
+    { "library_ref": "hands:chemical-gloves",      "title": "Chemical-resistant gloves" },
+    { "library_ref": "knee:knee-pads",             "title": "Knee pads" }
+  ],
+  "tasks": [
+    "Pre-start: shell signed off; coping detail confirmed; tile lay-out / setout drawings on site.",
+    "Designate cutting area away from other workers; bunding for slurry water.",
+    "Prep substrate per manufacturer (clean, prime as required).",
+    "Set out and lay tiles in working courses; check level frequently.",
+    "Cutting only on wet-cut saw in designated area; P3 respirator mandatory.",
+    "Coping: bed, set, check level / consistent overhang per detail.",
+    "Allow appropriate cure time before grouting.",
+    "Grout to spec; sponge clean progressively.",
+    "Cure water + slurry captured to skip / bund; not into garden or drain.",
+    "Photograph completion; upload to Hub.",
+    "Cleaning and protective covering ready for handover."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

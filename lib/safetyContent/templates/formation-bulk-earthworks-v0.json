@@ -1,0 +1,91 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved."
+  },
+  "activity_name": "Bulk earthworks and regrading (landscape)",
+  "high_risk_categories": ["mobile_plant_near_persons", "excavation_gt_1_5m"],
+  "applicable_to_brands": ["formation"],
+  "hazards": [
+    {
+      "library_ref": "physical:plant-mobile-general",
+      "title": "Mobile plant struck-by / crush",
+      "risk": "Skid steer / mini excavator / tipper movements in residential yard",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:exclusion-zones-mobile-plant", "title": "3m exclusion zone; spotter at all times in confined yards" },
+        { "hoc_level": 4, "library_ref": "admin:hrwl-verification",                 "title": "Operator HRWL verified for plant size" },
+        { "hoc_level": 4, "library_ref": "admin:traffic-management-plan",           "title": "Traffic plan: vehicle access, lay-down, pedestrian path" }
+      ]
+    },
+    {
+      "library_ref": "physical:strike-underground-service",
+      "title": "Strike of underground service",
+      "risk": "Bulk works disturbing services across the yard",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:byda-search",            "title": "BYDA + on-site scan; existing irrigation / pool / electrical paths mapped" }
+      ]
+    },
+    {
+      "library_ref": "physical:airborne-contaminants-soil",
+      "title": "Airborne dust — dry conditions",
+      "risk": "Dust nuisance to neighbours; respiratory irritation to workers",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 3, "library_ref": "engineering:dampen-work-areas", "title": "Dampen work areas during dry conditions" }
+      ]
+    },
+    {
+      "library_ref": "physical:slope-instability",
+      "title": "Slope instability during cut / fill",
+      "risk": "Cut faces > 1m collapsing; fill slumping when overloaded",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:design-cut-fill-angle",  "title": "Cut and fill angles per design / soil-type chart" },
+        { "hoc_level": 4, "library_ref": "admin:no-load-above-cut",      "title": "No loads stockpiled above unbatter cut faces" }
+      ]
+    },
+    {
+      "library_ref": "physical:noise",
+      "title": "Noise",
+      "risk": "Plant noise; community impact + worker hearing",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:work-hours-respected",   "title": "Work hours respected: 7am–5pm weekdays; 8am–3pm Saturday; no Sundays / PHs" },
+        { "hoc_level": 5, "library_ref": "ppe:hearing-protection",       "title": "Class 5 ear muffs within 5m of operating plant" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",       "title": "Safety footwear" },
+    { "library_ref": "head:hard-hat",           "title": "Hard hat" },
+    { "library_ref": "body:hi-vis-long-sleeve", "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",     "title": "Safety glasses" },
+    { "library_ref": "hearing:class-5-muffs",   "title": "Hearing protection" },
+    { "library_ref": "respiratory:p2-mask",     "title": "P2 mask (dusty conditions)" }
+  ],
+  "tasks": [
+    "Pre-start: setout marked; cut/fill depths confirmed against design.",
+    "Pre-start: BYDA + services located; existing irrigation / pool / electrical paths flagged.",
+    "Exclusion bunting around plant operating area; spotter on duty.",
+    "Toolbox with operator + crew + tipper driver(s): signals, route, dump location.",
+    "Operator pre-start check.",
+    "Strip topsoil; stockpile for re-use.",
+    "Cut to design; respect cut-face angle; no undercut.",
+    "Place fill in lifts per spec; compact each lift.",
+    "Manage spoil to truck or stockpile; no stockpile above cut faces.",
+    "Dampen dust in dry conditions; suspend work if community impact unacceptable.",
+    "Final grade per design; check level.",
+    "Site clean; spoil removed; topsoil re-spread."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "operator_hrwl", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

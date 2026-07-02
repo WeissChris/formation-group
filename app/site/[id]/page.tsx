@@ -8,9 +8,10 @@ import { activeLineItems, estimateLabourHours, STD_LABOUR_RATE } from '@/lib/est
 import { computeScorecard, type ScoreStatus } from '@/lib/siteScorecard'
 import {
   siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, getSiteBoq,
-  getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours, getSiteMilestones, getSiteSafety,
+  getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours, getSiteMilestones, getSiteSafety, postSiteSafety,
   type SiteProject, type SitePlan, type SiteMilestone, type SiteSafety,
 } from '@/lib/siteData'
+import { SEVERITY_LABEL } from '@/lib/safetyDocs'
 import type { GanttEntry, WeeklyActual, SubcontractorPackage, Estimate } from '@/types'
 
 type Tab = 'dashboard' | 'schedule' | 'boq' | 'plans' | 'subbies' | 'safety' | 'client' | 'score'
@@ -567,71 +568,294 @@ function Plans({ projectId }: { projectId: string }) {
   )
 }
 
-// ── Safety (linked sf_site: register, inductions, board + sign-in links) ───────────
+// ── Safety (site register + SWMS + toolbox + incidents - the foreman's WHS hub) ────
 function Safety({ projectId }: { projectId: string }) {
   const [safety, setSafety] = useState<SiteSafety | null>(null)
-  useEffect(() => { getSiteSafety(projectId).then(setSafety) }, [projectId])
+  const [ackFor, setAckFor] = useState<string | null>(null)   // swmsId with the ack form open
+  const [showToolbox, setShowToolbox] = useState(false)
+  const [showIncident, setShowIncident] = useState(false)
+  const refresh = () => getSiteSafety(projectId).then(setSafety)
+  useEffect(() => { refresh() /* eslint-disable-line react-hooks/exhaustive-deps */ }, [projectId])
 
   if (safety === null) return <p className="text-sm text-fg-muted py-6 text-center">Loading...</p>
-  if (!safety.site) return (
-    <p className="text-sm text-fg-muted py-8 text-center">
-      No safety site is linked to this job yet - ask the office to create one (Safety page in the main app).
-    </p>
-  )
-  const { site, onSiteNow, today, inductionCount } = safety
+  const { site, onSiteNow, today, inductionCount, swms, toolbox, incidents } = safety
   const time = (iso: string) => new Date(iso).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })
 
   return (
-    <section className="space-y-5">
-      <div className="rounded-xl border border-fg-border p-4">
-        <p className="text-[10px] uppercase tracking-wide text-fg-muted">Safety site</p>
-        <p className="text-sm font-medium mt-0.5">{site.address}</p>
-        <p className="text-xs text-fg-muted">{site.shortRef} · {inductionCount} inducted</p>
-        <div className="flex flex-wrap gap-2 mt-3">
-          <a href={`/api/safety/sites/${site.id}/board-pdf`} target="_blank" rel="noopener noreferrer"
-            className="rounded-lg bg-fg-heading text-white px-3 py-2 text-xs font-medium">Site board PDF</a>
-          <a href={`/signin/${site.shortRef}`} target="_blank" rel="noopener noreferrer"
-            className="rounded-lg border border-fg-border px-3 py-2 text-xs">Open sign-in page</a>
+    <section className="space-y-6">
+      {site ? (
+        <div className="rounded-xl border border-fg-border p-4">
+          <p className="text-[10px] uppercase tracking-wide text-fg-muted">Safety site</p>
+          <p className="text-sm font-medium mt-0.5">{site.address}</p>
+          <p className="text-xs text-fg-muted">{site.shortRef} · {inductionCount} inducted</p>
+          <div className="flex flex-wrap gap-2 mt-3">
+            <a href={`/api/safety/sites/${site.id}/board-pdf`} target="_blank" rel="noopener noreferrer"
+              className="rounded-lg bg-fg-heading text-white px-3 py-2 text-xs font-medium">Site board PDF</a>
+            <a href={`/signin/${site.shortRef}`} target="_blank" rel="noopener noreferrer"
+              className="rounded-lg border border-fg-border px-3 py-2 text-xs">Open sign-in page</a>
+          </div>
         </div>
-      </div>
+      ) : (
+        <p className="text-xs text-fg-muted rounded-lg border border-dashed border-fg-border p-3 text-center">
+          No safety site linked yet - ask the office to create one from the Safety page.
+        </p>
+      )}
 
+      {site && (
+        <div>
+          <h2 className="text-sm font-medium mb-2">On site now ({onSiteNow.length})</h2>
+          {onSiteNow.length === 0 ? (
+            <p className="text-sm text-fg-muted py-3 text-center rounded-lg border border-fg-border/60 border-dashed">Nobody signed in.</p>
+          ) : (
+            <ul className="space-y-2">
+              {onSiteNow.map(v => (
+                <li key={v.id} className="rounded-lg border border-fg-border p-3 flex items-center justify-between">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{v.personName}</p>
+                    <p className="text-xs text-fg-muted">{v.company || v.role}{v.role === 'visitor' ? ' · visitor' : ''}</p>
+                  </div>
+                  <span className="text-xs text-fg-muted tabular-nums shrink-0">in {time(v.signedInAt)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {today.length > 0 && (
+            <details className="mt-2">
+              <summary className="text-xs text-fg-muted cursor-pointer">Today&apos;s sign-ins ({today.length})</summary>
+              <ul className="divide-y divide-fg-border/50 mt-1">
+                {today.map(v => (
+                  <li key={v.id} className="flex items-center justify-between py-2 text-sm">
+                    <span className="truncate pr-2">{v.personName}{v.company ? <span className="text-fg-muted"> · {v.company}</span> : ''}</span>
+                    <span className="text-xs text-fg-muted tabular-nums shrink-0">
+                      {time(v.signedInAt)}{v.signedOutAt ? ` – ${time(v.signedOutAt)}` : ' – on site'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
+
+      {/* SWMS */}
       <div>
-        <h2 className="text-sm font-medium mb-2">On site now ({onSiteNow.length})</h2>
-        {onSiteNow.length === 0 ? (
-          <p className="text-sm text-fg-muted py-4 text-center rounded-lg border border-fg-border/60 border-dashed">Nobody signed in.</p>
+        <h2 className="text-sm font-medium mb-2">SWMS ({swms.length})</h2>
+        {swms.length === 0 ? (
+          <p className="text-sm text-fg-muted">No SWMS assigned - the office adds them from templates.</p>
         ) : (
           <ul className="space-y-2">
-            {onSiteNow.map(v => (
-              <li key={v.id} className="rounded-lg border border-fg-border p-3 flex items-center justify-between">
-                <div className="min-w-0">
-                  <p className="font-medium truncate">{v.personName}</p>
-                  <p className="text-xs text-fg-muted">{v.company || v.role}{v.role === 'visitor' ? ' · visitor' : ''}</p>
+            {swms.map(w => (
+              <li key={w.id} className="rounded-lg border border-fg-border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium text-sm truncate">{w.activityName}</p>
+                  <a href={`/api/safety/swms/${w.id}/pdf`} target="_blank" rel="noopener noreferrer"
+                    className="text-xs underline text-fg-heading shrink-0">PDF</a>
                 </div>
-                <span className="text-xs text-fg-muted tabular-nums shrink-0">in {time(v.signedInAt)}</span>
+                <p className="text-[11px] text-fg-muted mt-0.5">{w.ackCount} acknowledged</p>
+                {ackFor === w.id ? (
+                  <SwmsAckForm projectId={projectId} swmsId={w.id}
+                    onDone={() => { setAckFor(null); refresh() }} onCancel={() => setAckFor(null)} />
+                ) : (
+                  <button onClick={() => setAckFor(w.id)}
+                    className="mt-2 text-xs underline text-fg-heading">Acknowledge (hand the phone over)</button>
+                )}
               </li>
             ))}
           </ul>
         )}
       </div>
 
+      {/* Toolbox */}
       <div>
-        <h2 className="text-sm font-medium mb-2">Today</h2>
-        {today.length === 0 ? (
-          <p className="text-sm text-fg-muted">No sign-ins today.</p>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-medium">Toolbox meetings</h2>
+          <button onClick={() => setShowToolbox(o => !o)} className="text-xs underline text-fg-heading">
+            {showToolbox ? 'Cancel' : '+ New meeting'}
+          </button>
+        </div>
+        {showToolbox && (
+          <ToolboxForm projectId={projectId} suggested={today.map(v => ({ name: v.personName, company: v.company }))}
+            onDone={() => { setShowToolbox(false); refresh() }} />
+        )}
+        {toolbox.length === 0 ? (
+          !showToolbox && <p className="text-sm text-fg-muted">None recorded yet.</p>
         ) : (
           <ul className="divide-y divide-fg-border/50">
-            {today.map(v => (
-              <li key={v.id} className="flex items-center justify-between py-2 text-sm">
-                <span className="truncate pr-2">{v.personName}{v.company ? <span className="text-fg-muted"> · {v.company}</span> : ''}</span>
-                <span className="text-xs text-fg-muted tabular-nums shrink-0">
-                  {time(v.signedInAt)}{v.signedOutAt ? ` – ${time(v.signedOutAt)}` : ' – on site'}
-                </span>
+            {toolbox.map(t => (
+              <li key={t.id} className="py-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium truncate pr-2">{t.topic}</span>
+                  <span className="text-xs text-fg-muted shrink-0">{fmt(t.heldAt)}</span>
+                </div>
+                <p className="text-[11px] text-fg-muted">{t.attendees.length} attendees{t.notes ? ` · ${t.notes.slice(0, 80)}` : ''}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Incidents */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-sm font-medium">Incidents</h2>
+          <button onClick={() => setShowIncident(o => !o)} className="text-xs underline text-fg-heading">
+            {showIncident ? 'Cancel' : '+ Report incident'}
+          </button>
+        </div>
+        {showIncident && (
+          <IncidentForm projectId={projectId} onDone={() => { setShowIncident(false); refresh() }} />
+        )}
+        {incidents.length === 0 ? (
+          !showIncident && <p className="text-sm text-fg-muted">None reported.</p>
+        ) : (
+          <ul className="divide-y divide-fg-border/50">
+            {incidents.map(i => (
+              <li key={i.id} className="py-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="truncate pr-2">{i.description.slice(0, 70)}</span>
+                  <span className={`text-[10px] uppercase tracking-wide shrink-0 ${i.severity === 'serious' || i.severity === 'critical' ? 'text-red-600' : 'text-fg-muted'}`}>
+                    {SEVERITY_LABEL[i.severity]}
+                  </span>
+                </div>
+                <p className="text-[11px] text-fg-muted">{fmt(i.occurredAt)}{i.notifiable ? ' · WorkSafe notifiable' : ''} · {i.status}</p>
               </li>
             ))}
           </ul>
         )}
       </div>
     </section>
+  )
+}
+
+function SwmsAckForm({ projectId, swmsId, onDone, onCancel }: {
+  projectId: string; swmsId: string; onDone: () => void; onCancel: () => void
+}) {
+  const [name, setName] = useState('')
+  const [company, setCompany] = useState('')
+  const [busy, setBusy] = useState(false)
+  const submit = async () => {
+    if (!name.trim()) return
+    setBusy(true)
+    const ok = await postSiteSafety(projectId, { kind: 'swms_ack', swmsId, name, company })
+    setBusy(false)
+    if (ok) onDone()
+  }
+  return (
+    <div className="mt-2 rounded-lg bg-fg-card/30 p-3 space-y-2">
+      <p className="text-[11px] text-fg-muted">Read the SWMS (PDF above), then enter your name to acknowledge it.</p>
+      <input value={name} onChange={e => setName(e.target.value)} placeholder="Full name"
+        className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
+      <input value={company} onChange={e => setCompany(e.target.value)} placeholder="Company"
+        className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
+      <div className="flex gap-2">
+        <button onClick={submit} disabled={busy || !name.trim()}
+          className="flex-1 rounded-lg bg-fg-heading text-white py-2.5 text-sm font-medium disabled:opacity-40">
+          {busy ? 'Saving...' : 'I have read and understood this SWMS'}
+        </button>
+        <button onClick={onCancel} className="px-3 text-xs text-fg-muted underline">Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+function ToolboxForm({ projectId, suggested, onDone }: {
+  projectId: string; suggested: { name: string; company?: string }[]; onDone: () => void
+}) {
+  const [topic, setTopic] = useState('')
+  const [notes, setNotes] = useState('')
+  const [attendees, setAttendees] = useState<{ name: string; company?: string }[]>(suggested)
+  const [extra, setExtra] = useState('')
+  const [busy, setBusy] = useState(false)
+  const toggle = (n: { name: string; company?: string }) =>
+    setAttendees(a => a.some(x => x.name === n.name) ? a.filter(x => x.name !== n.name) : [...a, n])
+  const submit = async () => {
+    if (!topic.trim()) return
+    setBusy(true)
+    const all = [...attendees, ...extra.split(',').map(s => ({ name: s.trim() })).filter(a => a.name)]
+    const ok = await postSiteSafety(projectId, { kind: 'toolbox', topic, notes, attendees: all })
+    setBusy(false)
+    if (ok) onDone()
+  }
+  return (
+    <div className="rounded-xl border border-fg-border p-3 mb-3 space-y-2">
+      <input value={topic} onChange={e => setTopic(e.target.value)} placeholder="Topic (e.g. Working near the excavation)"
+        className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
+      <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="What was discussed / agreed"
+        className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
+      {suggested.length > 0 && (
+        <div>
+          <p className="text-[11px] text-fg-muted mb-1">Attendees (from today&apos;s sign-ins):</p>
+          <div className="flex flex-wrap gap-1.5">
+            {suggested.map(sug => (
+              <button key={sug.name} onClick={() => toggle(sug)}
+                className={`px-2.5 py-1.5 rounded-full text-xs border ${attendees.some(a => a.name === sug.name) ? 'bg-fg-heading text-white border-fg-heading' : 'border-fg-border text-fg-muted'}`}>
+                {sug.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <input value={extra} onChange={e => setExtra(e.target.value)} placeholder="Other attendees (comma separated)"
+        className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
+      <button onClick={submit} disabled={busy || !topic.trim()}
+        className="w-full rounded-lg bg-fg-heading text-white py-2.5 text-sm font-medium disabled:opacity-40">
+        {busy ? 'Saving...' : 'Save toolbox meeting'}
+      </button>
+    </div>
+  )
+}
+
+function IncidentForm({ projectId, onDone }: { projectId: string; onDone: () => void }) {
+  const [description, setDescription] = useState('')
+  const [location, setLocation] = useState('')
+  const [severity, setSeverity] = useState('minor')
+  const [people, setPeople] = useState('')
+  const [actions, setActions] = useState('')
+  const [notifiable, setNotifiable] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const submit = async () => {
+    if (!description.trim()) return
+    setBusy(true)
+    const ok = await postSiteSafety(projectId, {
+      kind: 'incident', description, location, severity, notifiable, actionsTaken: actions,
+      occurredAt: new Date().toISOString(),
+      people: people.split(',').map(s => ({ name: s.trim() })).filter(p => p.name),
+    })
+    setBusy(false)
+    if (ok) onDone()
+  }
+  return (
+    <div className="rounded-xl border border-fg-border p-3 mb-3 space-y-2">
+      <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="What happened?"
+        className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
+      <input value={location} onChange={e => setLocation(e.target.value)} placeholder="Where on site"
+        className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
+      <input value={people} onChange={e => setPeople(e.target.value)} placeholder="People involved (comma separated)"
+        className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
+      <div className="flex gap-2">
+        {(['near_miss', 'minor', 'serious', 'critical'] as const).map(sv => (
+          <button key={sv} onClick={() => setSeverity(sv)}
+            className={`flex-1 rounded-lg border py-2 text-xs ${severity === sv ? 'bg-fg-heading text-white border-fg-heading' : 'border-fg-border text-fg-muted'}`}>
+            {SEVERITY_LABEL[sv]}
+          </button>
+        ))}
+      </div>
+      <textarea value={actions} onChange={e => setActions(e.target.value)} rows={2} placeholder="Immediate actions taken"
+        className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
+      <label className="flex items-start gap-2 text-xs">
+        <input type="checkbox" checked={notifiable} onChange={e => setNotifiable(e.target.checked)} className="mt-0.5 accent-fg-heading" />
+        <span>
+          <span className="font-medium">WorkSafe notifiable?</span> Tick if: a death; hospital in-patient treatment;
+          amputation, serious head/eye injury, electric shock, serious laceration, spinal injury; or a dangerous
+          incident (collapse, explosion, fire, uncontrolled escape, fall of person/object from 2m+).
+          <span className="text-red-600"> If ticked, call the office immediately - WorkSafe must be notified without delay.</span>
+        </span>
+      </label>
+      <button onClick={submit} disabled={busy || !description.trim()}
+        className="w-full rounded-lg bg-fg-heading text-white py-2.5 text-sm font-medium disabled:opacity-40">
+        {busy ? 'Saving...' : 'Save incident report'}
+      </button>
+    </div>
   )
 }
 

@@ -1,0 +1,75 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved. This SWMS applies any time workers are on site with water in the pool — finishing trades, snagging, handover, return visits for warranty work."
+  },
+  "activity_name": "Working on site with water in the pool (snagging, finishing, return visits)",
+  "high_risk_categories": ["drowning_risk", "near_chemicals"],
+  "applicable_to_brands": ["lume", "formation"],
+  "hazards": [
+    {
+      "library_ref": "physical:drowning",
+      "title": "Drowning — fall into pool",
+      "risk": "Worker fall into pool from coping / surrounds; especially in wet conditions; especially with tools / equipment causing instability",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:work-on-empty-pool",     "title": "Where possible, schedule work that requires close-to-edge work BEFORE pool is filled" },
+        { "hoc_level": 3, "library_ref": "engineering:keep-pool-barrier-closed","title": "Pool safety barrier remains closed except for active access; never propped open" },
+        { "hoc_level": 4, "library_ref": "admin:buddy-near-pool",              "title": "No solo work within 2m of pool edge" },
+        { "hoc_level": 4, "library_ref": "admin:first-aid-cpr-current",        "title": "At least one worker on site with current first-aid + CPR" }
+      ]
+    },
+    {
+      "library_ref": "physical:electric-shock",
+      "title": "Electric shock — tools near water",
+      "risk": "Power tools / extension leads near pool water",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:battery-tools-near-pool", "title": "Battery-powered tools only within 2m of pool water" },
+        { "hoc_level": 4, "library_ref": "admin:rcd-on-mains-tools",           "title": "Any mains-powered tool used near pool must be on RCD-protected circuit; cords kept out of water" }
+      ]
+    },
+    {
+      "library_ref": "chemical:pool-chemicals",
+      "title": "Existing pool chemicals on site",
+      "risk": "Stored balancing chemicals owned by client; worker disturbing storage",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:do-not-handle-owner-chemicals", "title": "Do not handle owner's chemical store; if access required, confirm with owner" }
+      ]
+    },
+    {
+      "library_ref": "physical:slips-trips-wet",
+      "title": "Slips on wet coping / paving",
+      "risk": "Wet surfaces around pool; especially after rain or pool use",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:safety-boots-grippy", "title": "Aggressive-tread safety boots" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots-grippy", "title": "Safety footwear (grippy)" },
+    { "library_ref": "body:hi-vis-long-sleeve",  "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",      "title": "Safety glasses" },
+    { "library_ref": "hands:work-gloves",        "title": "Work gloves" }
+  ],
+  "tasks": [
+    "Pre-start: confirm pool barrier compliance; confirm barrier closed and latching properly.",
+    "Toolbox: review drowning risk; confirm buddy system within 2m of pool edge.",
+    "Confirm at least one current first-aid / CPR ticket on site.",
+    "Use battery tools only within 2m of pool water; mains tools on RCD circuit.",
+    "Keep all cords, hoses, fluids away from pool edge.",
+    "No glass containers within pool surrounds.",
+    "Re-close barrier whenever access path not actively in use.",
+    "Photograph site state on departure; confirm barrier closed and latched."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

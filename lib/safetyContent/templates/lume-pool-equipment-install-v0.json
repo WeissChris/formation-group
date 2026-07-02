@@ -1,0 +1,77 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved."
+  },
+  "activity_name": "Pool equipment install (pump, filter, heater, chlorinator, controller)",
+  "high_risk_categories": ["near_energised_electrical"],
+  "applicable_to_brands": ["lume"],
+  "hazards": [
+    {
+      "library_ref": "physical:electric-shock",
+      "title": "Electric shock — final connections",
+      "risk": "Final connections of pump, heater, chlorinator to circuits",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:isolate-and-tag",     "title": "Circuit isolated at board; LOTO" },
+        { "hoc_level": 4, "library_ref": "admin:licensed-electrician",      "title": "Final electrical connection by licensed electrician only" }
+      ]
+    },
+    {
+      "library_ref": "physical:gas-explosion",
+      "title": "Gas leak — gas heater install",
+      "risk": "Gas heater connection — leak / explosion if not gas-fit",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:licensed-gasfitter",        "title": "Gas connection by licensed gasfitter only; Type A certificate issued" },
+        { "hoc_level": 4, "library_ref": "admin:leak-test-soap",            "title": "Leak test all joints with soap solution; pressure decay test" }
+      ]
+    },
+    {
+      "library_ref": "physical:manual-handling-equipment",
+      "title": "Manual handling — pump / filter / heater",
+      "risk": "Pump pots and heaters typically 30–80kg; awkward into equipment bay",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:mechanical-lift",      "title": "Trolley or two-person lift for all units > 20kg" }
+      ]
+    },
+    {
+      "library_ref": "chemical:glues-solvents",
+      "title": "PVC primer / solvent fumes in equipment bay",
+      "risk": "Concentrated fumes in enclosed equipment bay during connections",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:ventilation",                "title": "Maintain ventilation; outdoor-rated joints made outside where possible" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",       "title": "Safety footwear" },
+    { "library_ref": "body:hi-vis-long-sleeve", "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",     "title": "Safety glasses" },
+    { "library_ref": "hands:work-gloves",       "title": "Work gloves" }
+  ],
+  "tasks": [
+    "Pre-start: equipment delivered, inspected for transit damage, all components present per spec.",
+    "Lay out equipment per manufacturer's clearance requirements; serviceability access maintained.",
+    "Bolt down pump pot; level filter and heater per manufacturer.",
+    "Plumb in suction, return, backwash, and chlorinator lines; PVC unions for serviceability.",
+    "Pressure test plumbing connections.",
+    "Gasfitter: connect gas heater; pressure / leak test; Type A certificate.",
+    "Electrician: connect all final circuits; insulation + bonding tests; Electrical CoC.",
+    "Install controller; configure per owner preferences.",
+    "Label all valves, isolators, and circuits clearly.",
+    "Operating manual + warranties uploaded to Hub."
+  ],
+  "signers_required": [
+    { "role": "supervisor",              "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "licensed_electrician",    "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "licensed_gasfitter",      "must_sign_before": "activity_starts", "count": 1, "conditional": "gas_heater" },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in",         "count": "all" }
+  ]
+}

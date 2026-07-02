@@ -1,0 +1,104 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved. Tree work above 2m or near power lines requires a qualified arborist with the relevant tickets. Significant tree removal often requires planning permission and / or arboricultural impact assessment."
+  },
+  "activity_name": "Tree removal and pruning (in-house — small trees / ground-level work)",
+  "high_risk_categories": ["fall_gt_2m", "near_energised_electrical_overhead"],
+  "applicable_to_brands": ["formation"],
+  "hazards": [
+    {
+      "library_ref": "physical:chainsaw-cut",
+      "title": "Chainsaw cut / kickback",
+      "risk": "Serious laceration from chainsaw kickback or contact",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:chainsaw-ticketed",   "title": "Chainsaw operated only by trained / ticketed person" },
+        { "hoc_level": 4, "library_ref": "admin:saw-pre-use-check",   "title": "Pre-use check: chain tension, sharpness, brake, throttle interlock, anti-vibration mounts" },
+        { "hoc_level": 5, "library_ref": "ppe:chainsaw-chaps",        "title": "Chainsaw chaps / trousers (AS/NZS 4453)" },
+        { "hoc_level": 5, "library_ref": "ppe:helmet-visor-earmuff-combo","title": "Forestry helmet with visor + ear muffs" }
+      ]
+    },
+    {
+      "library_ref": "physical:falling-limb",
+      "title": "Falling limb struck-by",
+      "risk": "Cut limb striking worker, plant, or property",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:drop-zone-planned",   "title": "Drop zone planned; cleared and signalled before each cut" },
+        { "hoc_level": 4, "library_ref": "admin:exclusion-zone-tree-work","title": "Exclusion zone 2× tree height; spotter at perimeter" }
+      ]
+    },
+    {
+      "library_ref": "physical:contact-overhead-power",
+      "title": "Contact with overhead power lines",
+      "risk": "Branches contacting overhead lines; saw / pole pruner contacting lines",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:no-self-work-near-lines","title": "Trees within ESV exclusion of overhead lines: STOP — engage qualified arborist (EWP-certified, line-clearance trained)" },
+        { "hoc_level": 4, "library_ref": "admin:electrical-spotter",            "title": "Electrical spotter where in any doubt" }
+      ]
+    },
+    {
+      "library_ref": "physical:fall-from-height",
+      "title": "Fall from height",
+      "risk": "Worker fall during pruning above 2m",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:no-ladder-chainsaw",    "title": "NEVER operate chainsaw from a ladder" },
+        { "hoc_level": 1, "library_ref": "elimination:ewp-or-arborist",       "title": "Work > 2m AGL: use EWP or engage qualified arborist" }
+      ]
+    },
+    {
+      "library_ref": "physical:noise",
+      "title": "Noise — chainsaw + chipper",
+      "risk": "Sustained > 100 dB(A)",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:hearing-protection", "title": "Class 5 ear muffs" }
+      ]
+    },
+    {
+      "library_ref": "physical:chipper-entanglement",
+      "title": "Chipper entanglement",
+      "risk": "Worker drawn into chipper feed rollers",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:chipper-trained",        "title": "Chipper operated by trained person; never feed alone for large material" },
+        { "hoc_level": 4, "library_ref": "admin:no-loose-clothing",      "title": "No gloves with cuffs, no loose clothing, no scarves / lanyards near feed" },
+        { "hoc_level": 3, "library_ref": "engineering:emergency-stop-bar","title": "Emergency stop bar functional and within reach" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",                    "title": "Safety footwear" },
+    { "library_ref": "head:forestry-helmet-combo",           "title": "Forestry helmet with visor + ear muffs" },
+    { "library_ref": "body:hi-vis-long-sleeve",              "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses",                  "title": "Safety glasses (under visor)" },
+    { "library_ref": "hearing:class-5-muffs",                "title": "Hearing protection" },
+    { "library_ref": "respiratory:p2-mask",                  "title": "P2 mask (chipping)" },
+    { "library_ref": "legs:chainsaw-chaps",                  "title": "Chainsaw chaps / trousers" },
+    { "library_ref": "hands:chainsaw-gloves",                "title": "Chainsaw gloves (no cuffs)" }
+  ],
+  "tasks": [
+    "Pre-start: confirm tree assessment, planning permission if required, no overhead power conflict.",
+    "Confirm in-house scope: tree small enough for ground-level felling + manual removal. Otherwise engage qualified arborist.",
+    "Toolbox: walk plan with crew; identify drop zone, exclusion zone, signaller position.",
+    "Set up exclusion zone (2× tree height); signage; spotter at perimeter.",
+    "Chainsaw pre-use check; refuel away from cut area; no smoking around fuel.",
+    "Fell using planned hinge cut; retreat path clear.",
+    "Limb / buck on the ground; never from a ladder.",
+    "Feed chipper progressively; no loose clothing; never reach into feed.",
+    "Stump grinding (if separate task): exclusion zone; eye protection (debris); P2 mask.",
+    "Remove waste to mulch / green-waste; site clean."
+  ],
+  "signers_required": [
+    { "role": "supervisor", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "chainsaw_operator_ticketed", "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in", "count": "all" }
+  ]
+}

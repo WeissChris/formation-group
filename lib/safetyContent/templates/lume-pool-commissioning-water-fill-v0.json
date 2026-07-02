@@ -1,0 +1,74 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved. Pool chemicals are SDS-listed dangerous goods; handling must follow supplier guidance."
+  },
+  "activity_name": "Commissioning + water fill + chemical balancing",
+  "high_risk_categories": ["near_chemicals", "drowning_risk"],
+  "applicable_to_brands": ["lume"],
+  "hazards": [
+    {
+      "library_ref": "chemical:pool-chemicals",
+      "title": "Pool chemical exposure (acid, chlorine, salt)",
+      "risk": "Acid burns, chlorine inhalation, alkali burns from balancing chemicals",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:sds-on-site",               "title": "SDS for every chemical on site" },
+        { "hoc_level": 4, "library_ref": "admin:no-mix-chemicals",          "title": "Never mix chemicals; always add chemical to water, not water to chemical" },
+        { "hoc_level": 4, "library_ref": "admin:downwind-pouring",          "title": "Pour downwind; head turned away" },
+        { "hoc_level": 5, "library_ref": "ppe:chemical-gloves",             "title": "Chemical-resistant gauntlet gloves" },
+        { "hoc_level": 5, "library_ref": "ppe:safety-glasses-tight",        "title": "Tight-fitting splash goggles (not just glasses)" },
+        { "hoc_level": 5, "library_ref": "ppe:p3-respirator",               "title": "P3 respirator if handling powdered chlorine in confined area" }
+      ]
+    },
+    {
+      "library_ref": "physical:drowning",
+      "title": "Drowning — pool filling",
+      "risk": "Pool filling for first time; barrier may not yet be certified compliant",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 1, "library_ref": "elimination:no-fill-without-barrier", "title": "No water introduced until barrier installed and compliance inspection passed OR temporary equivalent barrier in place" },
+        { "hoc_level": 4, "library_ref": "admin:supervised-at-all-times",      "title": "Pool not left unsupervised during fill if barrier not yet compliant" }
+      ]
+    },
+    {
+      "library_ref": "physical:electric-shock",
+      "title": "Electric shock during equipment start-up",
+      "risk": "First energise of pump / heater / chlorinator — RCD / bonding faults could manifest",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:licensed-electrician",       "title": "Licensed electrician present for first energise; RCD test before pool entry" },
+        { "hoc_level": 4, "library_ref": "admin:no-water-contact-first-energise","title": "No one in water during first energise" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",          "title": "Safety footwear" },
+    { "library_ref": "body:long-sleeve-mandatory", "title": "Long sleeve" },
+    { "library_ref": "eyes:safety-glasses-tight",  "title": "Tight-fitting splash goggles" },
+    { "library_ref": "hands:chemical-gauntlet",    "title": "Chemical-resistant gauntlet gloves" },
+    { "library_ref": "respiratory:p3-respirator",  "title": "P3 respirator (powdered chemicals)" }
+  ],
+  "tasks": [
+    "Pre-fill: confirm barrier compliance certificate issued OR effective temporary barrier in place; pool isolated from public access.",
+    "Confirm Electrical CoC + Gas Type A (if applicable) issued.",
+    "Fill via hose from owner's mains; monitor fill progress.",
+    "First energise of pump with electrician present; RCD trip test; verify no leakage.",
+    "Run pump for 24–48 hours circulation before first chemical addition.",
+    "Test water chemistry: pH, alkalinity, calcium hardness, chlorine, salt (if salt pool).",
+    "Add balancing chemicals in correct order per SDS; allow circulation time between additions.",
+    "Retest after 24 hours; adjust.",
+    "Final handover test: all controls operational, chemistry balanced, barrier compliant.",
+    "Owner handover briefing: operating procedure, chemical safety, warranty, maintenance schedule.",
+    "Handover pack uploaded to Hub: equipment manuals, CoCs, barrier compliance, chemistry start values."
+  ],
+  "signers_required": [
+    { "role": "supervisor",              "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "licensed_electrician",    "must_sign_before": "activity_starts", "count": 1, "for_step": "first_energise" },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in",         "count": "all" }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "_meta": {
+    "status": "v0-draft-requires-whs-review",
+    "drafted_by": "Claude (AI assistant)",
+    "drafted_at": "2026-05-28",
+    "reviewed_by": null,
+    "approved_for_site_use": false,
+    "review_warning": "AI-drafted v0. DO NOT USE IN PRODUCTION until reviewed by a qualified Vic WHS practitioner and approved."
+  },
+  "activity_name": "Concrete pour — pool shell (poured, not shotcrete)",
+  "high_risk_categories": [
+    "near_chemicals",
+    "mobile_plant_near_persons",
+    "involving_a_pressurised_gas_or_fluid"
+  ],
+  "applicable_to_brands": ["lume"],
+  "hazards": [
+    {
+      "library_ref": "chemical:concrete-burns",
+      "title": "Concrete burns / dermatitis",
+      "risk": "Wet concrete contact causing chemical burns to skin and eyes; cement is highly alkaline",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 5, "library_ref": "ppe:chemical-gloves",     "title": "Chemical-resistant (nitrile or PVC) gloves" },
+        { "hoc_level": 5, "library_ref": "ppe:safety-glasses-tight","title": "Safety glasses or goggles (tight-fitting; splash-rated)" },
+        { "hoc_level": 5, "library_ref": "ppe:waterproof-pants-boots","title": "Waterproof pants + tall boots if standing in pour" },
+        { "hoc_level": 4, "library_ref": "admin:wash-station-available","title": "Clean water + soap wash station on site; immediate flush if skin/eye contact" }
+      ]
+    },
+    {
+      "library_ref": "physical:pressurised-line-failure",
+      "title": "Concrete pump line failure / blowback",
+      "risk": "Hose whip or burst projecting concrete at high velocity",
+      "default_severity": "high",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:pump-operator-licensed",   "title": "Pump operator licensed; daily inspection records on site" },
+        { "hoc_level": 3, "library_ref": "engineering:end-hose-restraint", "title": "End-hose restraint where required by operator's procedure" },
+        { "hoc_level": 4, "library_ref": "admin:no-personnel-in-line",     "title": "No personnel directly in line with hose end during start-up / line clearing" }
+      ]
+    },
+    {
+      "library_ref": "physical:plant-mobile-general",
+      "title": "Mobile plant — concrete truck / pump truck",
+      "risk": "Worker on foot struck by reversing truck or pump truck outriggers",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:spotter-for-plant",            "title": "Spotter for all truck movements; pre-agreed loading/unloading positions" },
+        { "hoc_level": 3, "library_ref": "engineering:exclusion-zones-mobile-plant","title": "Exclusion zone around outrigger footprint of pump truck during set-up" },
+        { "hoc_level": 4, "library_ref": "admin:traffic-management-plan",      "title": "Traffic management plan for street position of pump truck; council permit if footpath/road affected" }
+      ]
+    },
+    {
+      "library_ref": "physical:contact-overhead-power",
+      "title": "Overhead power contact (pump boom)",
+      "risk": "Concrete pump boom contacting overhead lines",
+      "default_severity": "critical",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:overhead-clearance-pump-boom", "title": "Pump positioned and boom path planned to maintain 6.4m clearance from energised overhead" },
+        { "hoc_level": 4, "library_ref": "admin:electrical-spotter",           "title": "Electrical spotter if breach risk; asset owner approval if breach unavoidable" }
+      ]
+    },
+    {
+      "library_ref": "physical:manual-handling-vibrator",
+      "title": "Manual handling + vibration (poker vibrator, screeding)",
+      "risk": "MSDs from extended use of poker vibrator and screed work",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:rotate-operators",        "title": "Rotate vibrator operators every 20 minutes during long pours" },
+        { "hoc_level": 5, "library_ref": "ppe:anti-vibration-gloves",     "title": "Anti-vibration gloves for vibrator operators" }
+      ]
+    },
+    {
+      "library_ref": "physical:slips-trips-wet",
+      "title": "Slips / trips on wet edge",
+      "risk": "Wet, slippery pour edges; uneven access platforms",
+      "default_severity": "moderate",
+      "controls": [
+        { "hoc_level": 4, "library_ref": "admin:clean-edges-progressively", "title": "Keep edges and access paths clean; squeegee spillage immediately" },
+        { "hoc_level": 5, "library_ref": "ppe:safety-boots-grippy",         "title": "Safety boots with aggressive tread; treads cleaned during pour" }
+      ]
+    }
+  ],
+  "ppe": [
+    { "library_ref": "feet:safety-boots",          "title": "Safety footwear (tall waterproof if in pour)" },
+    { "library_ref": "head:hard-hat",              "title": "Hard hat (when pump boom overhead)" },
+    { "library_ref": "body:hi-vis-long-sleeve",    "title": "Hi-vis long sleeve" },
+    { "library_ref": "eyes:safety-glasses-tight",  "title": "Tight-fitting safety glasses (splash-rated)" },
+    { "library_ref": "hands:chemical-gloves",      "title": "Chemical-resistant gloves" },
+    { "library_ref": "respiratory:p2-mask",        "title": "P2 mask (if dry-mix dust during pump priming)" }
+  ],
+  "tasks": [
+    "Pre-pour confirm: reinforcement signed off, formwork engineer-approved where applicable, plumbing/electrical penetrations boxed, fall lines & blockouts checked.",
+    "Weather check — postpone if rain forecast within pour + initial set window (or have wet-weather plan).",
+    "Pre-start toolbox with full crew + pump operator + truck driver(s): roles, pour sequence, signals, comms channel.",
+    "Council permit and traffic management confirmed if pump truck on street; cones + spotter for street.",
+    "Pump truck position set; outriggers down on packers; exclusion zone bunting around outrigger footprint.",
+    "Boom positioned; confirm 6.4m clearance from any overhead power.",
+    "Set up wash station with clean water and soap before pour starts.",
+    "First truck delivers; slump tested; concrete accepted or rejected per spec.",
+    "Pour starts at deepest point, working in lifts per engineering spec.",
+    "Vibrator operator(s) work the pour progressively; rotate every 20 min.",
+    "Screed and finish to spec; protect from rain / hot sun as needed.",
+    "Hose / pump line cleared at end of pour per pump operator procedure; no personnel in line.",
+    "Clean down: skip for concrete waste; do not wash residue into street, drains, or garden.",
+    "Sign-off in Hub when pour complete; record truck dockets, slump test results, ambient temp.",
+    "Curing plan in place: water spray / cure compound / wet hessian per spec, duration noted in Hub."
+  ],
+  "signers_required": [
+    { "role": "supervisor",              "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "pump_operator",           "must_sign_before": "activity_starts", "count": 1 },
+    { "role": "all_workers_on_activity", "must_sign_before": "scan_in",         "count": "all" }
+  ]
+}
