@@ -16,7 +16,8 @@ import {
 import { SEVERITY_LABEL } from '@/lib/safetyDocs'
 import type { GanttEntry, WeeklyActual, SubcontractorPackage, Estimate } from '@/types'
 
-type Tab = 'dashboard' | 'schedule' | 'boq' | 'plans' | 'subbies' | 'safety' | 'client' | 'score'
+// The Scorecard has no tab of its own - the dashboard strip (tap to expand) covers it.
+type Tab = 'dashboard' | 'schedule' | 'boq' | 'plans' | 'subbies' | 'safety' | 'client'
 const TABS: { key: Tab; label: string }[] = [
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'schedule', label: 'Schedule' },
@@ -25,7 +26,6 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'plans', label: 'Plans' },
   { key: 'safety', label: 'Safety' },
   { key: 'client', label: 'Client & site' },
-  { key: 'score', label: 'Scorecard' },
 ]
 
 export default function SiteProjectWorkspace({ params }: { params: { id: string } }) {
@@ -114,7 +114,6 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
         {tab === 'plans' && <Plans projectId={project.id} />}
         {tab === 'safety' && <Safety projectId={project.id} safety={safety} refresh={refreshSafety} />}
         {tab === 'client' && <ClientAndSite project={project} />}
-        {tab === 'score' && <Scorecard card={card} actuals={actuals} xeroHours={xeroHours} />}
       </div>
     </div>
   )
@@ -419,6 +418,7 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
   variations: SiteVariation[]; refreshVariations: () => void
 }) {
   const todayIso = toISO(new Date())
+  const [scoreOpen, setScoreOpen] = useState(false)
 
   // Schedule tracking: the gantt's latest bar end (the live forecast completion) vs the office
   // planned completion. Positive diff = finishing later than planned = behind.
@@ -592,9 +592,9 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
         </div>
       )}
 
-      {/* Scorecard strip */}
-      <button onClick={() => openTab('score')} className="w-full text-left">
-        <div className={`rounded-xl border-2 ${overall.ring} p-3 flex items-center gap-4`}>
+      {/* Scorecard strip - tap to expand the detail (the Scorecard tab was retired as redundant) */}
+      <div className={`rounded-xl border-2 ${overall.ring} overflow-hidden`}>
+        <button onClick={() => setScoreOpen(o => !o)} className="w-full text-left p-3 flex items-center gap-4">
           <div className="shrink-0">
             <p className="text-[9px] uppercase tracking-wide text-fg-muted">Score</p>
             <p className={`text-2xl font-light leading-none ${overall.text}`}>{card.score === null ? '--' : card.score}</p>
@@ -615,8 +615,31 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
               )
             })}
           </div>
-        </div>
-      </button>
+        </button>
+        {scoreOpen && (
+          <div className="border-t border-fg-border/40 px-3 py-2 space-y-1.5 bg-fg-card/10">
+            <div className="flex justify-between text-[11px]">
+              <span className="text-fg-muted">Status</span>
+              <span className={`font-medium ${overall.text}`}>
+                {card.score !== null && card.score > 100 ? 'Ahead of budget' : overall.label}
+                {card.score !== null ? ` · target 100` : ''}
+              </span>
+            </div>
+            {card.levers.map(l => (
+              <div key={l.key} className="flex justify-between items-baseline text-[11px]">
+                <span className="text-fg-muted">{l.label === 'Subcontractors' ? 'Subbies' : l.label}</span>
+                <span className="tabular-nums text-fg-heading">
+                  {l.key === 'labour'
+                    ? `${Math.round(l.actual / STD_LABOUR_RATE).toLocaleString('en-AU')}h / ${Math.round(l.budget / STD_LABOUR_RATE).toLocaleString('en-AU')}h`
+                    : `${money(l.actual)} / ${money(l.budget)}`}
+                  {l.key !== 'subbies' && l.budget > 0 ? ` · ${Math.round(l.progressPct * 100)}% of its work elapsed` : ''}
+                </span>
+              </div>
+            ))}
+            <p className="text-[10px] text-fg-muted pt-0.5">Labour is the crew&apos;s logged Xero timesheet hours; costs flow in from Xero.</p>
+          </div>
+        )}
+      </div>
 
       {/* Schedule tracking */}
       <div className="rounded-xl border border-fg-border p-4">
@@ -1298,103 +1321,4 @@ const STATUS_UI: Record<ScoreStatus, { bar: string; text: string; ring: string; 
   watch: { bar: 'bg-amber-500', text: 'text-amber-700', ring: 'border-amber-500', label: 'Watch' },
   over:  { bar: 'bg-red-500',   text: 'text-red-700',   ring: 'border-red-500',   label: 'Over budget' },
   na:    { bar: 'bg-fg-border', text: 'text-fg-muted',  ring: 'border-fg-border', label: 'Too early' },
-}
-
-// Data is fetched once by the workspace (the Dashboard strip shares it) and passed in.
-function Scorecard({ card, actuals, xeroHours }: {
-  card: ReturnType<typeof computeScorecard>; actuals: WeeklyActual[] | null; xeroHours: number | null
-}) {
-  const overall = STATUS_UI[card.status]
-
-  // Labour reads in HOURS (allowance and used). Labour is always priced at the standard rate, so
-  // hours = $ / STD_LABOUR_RATE — the same conversion the BOQ + Labour Checker use. When Xero
-  // timesheets connect, the actual becomes real logged hours instead of a $-derived equivalent.
-  const hrs = (dollars: number) => `${Math.round(dollars / STD_LABOUR_RATE).toLocaleString('en-AU')}h`
-  const leverAmount = (l: (typeof card.levers)[number]) =>
-    l.key === 'labour' ? <>{hrs(l.actual)} <span className="opacity-60">/ {hrs(l.budget)}</span></>
-      : <>{money(l.actual)} <span className="opacity-60">/ {money(l.budget)}</span></>
-
-  return (
-    <section className="space-y-5">
-      {/* Overall score + progress */}
-      <div className={`rounded-xl border-2 ${overall.ring} p-4`}>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-fg-muted">Job score</p>
-            <p className={`text-3xl font-light leading-none mt-1 ${overall.text}`}>
-              {card.score === null ? '--' : card.score}
-              {card.score !== null && (
-                // Above 100 = projected to finish UNDER budget - "112 / 100" read like a bug, so
-                // the suffix says what it means instead.
-                card.score > 100
-                  ? <span className="text-base text-fg-muted"> · target 100</span>
-                  : <span className="text-base text-fg-muted"> / 100</span>
-              )}
-            </p>
-          </div>
-          <span className={`text-sm font-medium ${overall.text}`}>
-            {card.score !== null && card.score > 100 ? 'Ahead of budget' : overall.label}
-          </span>
-        </div>
-        <div className="mt-3">
-          <div className="flex justify-between text-[11px] text-fg-muted mb-1">
-            <span>Job progress</span><span>{Math.round(card.progressPct * 100)}%</span>
-          </div>
-          <div className="h-1.5 rounded-full bg-fg-border/50 overflow-hidden">
-            <div className="h-full bg-fg-heading" style={{ width: `${Math.round(card.progressPct * 100)}%` }} />
-          </div>
-        </div>
-      </div>
-
-      {/* Levers */}
-      {card.hasBudget ? (
-        <div className="space-y-3">
-          {card.levers.map(l => {
-            const ui = STATUS_UI[l.status]
-            const pct = Math.min(1, l.consumedPct)
-            return (
-              <div key={l.key}>
-                <div className="flex justify-between items-baseline text-sm">
-                  <span className="font-medium">{l.label}</span>
-                  <span className="tabular-nums text-fg-muted text-xs">{leverAmount(l)}</span>
-                </div>
-                <div className="h-2 rounded-full bg-fg-border/40 overflow-hidden mt-1">
-                  <div className={`h-full ${ui.bar}`} style={{ width: `${Math.round(pct * 100)}%` }} />
-                </div>
-                <p className={`text-[10px] mt-0.5 ${ui.text}`}>
-                  {l.budget > 0
-                    ? l.key === 'subbies'
-                      ? `${Math.round(l.consumedPct * 100)}% of allowance committed`
-                      : `${Math.round(l.consumedPct * 100)}% of allowance used · ${Math.round(l.progressPct * 100)}% of its work elapsed`
-                    : 'No allowance'}
-                </p>
-              </div>
-            )
-          })}
-          <p className="text-[11px] text-fg-muted">
-            {xeroHours != null
-              ? 'Labour hours are the crew’s logged Xero timesheets; costs flow in from Xero - nothing to log here.'
-              : 'Costs and labour hours flow in from Xero - nothing to log here. (No timesheet hours synced for this job yet.)'}
-          </p>
-        </div>
-      ) : (
-        <p className="text-sm text-fg-muted text-center py-2">No estimate to score against yet.</p>
-      )}
-
-      {/* Read-only record of the costs counted above (fed from Xero / the office - no site logging). */}
-      {actuals !== null && actuals.length > 0 && (
-        <div>
-          <p className="text-xs text-fg-muted mb-2">Costs recorded</p>
-          <ul className="divide-y divide-fg-border/50">
-            {[...actuals].sort((a, b) => b.weekEnding.localeCompare(a.weekEnding)).map(a => (
-              <li key={a.id} className="flex items-center justify-between py-2 text-sm">
-                <span className="truncate pr-2">{a.category}<span className="text-fg-muted"> · {fmt(a.weekEnding)}</span></span>
-                <span className="tabular-nums shrink-0 text-fg-muted">{money(a.supplyCost + a.labourCost)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </section>
-  )
 }
