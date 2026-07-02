@@ -106,7 +106,14 @@ function MyProjects({ me, onSignOut }: { me: { supervisorId: string; name: strin
           <p className="text-[10px] tracking-[0.2em] uppercase text-fg-muted">My projects</p>
           <p className="text-lg font-light leading-tight">{me.name}</p>
         </div>
-        <button onClick={signOut} className="text-xs text-fg-muted underline">Sign out</button>
+        <div className="flex items-center gap-3">
+          {/* One-click management-meeting pack: done last month / next month plan / tracking, per project */}
+          <a href="/api/site/monthly-report" target="_blank" rel="noopener noreferrer"
+            className="rounded-lg bg-fg-heading text-white px-3 py-2 text-xs font-medium">
+            Monthly report
+          </a>
+          <button onClick={signOut} className="text-xs text-fg-muted underline">Sign out</button>
+        </div>
       </header>
 
       {projects === null ? (
