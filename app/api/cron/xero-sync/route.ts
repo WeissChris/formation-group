@@ -29,21 +29,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 })
   }
 
+  // SPLIT INVOCATION (?task=extras): the combined cost sync + timesheet pull + compliance chase
+  // intermittently blew Vercel's 300s ceiling (504 Runtime Timeout - a single Xero 429 backoff
+  // sleeps ~65s, and stacking three Xero-bound jobs left no headroom). The GitHub workflow now
+  // calls this endpoint twice: once for the cost sync, once with ?task=extras for the
+  // timesheet-hours pull + subbie compliance chase - each invocation well under the limit.
+  const task = new URL(request.url).searchParams.get('task')
+  if (task === 'extras') {
+    const hours = await runHoursSync().catch(e => ({
+      ok: false as const, timesheets_processed: 0, lines_matched: 0, projects_updated: 0, rows_written: 0,
+      error: e instanceof Error ? e.message : 'hours_sync_failed',
+    }))
+    const safetyChase = await runSafetyChase().catch(e => ({
+      ok: false as const, checked: 0, contractor_emails: 0, office_alerts: 0, dry_run: true,
+      error: e instanceof Error ? e.message : 'safety_chase_failed',
+    }))
+    return NextResponse.json({ ok: hours.ok && safetyChase.ok, hours, safetyChase },
+      { status: hours.ok && safetyChase.ok ? 200 : 502 })
+  }
+
   const result = await runFullSync('cron_hourly')
-
-  // Labour HOURS from payroll timesheets - additive and isolated (a failure or throttle-skip
-  // never affects the cost sync). Internally throttled to ~daily; hourly calls mostly no-op.
-  const hours = await runHoursSync().catch(e => ({
-    ok: false as const, timesheets_processed: 0, lines_matched: 0, projects_updated: 0, rows_written: 0,
-    error: e instanceof Error ? e.message : 'hours_sync_failed',
-  }))
-
-  // Subbie compliance chase - idempotent (per-doc/threshold dedupe table), so hourly runs are
-  // safe; emails only go out once per threshold. Isolated like the hours sync.
-  const safetyChase = await runSafetyChase().catch(e => ({
-    ok: false as const, checked: 0, contractor_emails: 0, office_alerts: 0, dry_run: true,
-    error: e instanceof Error ? e.message : 'safety_chase_failed',
-  }))
 
   // Treat the "nothing to do yet" cases as 200-skipped, not 502-failed:
   //   - no_xero_tokens                  → Xero not connected yet via Settings page
@@ -57,8 +62,8 @@ export async function POST(request: NextRequest) {
   //   rate_limited                    → Xero 429; will auto-retry next hour with back-off
   const KNOWN_SKIP_REASONS = new Set(['no_xero_tokens', 'supabase_admin_not_configured', 'rate_limited'])
   if (!result.ok && result.error && KNOWN_SKIP_REASONS.has(result.error)) {
-    return NextResponse.json({ ...result, hours, safetyChase, skipped: true }, { status: 200 })
+    return NextResponse.json({ ...result, skipped: true }, { status: 200 })
   }
 
-  return NextResponse.json({ ...result, hours, safetyChase }, { status: result.ok ? 200 : 502 })
+  return NextResponse.json(result, { status: result.ok ? 200 : 502 })
 }
