@@ -3,6 +3,17 @@ import { backupToIndexedDB, loadKeyFromIndexedDB } from './storage'
 export function autoBackup(): void {
   if (typeof window === 'undefined') return
   try {
+    // One-time migration first (unconditional): purge old localStorage rolling backups — over 1MB
+    // each on real data, duplicated inside the same ~5MB quota they were meant to protect. Their
+    // presence pushed real saves (estimates, takeoffs) into silent QuotaExceeded failures.
+    Object.keys(localStorage)
+      .filter(k => k.startsWith('fg_backup_'))
+      .forEach(k => localStorage.removeItem(k))
+
+    // Throttle: one snapshot per 12 hours is plenty (this now also runs on every authenticated load).
+    const last = Date.parse(localStorage.getItem('fg_last_backup') || '') || 0
+    if (Date.now() - last < 12 * 3600 * 1000) return
+
     const backup = {
       version: '1.0',
       exportedAt: new Date().toISOString(),
@@ -25,11 +36,6 @@ export function autoBackup(): void {
       const list = Array.isArray(existing) ? existing : []
       void backupToIndexedDB('fg_backup_rolling', [...list, backup].slice(-3))
     })
-
-    // One-time migration: purge old localStorage rolling backups (over 1MB each on real data).
-    Object.keys(localStorage)
-      .filter(k => k.startsWith('fg_backup_'))
-      .forEach(k => localStorage.removeItem(k))
 
     // Also store last backup timestamp
     localStorage.setItem('fg_last_backup', new Date().toISOString())

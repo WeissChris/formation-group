@@ -56,6 +56,16 @@ export default function LoginGate({ children }: { children: ReactNode }) {
     return startLiveSync()
   }, [authed])
 
+  // Rolling auto-backup on every authenticated load, not just fresh logins. It used to run only in
+  // the login handler, so an always-logged-in browser hadn't backed up in a week — and the one-time
+  // purge of the old quota-eating localStorage backups never fired either. autoBackup itself
+  // throttles to one snapshot per 12h.
+  useEffect(() => {
+    if (!authed) return
+    const t = setTimeout(autoBackup, 2000)
+    return () => clearTimeout(t)
+  }, [authed])
+
   // Public routes skip auth entirely — still wrapped so a render crash on /proposal/[token]
   // (e.g. malformed proposal data) shows the recoverable fallback rather than a blank page
   // to the actual client.
