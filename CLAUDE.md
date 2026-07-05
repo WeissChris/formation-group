@@ -15,6 +15,13 @@ keep the stages joined up rather than as isolated tools.
 - GitHub: https://github.com/WeissChris/formation-group (branch `main`).
 - Supabase backend (project `ffqthmmhnvkkcjypigie`, shared with the Lume app). Internal UI
   reads localStorage; Supabase is sync/backup + the public-surface source.
+- **Files NEVER go into localStorage as base64.** localStorage is ~5MB shared across every store;
+  embedded base64 quote PDFs once exhausted it and silently lost days of estimate edits. Any file
+  (quotes, plan sets, images) goes to the private `attachments` Storage bucket via
+  `lib/attachments.ts` (signed URLs brokered by `/api/attachments`); the data store keeps only the
+  path. Takeoff plan images follow their own equivalent (IndexedDB + `takeoff-plans` bucket).
+  Related invariant: `upsertEstimate`/`upsertProject`/etc push `newestOf(passed, localReread)` —
+  never trust a post-save localStorage re-read alone (a quota-failed save makes it stale).
 - Env vars live in `.env.local` (NOT committed): `NEXT_PUBLIC_SUPABASE_URL`,
   `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_APP_PASSWORD`, `NEXT_PUBLIC_AUTH_PROVIDER`,
   `NEXT_PUBLIC_DEFAULT_EMAIL`, `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_XERO_*`. You do NOT need
