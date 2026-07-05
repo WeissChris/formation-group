@@ -66,6 +66,17 @@ export default function LoginGate({ children }: { children: ReactNode }) {
     return () => clearTimeout(t)
   }, [authed])
 
+  // One-time migration of legacy base64 quote attachments into the Storage bucket (frees the
+  // browser store). Delayed so it never competes with the initial load + liveSync catch-up;
+  // idempotent, so interrupting it (tab close) is harmless.
+  useEffect(() => {
+    if (!authed) return
+    const t = setTimeout(() => {
+      void import('@/lib/attachmentsMigrate').then(m => m.migrateEmbeddedAttachments())
+    }, 8000)
+    return () => clearTimeout(t)
+  }, [authed])
+
   // Public routes skip auth entirely — still wrapped so a render crash on /proposal/[token]
   // (e.g. malformed proposal data) shows the recoverable fallback rather than a blank page
   // to the actual client.

@@ -13,6 +13,7 @@ import {
 } from '@/lib/storage'
 import { getProjects, reconcileVariations, upsertProject, deleteProjectAsync, upsertSubcontractor, deleteSubcontractorAsync } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
+import { uploadAttachment, openAttachment, safeFileName } from '@/lib/attachments'
 import { getEstimateTotals, variationContractValue, estimateLabourHours, activeLineItems, STD_LABOUR_RATE, costBreakdown } from '@/lib/estimateCalculations'
 import type { Project, Estimate, WeeklyRevenue, GanttEntry, WeeklyActual, ProgressClaim, ProgressPaymentStage, SubcontractorPackage, SubcontractorClaim } from '@/types'
 import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, PROGRESSION_WARNINGS, buildChecklist, defaultStageForStatus } from '@/lib/stageConfig'
@@ -136,12 +137,14 @@ function SubcontractorsTab({ projectId }: { projectId: string }) {
         <div className="mb-4">
           <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Quote File Upload</label>
           <input type="file" accept=".pdf,.doc,.docx,.xlsx,.jpg,.png"
-            onChange={e => {
+            onChange={async e => {
               const file = e.target.files?.[0]
               if (!file) return
-              const reader = new FileReader()
-              reader.onload = ev => setForm(f => ({ ...f, quoteFileName: file.name, quoteFileData: ev.target?.result as string }))
-              reader.readAsDataURL(file)
+              // Files go to the private attachments bucket, not base64 in the package blob -
+              // embedded quotes were what blew the browser storage quota.
+              const path = await uploadAttachment(`subbies/${pkg.projectId}/${pkg.id}/${safeFileName(file.name)}`, file)
+              if (!path) { window.alert('Quote upload failed - check your connection and try again.'); return }
+              setForm(f => ({ ...f, quoteFileName: file.name, quoteFilePath: path, quoteFileData: undefined }))
             }}
             className="text-xs font-light text-fg-muted file:mr-3 file:px-3 file:py-1.5 file:border file:border-fg-border file:bg-fg-bg file:text-xs file:font-light file:text-fg-heading file:rounded-none file:cursor-pointer hover:file:bg-fg-card" />
           {form.quoteFileName && <p className="text-2xs text-fg-muted mt-1">📎 {form.quoteFileName}</p>}
@@ -248,6 +251,7 @@ function SubcontractorsTab({ projectId }: { projectId: string }) {
                     {pkg.quoteFileName && (
                       <button
                         onClick={() => {
+                          if (pkg.quoteFilePath) { void openAttachment(pkg.quoteFilePath); return }
                           if (pkg.quoteFileData) {
                             const a = document.createElement('a'); a.href = pkg.quoteFileData; a.download = pkg.quoteFileName!; a.click()
                           }

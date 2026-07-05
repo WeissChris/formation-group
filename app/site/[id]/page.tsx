@@ -16,6 +16,7 @@ import {
   type SubbieBooking, type HandoverChecklist,
 } from '@/lib/siteData'
 import { HANDOVER_SECTIONS, handoverProgress, type HandoverData, type HandoverRow } from '@/lib/handoverChecklist'
+import { openAttachment } from '@/lib/attachments'
 import { SEVERITY_LABEL } from '@/lib/safetyDocs'
 import type { GanttEntry, WeeklyActual, SubcontractorPackage, Estimate } from '@/types'
 
@@ -1031,6 +1032,7 @@ function Subbies({ projectId }: { projectId: string }) {
   useEffect(() => { getSiteSubbies(projectId).then(setSubbies) }, [projectId])
 
   const download = (s: SubcontractorPackage) => {
+    if (s.quoteFilePath) { void openAttachment(s.quoteFilePath); return }
     if (!s.quoteFileData) return
     const a = document.createElement('a')
     a.href = s.quoteFileData; a.download = s.quoteFileName || `${s.name}-quote`
@@ -1050,7 +1052,7 @@ function Subbies({ projectId }: { projectId: string }) {
             </div>
             <span className="text-xs text-fg-muted tabular-nums shrink-0">{money(s.approvedValue + (s.variations || 0))}</span>
           </div>
-          {s.quoteFileData && (
+          {(s.quoteFilePath || s.quoteFileData) && (
             <button onClick={() => download(s)} className="mt-2 text-xs underline text-fg-heading">
               Download quote ({s.quoteFileName || 'PDF'})
             </button>

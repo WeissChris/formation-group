@@ -86,7 +86,8 @@ export interface SubcontractorPackage {
   invoicedToDate: number // kept = sum(claims) when claims exist; manual entry for legacy packages
   claims?: SubcontractorClaim[]  // individual progress claims the subbie makes against the quoted total
   quoteFileName?: string  // name of uploaded quote file
-  quoteFileData?: string  // base64 data URI of the quote
+  quoteFileData?: string  // LEGACY base64 data URI - new uploads use quoteFilePath (Storage bucket)
+  quoteFilePath?: string  // path in the private 'attachments' Storage bucket
   notes?: string
   sourceEstimateId?: string      // set when seeded from an estimate's subcontractor lines
   sourceLineItemIds?: string[]
@@ -149,7 +150,8 @@ export interface EstimateLineItem {
   crewType: 'Formation' | 'Subcontractor'
   enabled?: boolean      // false = turned off: kept on the estimate for reference, excluded from totals/Gantt
   quoteFileName?: string // subcontractor quote attached to this line (required before contract for Subcontractor lines)
-  quoteFileData?: string // base64 data URI of the attached quote
+  quoteFileData?: string // LEGACY base64 data URI - new uploads use quoteFilePath (Storage bucket)
+  quoteFilePath?: string // path in the private 'attachments' Storage bucket
   xeroCategory?: string
   notes?: string
 }

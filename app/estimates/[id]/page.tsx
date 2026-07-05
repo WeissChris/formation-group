@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { loadEstimates, loadProposals, saveEstimate, loadTakeoffAsync } from '@/lib/storage'
+import { uploadAttachment, openAttachment, safeFileName } from '@/lib/attachments'
 import { upsertEstimate, upsertProject, getEstimates, getTakeoff, upsertSubcontractor } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract, activeLineItems, estimateLabourHours, lineContractValue, itemsContractValue } from '@/lib/estimateCalculations'
@@ -404,16 +405,26 @@ function LineItemRow({
           <div className="mt-0.5 flex items-center gap-1.5 text-2xs px-1.5">
             <label className={`cursor-pointer inline-flex items-center gap-1 ${item.quoteFileName ? 'text-fg-muted' : 'text-amber-600'}`} title={item.quoteFileName ? 'Replace quote' : 'A subcontractor quote is required before going to contract'}>
               <input type="file" accept=".pdf,.doc,.docx,.xlsx,.jpg,.jpeg,.png" className="hidden"
-                onChange={e => {
+                onChange={async e => {
                   const file = e.target.files?.[0]; if (!file) return
-                  const reader = new FileReader()
-                  reader.onload = ev => update({ quoteFileName: file.name, quoteFileData: ev.target?.result as string })
-                  reader.readAsDataURL(file)
+                  // Files go to the private attachments bucket, not base64 in the estimate blob -
+                  // embedded quotes were what blew the browser storage quota.
+                  const path = await uploadAttachment(`estimates/${item.estimateId}/${item.id}/${safeFileName(file.name)}`, file)
+                  if (!path) { window.alert('Quote upload failed - check your connection and try again.'); return }
+                  update({ quoteFileName: file.name, quoteFilePath: path, quoteFileData: undefined })
                 }} />
               {item.quoteFileName ? `📎 ${item.quoteFileName}` : '⚠ Attach quote'}
             </label>
+            {item.quoteFileName && (item.quoteFilePath || item.quoteFileData) && (
+              <button
+                onClick={() => {
+                  if (item.quoteFilePath) { void openAttachment(item.quoteFilePath); return }
+                  const a = document.createElement('a'); a.href = item.quoteFileData!; a.download = item.quoteFileName!; a.click()
+                }}
+                className="text-fg-muted/60 hover:text-fg-heading transition-colors">view</button>
+            )}
             {item.quoteFileName && (
-              <button onClick={() => update({ quoteFileName: undefined, quoteFileData: undefined })} className="text-fg-muted/40 hover:text-red-400 transition-colors">remove</button>
+              <button onClick={() => update({ quoteFileName: undefined, quoteFileData: undefined, quoteFilePath: undefined })} className="text-fg-muted/40 hover:text-red-400 transition-colors">remove</button>
             )}
           </div>
         )}
@@ -1118,6 +1129,7 @@ export default function EstimateBuilderPage() {
         claims: [],
         quoteFileName: first.quoteFileName,
         quoteFileData: first.quoteFileData,
+        quoteFilePath: first.quoteFilePath,
         sourceEstimateId: estimate.id,
         sourceLineItemIds: lines.map(l => l.id),
         createdAt: new Date().toISOString(),

@@ -621,7 +621,8 @@ export async function replaceGanttRevenueRemote(projectId: string, rows: WeeklyR
 // ── SUBCONTRACTOR PACKAGES ────────────────────────────────────────────────────
 //
 // jsonb-blob pattern: the whole package lives in `data`, so there's no per-column drift to keep in
-// sync. quoteFileData is a base64 PDF — fine inside the jsonb blob (subbie quotes are small).
+// sync. Quote files live in the 'attachments' Storage bucket (quoteFilePath); legacy rows may still
+// carry an embedded quoteFileData base64 until lib/attachmentsMigrate.ts has run on their browser.
 
 export async function getSubcontractors(): Promise<SubcontractorPackage[]> {
   if (isSupabaseConfigured() && supabase) {
