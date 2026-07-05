@@ -1,3 +1,5 @@
+import { backupToIndexedDB, loadKeyFromIndexedDB } from './storage'
+
 export function autoBackup(): void {
   if (typeof window === 'undefined') return
   try {
@@ -16,17 +18,18 @@ export function autoBackup(): void {
       },
     }
 
-    // Store as a rolling backup in localStorage (keeps last 3)
-    const backupKey = `fg_backup_${Date.now()}`
-    localStorage.setItem(backupKey, JSON.stringify(backup))
+    // Rolling backups (last 3) live in IndexedDB, which has its own multi-hundred-MB quota.
+    // They used to be written INTO localStorage — duplicating every store inside the same ~5MB
+    // budget they were meant to protect, which pushed real saves into QuotaExceeded failures.
+    void loadKeyFromIndexedDB('fg_backup_rolling').then(existing => {
+      const list = Array.isArray(existing) ? existing : []
+      void backupToIndexedDB('fg_backup_rolling', [...list, backup].slice(-3))
+    })
 
-    // Clean up old backups (keep only last 3)
-    const backupKeys = Object.keys(localStorage)
+    // One-time migration: purge old localStorage rolling backups (over 1MB each on real data).
+    Object.keys(localStorage)
       .filter(k => k.startsWith('fg_backup_'))
-      .sort()
-    while (backupKeys.length > 3) {
-      localStorage.removeItem(backupKeys.shift()!)
-    }
+      .forEach(k => localStorage.removeItem(k))
 
     // Also store last backup timestamp
     localStorage.setItem('fg_last_backup', new Date().toISOString())

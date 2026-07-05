@@ -112,6 +112,21 @@ async function safeUpsert<T extends Record<string, unknown> & { id: string; upda
   return { wrote: true }
 }
 
+/**
+ * Pick what to push to Supabase: the freshly-saved localStorage copy, or the caller's in-memory
+ * copy. The re-read exists to pick up the save helper's new updatedAt stamp — but when
+ * localStorage is over quota that save FAILS silently and the re-read returns a STALE row.
+ * Pushing that would freeze the cloud copy too, so edits persist nowhere and die with the tab
+ * (days of estimate line-item work were lost exactly this way). The re-read only wins when its
+ * stamp is at least as fresh as the caller's copy; otherwise the in-memory copy is the truth.
+ */
+function newestOf<T extends { updatedAt?: string }>(passed: T, reread: T | undefined): T {
+  if (!reread) return passed
+  const r = Date.parse(reread.updatedAt || '') || 0
+  const p = Date.parse(passed.updatedAt || '') || 0
+  return r >= p ? reread : passed
+}
+
 // ── PROJECTS ──────────────────────────────────────────────────────────────────
 
 export async function getProjects(): Promise<Project[]> {
@@ -125,8 +140,8 @@ export async function getProjects(): Promise<Project[]> {
 export async function upsertProject(project: Project): Promise<void> {
   saveProject(project) // always save to localStorage (this also stamps updatedAt)
   if (isSupabaseConfigured() && supabase) {
-    // Re-read so we use the freshly-stamped updatedAt
-    const fresh = loadProjects().find(p => p.id === project.id) ?? project
+    // Re-read for the freshly-stamped updatedAt — unless the save failed and the re-read is stale.
+    const fresh = newestOf(project, loadProjects().find(p => p.id === project.id))
     await safeUpsert('fg_projects', {
       id: fresh.id,
       entity: fresh.entity,
@@ -188,7 +203,7 @@ export async function getProposals(): Promise<DesignProposal[]> {
 export async function upsertProposal(proposal: DesignProposal): Promise<void> {
   saveProposal(proposal)
   if (isSupabaseConfigured() && supabase) {
-    let fresh = loadProposals().find(p => p.id === proposal.id) ?? proposal
+    let fresh = newestOf(proposal, loadProposals().find(p => p.id === proposal.id))
     // Guard against wiping a client's acceptance. Acceptance is recorded straight to Supabase from the
     // client's browser (the public proposal page), so the office copy can still say "sent". Pushing
     // that stale copy would overwrite the acceptance back to "sent". If Supabase already has this
@@ -374,7 +389,7 @@ export async function deleteEstimateAsync(id: string): Promise<void> {
 export async function upsertEstimate(estimate: Estimate): Promise<void> {
   saveEstimate(estimate)
   if (isSupabaseConfigured() && supabase) {
-    let fresh = loadEstimates().find(e => e.id === estimate.id) ?? estimate
+    let fresh = newestOf(estimate, loadEstimates().find(e => e.id === estimate.id))
     // Don't downgrade a variation the client already responded to. Approval/rejection is written
     // straight to Supabase from the public page; if our local copy is still 'sent', pull the client's
     // response down first so this push can't clobber it. (Only 'sent' variations can be responded to.)
@@ -621,7 +636,7 @@ export async function upsertSubcontractor(pkg: SubcontractorPackage): Promise<vo
   if (isSupabaseConfigured() && supabase) {
     // Re-read so the blob we push carries the freshly-stamped updatedAt (getSubcontractors reads it
     // back), keeping the DB blob and the local copy on the same stamp for newest-wins.
-    const fresh = loadSubcontractors().find(s => s.id === pkg.id) ?? pkg
+    const fresh = newestOf(pkg, loadSubcontractors().find(s => s.id === pkg.id))
     const { error } = await supabase.from('fg_subcontractors').upsert({
       id: fresh.id,
       project_id: fresh.projectId,

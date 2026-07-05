@@ -18,16 +18,20 @@ const memStorage: Storage = {
   key: (i: number) => Array.from(memStore.keys())[i] ?? null,
 }
 
-// indexedDB stub — backupToIndexedDB in storage.ts opens a DB and never awaits the result.
-// We give it an object with `open()` that returns a dummy request whose onsuccess/onupgradeneeded
-// are never called. The function returns synchronously without error.
+// indexedDB stub — the storage helpers open a DB and resolve inside onsuccess/onerror. The stub
+// fires onerror asynchronously so those promises RESOLVE (to "unavailable") instead of hanging —
+// awaiting readers like loadTakeoffAsync then fall back to localStorage cleanly.
 const stubIndexedDB = {
-  open: () => ({
-    onupgradeneeded: null,
-    onsuccess: null,
-    onerror: null,
-    result: null,
-  }),
+  open: () => {
+    const req: { onupgradeneeded: unknown; onsuccess: unknown; onerror: (() => void) | null; result: null } = {
+      onupgradeneeded: null,
+      onsuccess: null,
+      onerror: null,
+      result: null,
+    }
+    setTimeout(() => { req.onerror?.() }, 0)
+    return req
+  },
 }
 
 export function installBrowserEnv() {

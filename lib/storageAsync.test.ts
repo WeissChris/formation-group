@@ -126,6 +126,35 @@ describe('safeUpsert (via upsertProject)', () => {
     expect(calls.some(c => c.op === 'select' && c.selectedId === 'p1')).toBe(true)
   })
 
+  it('pushes the in-memory copy, not the stale localStorage re-read, when the local save fails (quota)', async () => {
+    // The failure mode that lost days of estimate line items: localStorage over quota means the
+    // save helper fails silently, so the post-save re-read returns the STALE row. Pushing that
+    // would freeze the cloud copy too — the edit then persists nowhere and dies with the tab.
+    const stale = { ...project({ id: 'p1', name: 'Stale' }), updatedAt: '2026-01-01T00:00:00Z' }
+    globalThis.localStorage.setItem('fg_projects', JSON.stringify([stale]))
+    const origSetItem = globalThis.localStorage.setItem
+    globalThis.localStorage.setItem = () => { throw new DOMException('QuotaExceededError') }
+    try {
+      remoteRow = null
+      await upsertProject({ ...project({ id: 'p1', name: 'Fresh' }), updatedAt: new Date().toISOString() } as Project)
+    } finally {
+      globalThis.localStorage.setItem = origSetItem
+    }
+    const up = calls.find(c => c.op === 'upsert')
+    expect(up).toBeTruthy()
+    expect((up!.payload as { name: string }).name).toBe('Fresh')
+  })
+
+  it('still prefers the localStorage re-read when it is fresher (normal successful save)', async () => {
+    // The re-read exists to pick up saveProject's new updatedAt stamp — that behaviour must survive.
+    remoteRow = null
+    await upsertProject(project({ id: 'p1', name: 'Saved' }))
+    const up = calls.find(c => c.op === 'upsert')
+    expect(up).toBeTruthy()
+    // The pushed updated_at is the freshly-stamped one from localStorage, not undefined.
+    expect((up!.payload as { updated_at?: string }).updated_at).toBeTruthy()
+  })
+
   it('still writes (rather than throws) when Supabase upsert errors', async () => {
     // safeUpsert returns { wrote: false, skippedReason } on error — upsertProject doesn't
     // observe the return, so the localStorage write still succeeds and the caller can

@@ -38,7 +38,7 @@ function openBackupDB(): Promise<IDBDatabase | null> {
 // Backup runs after every localStorage write. Resolves true once durably committed (tx.oncomplete),
 // false on any failure — so callers handling data too large for localStorage (takeoffs with plan
 // images) can tell whether the durable copy actually landed.
-function backupToIndexedDB(key: string, data: unknown[]): Promise<boolean> {
+export function backupToIndexedDB(key: string, data: unknown[]): Promise<boolean> {
   return openBackupDB().then(db => {
     if (!db) return false
     return new Promise<boolean>((resolve) => {
@@ -54,7 +54,7 @@ function backupToIndexedDB(key: string, data: unknown[]): Promise<boolean> {
 }
 
 // Read one backup key straight from IndexedDB (datasets too large for localStorage live only here).
-function loadKeyFromIndexedDB(key: string): Promise<unknown[] | null> {
+export function loadKeyFromIndexedDB(key: string): Promise<unknown[] | null> {
   return openBackupDB().then(db => {
     if (!db) return null
     return new Promise<unknown[] | null>((resolve) => {
@@ -184,11 +184,12 @@ export function saveEstimate(estimate: Estimate): void {
   try {
     localStorage.setItem('fg_estimates', JSON.stringify(all))
   } catch {
-    // QuotaExceededError — most likely an attached subbie-quote PDF pushed the estimates store over the
-    // localStorage limit. Warn once so the user knows this save didn't stick (rather than losing it silently).
+    // QuotaExceededError — the browser store is full (usually big attached quote files). The estimate
+    // still reaches Supabase (upsertEstimate pushes the in-memory copy, not this failed write), so the
+    // work is safe in the cloud — but THIS device will show stale data until space is freed. Warn once.
     if (typeof window !== 'undefined' && !sessionStorage.getItem('fg_estimates_quota_warned')) {
       try { sessionStorage.setItem('fg_estimates_quota_warned', '1') } catch { /* ignore */ }
-      try { window.alert('This estimate is too large to save in the browser — most likely from attached quote files. Remove a large attachment and try again.') } catch { /* ignore */ }
+      try { window.alert('This browser’s storage is full, so the estimate was saved to the cloud only. Your changes are safe and will sync, but this device may show old data until space is freed — remove a large attached quote file if this keeps appearing.') } catch { /* ignore */ }
     }
     return
   }
@@ -413,12 +414,20 @@ export function saveTakeoff(data: TakeoffData): TakeoffData {
   else all.push(stamped)
   let localOk = true
   try {
-    localStorage.setItem('fg_takeoffs', JSON.stringify(all))
+    // The localStorage copy carries NO base64 plan images: a single plan is megabytes, and the
+    // ~5MB quota is SHARED with every other store — a big takeoff didn't just fail its own save,
+    // it starved fg_estimates and the rest into QuotaExceeded failures. Images live in the full
+    // IndexedDB copy below (and Supabase Storage); loadTakeoffAsync grafts them back on read.
+    const stripped = all.map(t => ({
+      ...t,
+      plans: t.plans.map(p => typeof p.dataUrl === 'string' && p.dataUrl.startsWith('data:') ? { ...p, dataUrl: '' } : p),
+    }))
+    localStorage.setItem('fg_takeoffs', JSON.stringify(stripped))
   } catch (e) {
-    // A big plan image blew the ~5MB quota. Swallow so the throw doesn't abort the React state
+    // Still too big (huge measurement sets). Swallow so the throw doesn't abort the React state
     // update; IndexedDB below is the durable store and the loader reads it back.
     localOk = false
-    console.error('[takeoff] localStorage save failed (likely quota — plan image too large); relying on IndexedDB', e)
+    console.error('[takeoff] localStorage save failed (likely quota); relying on IndexedDB', e)
   }
   // IndexedDB is the durable store. Only warn the user if BOTH stores fail — then the change really
   // is memory-only and at risk on reload.
@@ -447,12 +456,26 @@ export async function loadTakeoffAsync(estimateId: string): Promise<TakeoffData 
     const all = (await loadKeyFromIndexedDB('fg_takeoffs')) as TakeoffData[] | null
     fromIdb = all?.find(t => t.estimateId === estimateId) ?? null
   } catch { /* IndexedDB unavailable — use localStorage */ }
+  // The localStorage copy is image-stripped (see saveTakeoff); when it wins on freshness, graft
+  // the plan images back in from the other copy so the editor still has its canvas background.
+  const graftImages = (into: TakeoffData, from: TakeoffData | null): TakeoffData => {
+    if (!from) return into
+    return {
+      ...into,
+      plans: into.plans.map(p => {
+        if (p.dataUrl) return p
+        const alt = from.plans.find(q => q.id === p.id)
+        return alt?.dataUrl ? { ...p, dataUrl: alt.dataUrl } : p
+      }),
+    }
+  }
   if (local && fromIdb) {
     const lt = Date.parse(local.updatedAt || '') || 0
     const it = Date.parse(fromIdb.updatedAt || '') || 0
-    return it >= lt ? fromIdb : local
+    return it >= lt ? graftImages(fromIdb, local) : graftImages(local, fromIdb)
   }
-  return fromIdb ?? local
+  if (fromIdb) return graftImages(fromIdb, local)
+  return local
 }
 
 function loadAllTakeoffs(): TakeoffData[] {
