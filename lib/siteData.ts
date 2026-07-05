@@ -233,3 +233,19 @@ export async function saveSiteActual(
   })
   return res.ok
 }
+
+// ── Pre-handover walkthrough (Zero-Defect Handover / Blue Tape audit) ─────────────
+import type { HandoverChecklist, HandoverData } from '@/lib/handoverChecklist'
+export type { HandoverChecklist, HandoverData }
+
+export async function getSiteHandover(id: string): Promise<HandoverChecklist | null> {
+  const d = await getJson<{ ok: boolean; checklist: HandoverChecklist }>(`/api/site/projects/${id}/handover`)
+  return d?.ok ? d.checklist : null
+}
+
+export async function saveSiteHandover(id: string, payload: { data?: HandoverData; signOff?: boolean }): Promise<boolean> {
+  const res = await fetch(`/api/site/projects/${id}/handover`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  })
+  return res.ok
+}

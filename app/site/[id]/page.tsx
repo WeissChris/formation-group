@@ -11,14 +11,16 @@ import {
   siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, getSiteBoq,
   getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours, getSiteMilestones, getSiteSafety, postSiteSafety,
   getSiteBaseline, getSiteVariations, createSiteVariation, getSiteBookings, saveSiteBooking,
+  getSiteHandover, saveSiteHandover,
   type SiteProject, type SitePlan, type SiteMilestone, type SiteSafety, type SiteBaseline, type SiteVariation,
-  type SubbieBooking,
+  type SubbieBooking, type HandoverChecklist,
 } from '@/lib/siteData'
+import { HANDOVER_SECTIONS, handoverProgress, type HandoverData, type HandoverRow } from '@/lib/handoverChecklist'
 import { SEVERITY_LABEL } from '@/lib/safetyDocs'
 import type { GanttEntry, WeeklyActual, SubcontractorPackage, Estimate } from '@/types'
 
 // The Scorecard has no tab of its own - the dashboard strip (tap to expand) covers it.
-type Tab = 'dashboard' | 'schedule' | 'boq' | 'plans' | 'subbies' | 'safety' | 'client'
+type Tab = 'dashboard' | 'schedule' | 'boq' | 'plans' | 'subbies' | 'safety' | 'handover' | 'client'
 const TABS: { key: Tab; label: string }[] = [
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'schedule', label: 'Schedule' },
@@ -26,6 +28,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'subbies', label: 'Subbies' },
   { key: 'plans', label: 'Plans' },
   { key: 'safety', label: 'Safety' },
+  { key: 'handover', label: 'Handover' },
   { key: 'client', label: 'Client & site' },
 ]
 
@@ -49,8 +52,10 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
   const [baseline, setBaseline] = useState<SiteBaseline | null>(null)
   const [variations, setVariations] = useState<SiteVariation[]>([])
   const [bookings, setBookings] = useState<SubbieBooking[]>([])
+  const [handover, setHandover] = useState<HandoverChecklist | null>(null)
 
   const refreshSafety = () => getSiteSafety(params.id).then(setSafety)
+  const refreshHandover = () => getSiteHandover(params.id).then(setHandover)
   const refreshVariations = () => getSiteVariations(params.id).then(setVariations)
   const refreshBookings = () => getSiteBookings(params.id).then(setBookings)
 
@@ -72,6 +77,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
       getSiteBaseline(params.id).then(setBaseline)
       getSiteVariations(params.id).then(setVariations)
       getSiteBookings(params.id).then(setBookings)
+      getSiteHandover(params.id).then(setHandover)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id, router])
@@ -112,13 +118,16 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
           <Dashboard project={project} gantt={gantt} card={card} milestones={milestones} openTab={setTab}
             safety={safety} plans={plans} baseline={baseline} hoursWeeks={hoursWeeks}
             variations={variations} refreshVariations={refreshVariations}
-            bookings={bookings} refreshBookings={refreshBookings} />
+            bookings={bookings} refreshBookings={refreshBookings} handover={handover} />
         )}
         {tab === 'schedule' && <Schedule gantt={gantt} projectId={project.id} />}
         {tab === 'boq' && <Boq projectId={project.id} />}
         {tab === 'subbies' && <Subbies projectId={project.id} />}
         {tab === 'plans' && <Plans projectId={project.id} />}
         {tab === 'safety' && <Safety projectId={project.id} safety={safety} refresh={refreshSafety} />}
+        {tab === 'handover' && (
+          <Handover projectId={project.id} supervisor={project.foreman} checklist={handover} refresh={refreshHandover} />
+        )}
         {tab === 'client' && <ClientAndSite project={project} />}
       </div>
     </div>
@@ -500,13 +509,14 @@ function ThisWeekStrip({ gantt, offset = 0, title = 'This week' }: { gantt: Gant
 }
 
 // ── Dashboard (default landing — the at-a-glance cockpit view) ─────────────────────
-function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, baseline, hoursWeeks, variations, refreshVariations, bookings, refreshBookings }: {
+function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, baseline, hoursWeeks, variations, refreshVariations, bookings, refreshBookings, handover }: {
   project: SiteProject; gantt: GanttEntry[]; card: ReturnType<typeof computeScorecard>
   milestones: SiteMilestone[]; openTab: (t: Tab) => void
   safety: SiteSafety | null; plans: SitePlan[]; baseline: SiteBaseline | null
   hoursWeeks: { weekEnding: string; hours: number }[]
   variations: SiteVariation[]; refreshVariations: () => void
   bookings: SubbieBooking[]; refreshBookings: () => void
+  handover: HandoverChecklist | null
 }) {
   const todayIso = toISO(new Date())
   const [scoreOpen, setScoreOpen] = useState(false)
@@ -664,8 +674,19 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
       else if (s.inDays <= 7) out.push({ text: `${s.category}: subbie not booked - starts in ${s.inDays}d`, level: 'amber' })
     }
 
+    // Pre-handover walkthrough once the job is nearing completion (85%+ of scheduled work elapsed).
+    if (card.progressPct >= 0.85 && handover && !handover.signedOffAt) {
+      const hp = handoverProgress(handover.data)
+      out.push({
+        text: hp.done === 0
+          ? 'Job is nearing completion - start the pre-handover walkthrough'
+          : `Pre-handover walkthrough: ${hp.done} of ${hp.total} items done - finish and sign off`,
+        level: 'amber', tab: 'handover',
+      })
+    }
+
     return out
-  }, [safety, plans, subbieScopes])
+  }, [safety, plans, subbieScopes, card.progressPct, handover])
 
   const overall = STATUS_UI[card.status]
 
@@ -1420,6 +1441,194 @@ function IncidentForm({ projectId, onDone }: { projectId: string; onDone: () => 
         {busy ? 'Saving...' : 'Save incident report'}
       </button>
     </div>
+  )
+}
+
+// ── Handover (the Zero-Defect pre-handover walkthrough / Blue Tape audit) ─────────
+// The foreman works through it item by item as the job nears completion: tick = passed
+// (auto date-stamped), the note field records "Blue Tape" issues to rectify. Edits
+// debounce-save the whole blob; sign-off stamps name + date server-side.
+
+function Handover({ projectId, supervisor, checklist, refresh }: {
+  projectId: string; supervisor: string; checklist: HandoverChecklist | null; refresh: () => void
+}) {
+  const [data, setData] = useState<HandoverData | null>(null)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [openNotes, setOpenNotes] = useState<Set<string>>(new Set())
+  const [busy, setBusy] = useState(false)
+  const timer = useMemo(() => ({ id: null as ReturnType<typeof setTimeout> | null, pending: null as HandoverData | null }), [])
+
+  useEffect(() => {
+    if (checklist && !data) {
+      setData(checklist.data)
+      // Blue-tape notes already written should be visible without extra taps.
+      setOpenNotes(new Set(Object.entries(checklist.data.items).filter(([, v]) => v.note).map(([k]) => k)))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checklist])
+  // Flush a pending debounced save if the foreman leaves the tab mid-typing.
+  useEffect(() => () => {
+    if (timer.id) clearTimeout(timer.id)
+    if (timer.pending) saveSiteHandover(projectId, { data: timer.pending })
+  }, [timer, projectId])
+
+  if (!checklist || !data) return <p className="text-sm text-fg-muted">Loading...</p>
+
+  const mutate = (next: HandoverData) => {
+    setData(next)
+    setSaveState('saving')
+    timer.pending = next
+    if (timer.id) clearTimeout(timer.id)
+    timer.id = setTimeout(async () => {
+      timer.pending = null
+      const ok = await saveSiteHandover(projectId, { data: next })
+      setSaveState(ok ? 'saved' : 'error')
+    }, 600)
+  }
+  const setItem = (key: string, patch: Partial<{ done: boolean; note: string; doneAt?: string; doneBy?: string }>) => {
+    const cur = data.items[key] ?? { done: false, note: '' }
+    mutate({ ...data, items: { ...data.items, [key]: { ...cur, ...patch } } })
+  }
+  const toggleItem = (key: string) => {
+    const nowDone = !data.items[key]?.done
+    setItem(key, nowDone ? { done: true, doneAt: new Date().toISOString(), doneBy: supervisor } : { done: false, doneAt: undefined, doneBy: undefined })
+  }
+  const setRow = (list: 'subbieTasks' | 'plantLog', i: number, field: 'a' | 'b' | 'c', value: string) =>
+    mutate({ ...data, [list]: data[list].map((r, j) => j === i ? { ...r, [field]: value } : r) })
+  const addRow = (list: 'subbieTasks' | 'plantLog') => mutate({ ...data, [list]: [...data[list], { a: '', b: '', c: '' }] })
+  const removeRow = (list: 'subbieTasks' | 'plantLog', i: number) =>
+    mutate({ ...data, [list]: data[list].filter((_, j) => j !== i) })
+
+  const signOff = async (on: boolean) => {
+    if (on) {
+      const hp = handoverProgress(data)
+      const outstanding = hp.total - hp.done
+      if (outstanding > 0 && !window.confirm(`${outstanding} item${outstanding === 1 ? ' is' : 's are'} still outstanding. Sign off anyway?`)) return
+      if (!window.confirm('Sign off the walkthrough? This confirms all Blue Tape items will be rectified within 24 hours.')) return
+    }
+    setBusy(true)
+    // A pending edit and the sign-off must not race - flush it first.
+    if (timer.id) { clearTimeout(timer.id); timer.id = null }
+    if (timer.pending) { await saveSiteHandover(projectId, { data: timer.pending }); timer.pending = null }
+    await saveSiteHandover(projectId, { signOff: on })
+    setBusy(false)
+    refresh()
+  }
+
+  const hp = handoverProgress(data)
+  const FREE_TABLES: Record<string, { list: 'subbieTasks' | 'plantLog'; title: string; heads: [string, string, string] }> = {
+    hardscape: { list: 'subbieTasks', title: 'Subcontracted tasks & specialist works', heads: ['Sub contractor / task', 'Status', 'Notes'] },
+    landscape: { list: 'plantLog', title: 'Plant replacement log', heads: ['Plant location', 'Species', 'Reason / status'] },
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="rounded-xl border border-fg-border p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">The Zero-Defect Handover</p>
+            <p className="text-xs text-fg-muted mt-0.5">
+              Walk the site as the client will - slowly, critically, up close. Anything not perfect gets
+              blue tape and a note; it&apos;s rectified before handover.
+            </p>
+          </div>
+          <a href={`/api/handover/${projectId}/pdf`} target="_blank" rel="noopener noreferrer"
+            className="text-xs underline text-fg-heading shrink-0">PDF</a>
+        </div>
+        <div className="flex items-center gap-2 mt-3">
+          <div className="flex-1 h-1.5 rounded-full bg-fg-border/40 overflow-hidden">
+            <div className="h-full bg-fg-heading" style={{ width: `${Math.round((hp.done / hp.total) * 100)}%` }} />
+          </div>
+          <span className="text-[11px] tabular-nums text-fg-muted shrink-0">{hp.done} / {hp.total}</span>
+        </div>
+        <p className="text-[10px] text-fg-muted mt-1 h-3">
+          {saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Save failed - check your connection' : ''}
+        </p>
+      </div>
+
+      {HANDOVER_SECTIONS.map(sec => {
+        const done = sec.items.filter(i => data.items[`${sec.key}.${i.key}`]?.done).length
+        const free = FREE_TABLES[sec.key]
+        return (
+          <div key={sec.key} className="rounded-xl border border-fg-border overflow-hidden">
+            <div className="px-3 pt-3 pb-2 flex items-baseline justify-between gap-2">
+              <p className="text-sm font-medium">{sec.title}</p>
+              <span className="text-[11px] tabular-nums text-fg-muted shrink-0">{done}/{sec.items.length}</span>
+            </div>
+            {sec.intro && <p className="text-[11px] text-fg-muted px-3 pb-2">{sec.intro}</p>}
+            <ul className="divide-y divide-fg-border/40">
+              {sec.items.map(item => {
+                const key = `${sec.key}.${item.key}`
+                const st = data.items[key]
+                const noteOpen = openNotes.has(key)
+                return (
+                  <li key={item.key} className="px-3 py-2.5">
+                    <div className="flex items-start gap-3">
+                      <button onClick={() => toggleItem(key)} aria-label={st?.done ? 'Mark not done' : 'Mark done'}
+                        className={`mt-0.5 w-6 h-6 rounded-md border-2 shrink-0 flex items-center justify-center text-sm ${
+                          st?.done ? 'bg-fg-heading border-fg-heading text-white' : 'border-fg-border text-transparent'}`}>
+                        &#10003;
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-sm leading-snug ${st?.done ? 'text-fg-muted' : ''}`}>{item.label}</p>
+                        <p className="text-[11px] text-fg-muted leading-snug mt-0.5">{item.detail}</p>
+                        {st?.done && st.doneAt && (
+                          <p className="text-[10px] text-fg-muted mt-0.5">Passed {fmt(toISO(new Date(st.doneAt)))}{st.doneBy ? ` - ${st.doneBy}` : ''}</p>
+                        )}
+                      </div>
+                      {!noteOpen && (
+                        <button onClick={() => setOpenNotes(s => new Set(s).add(key))}
+                          className="text-[10px] text-blue-700 underline shrink-0 mt-1">Blue tape</button>
+                      )}
+                    </div>
+                    {noteOpen && (
+                      <textarea value={st?.note ?? ''} onChange={e => setItem(key, { note: e.target.value })} rows={2}
+                        placeholder="Blue tape issues - what needs fixing"
+                        className="mt-2 w-full border border-blue-200 bg-blue-50/50 rounded-lg px-3 py-2 text-sm" />
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+            {free && (
+              <div className="border-t border-fg-border/60 px-3 py-3">
+                <p className="text-[11px] font-medium text-fg-muted uppercase tracking-wide">{free.title}</p>
+                {data[free.list].map((r, i) => (
+                  <div key={i} className="mt-2 rounded-lg border border-fg-border p-2 space-y-1.5 relative">
+                    <button onClick={() => removeRow(free.list, i)} aria-label="Remove row"
+                      className="absolute top-1.5 right-2 text-fg-muted text-sm">&times;</button>
+                    <input value={r.a} onChange={e => setRow(free.list, i, 'a', e.target.value)} placeholder={free.heads[0]}
+                      className="w-full border border-fg-border rounded-lg px-2.5 py-1.5 text-sm bg-white pr-7" />
+                    <input value={r.b} onChange={e => setRow(free.list, i, 'b', e.target.value)} placeholder={free.heads[1]}
+                      className="w-full border border-fg-border rounded-lg px-2.5 py-1.5 text-sm bg-white" />
+                    <input value={r.c} onChange={e => setRow(free.list, i, 'c', e.target.value)} placeholder={free.heads[2]}
+                      className="w-full border border-fg-border rounded-lg px-2.5 py-1.5 text-sm bg-white" />
+                  </div>
+                ))}
+                <button onClick={() => addRow(free.list)} className="mt-2 text-xs underline text-fg-heading">+ Add row</button>
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      {checklist.signedOffAt ? (
+        <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-4">
+          <p className="text-sm font-medium text-emerald-800">
+            Signed off by {checklist.signedOffBy} on {fmt(toISO(new Date(checklist.signedOffAt)))}
+          </p>
+          <p className="text-xs text-emerald-700 mt-1">All Blue Tape items to be rectified within 24 hours.</p>
+          <button onClick={() => signOff(false)} disabled={busy} className="text-xs underline text-emerald-700 mt-2 disabled:opacity-40">
+            Withdraw sign-off
+          </button>
+        </div>
+      ) : (
+        <button onClick={() => signOff(true)} disabled={busy}
+          className="w-full rounded-lg bg-fg-heading text-white py-2.5 text-sm font-medium disabled:opacity-40">
+          {busy ? 'Saving...' : 'Sign off walkthrough'}
+        </button>
+      )}
+    </section>
   )
 }
 
