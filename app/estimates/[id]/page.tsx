@@ -372,6 +372,13 @@ function LineItemRow({
     onChange({ ...updated, total, revenue })
   }
 
+  // Activity breakdown mutations: units always re-derive from the hours sum, so the line total
+  // can never disagree with its parts. Empty list clears the breakdown (units become editable).
+  const setBreakdown = (next: { id: string; label: string; hours: number }[]) => {
+    if (next.length === 0) { update({ labourBreakdown: undefined }); return }
+    update({ labourBreakdown: next, units: next.reduce((s, a) => s + (a.hours || 0), 0) })
+  }
+
   // "Add to template": save this line into the item library for reuse on future estimates.
   const [libSaved, setLibSaved] = useState(false)
   const saveToLibrary = () => {
@@ -407,13 +414,62 @@ function LineItemRow({
           className={inputCls}
           placeholder="Description…"
         />
-        <input
-          value={item.subcategory ?? ''}
-          onChange={e => update({ subcategory: e.target.value || undefined })}
-          list="estimate-subcategories"
-          className={`${inputCls} text-2xs text-fg-muted mt-0.5`}
-          placeholder="Sub-category (Gantt posting)…"
-        />
+        {(item.labourBreakdown?.length ?? 0) === 0 && (
+          <input
+            value={item.subcategory ?? ''}
+            onChange={e => update({ subcategory: e.target.value || undefined })}
+            list="estimate-subcategories"
+            className={`${inputCls} text-2xs text-fg-muted mt-0.5`}
+            placeholder="Sub-category (Gantt posting)…"
+          />
+        )}
+        {/* Labour activity breakdown: one labour line, hours split by activity. units = the sum,
+            and each activity becomes its OWN Gantt posting (supersedes the sub-category field). */}
+        {item.type === 'Labour' && (
+          (item.labourBreakdown?.length ?? 0) === 0 ? (
+            <button
+              onClick={() => setBreakdown([{ id: generateId(), label: '', hours: item.units || 0 }])}
+              className="mt-0.5 px-1.5 text-2xs text-fg-muted/60 hover:text-fg-heading transition-colors"
+              title="Split this line's hours by activity - each activity becomes its own Gantt posting"
+            >
+              + Hours breakdown
+            </button>
+          ) : (
+            <div className="mt-1 space-y-0.5">
+              {(item.labourBreakdown ?? []).map((a, i) => (
+                <div key={a.id} className="flex items-center gap-1 pl-1.5">
+                  <span className="text-2xs text-fg-muted/40">↳</span>
+                  <input
+                    value={a.label}
+                    onChange={e => setBreakdown((item.labourBreakdown ?? []).map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
+                    className={`${inputCls} text-2xs text-fg-muted flex-1`}
+                    placeholder="Activity (Gantt posting)…"
+                  />
+                  <input
+                    type="number"
+                    value={a.hours || ''}
+                    onChange={e => setBreakdown((item.labourBreakdown ?? []).map((x, j) => j === i ? { ...x, hours: parseFloat(e.target.value) || 0 } : x))}
+                    className={`${inputCls} text-2xs tabular-nums text-right w-14`}
+                    placeholder="hrs"
+                  />
+                  <span className="text-2xs text-fg-muted/50">hrs</span>
+                  <button
+                    onClick={() => setBreakdown((item.labourBreakdown ?? []).filter((_, j) => j !== i))}
+                    title="Remove activity" className="text-fg-muted/40 hover:text-red-400 transition-colors px-0.5"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => setBreakdown([...(item.labourBreakdown ?? []), { id: generateId(), label: '', hours: 0 }])}
+                className="pl-3 text-2xs text-fg-muted/60 hover:text-fg-heading transition-colors"
+              >
+                + Activity
+              </button>
+            </div>
+          )
+        )}
         {/* XCC — the Xero cost code (chart-of-accounts account) this line is budgeted against. Amber
             until allocated. Sourced live from Xero's cost accounts; the stored value is the account code. */}
         <select
@@ -463,9 +519,10 @@ function LineItemRow({
             const t = e.target.value as EstimateLineItem['type']
             // Markup follows the item type — re-apply the type's default on change.
             // Labour is always rated by the hour, so pin its unit of measure to 'hour'.
+            // Leaving Labour drops the activity breakdown (it's a labour-hours concept).
             update(t === 'Labour'
               ? { type: t, markupPercent: defaultMarkupForType(t), uom: 'hour' }
-              : { type: t, markupPercent: defaultMarkupForType(t) })
+              : { type: t, markupPercent: defaultMarkupForType(t), labourBreakdown: undefined })
           }}
           className={`${inputCls} bg-fg-bg appearance-none`}
         >
@@ -493,6 +550,8 @@ function LineItemRow({
           value={item.units || ''}
           onChange={e => update({ units: parseFloat(e.target.value) || 0 })}
           onFocus={onUnitsFocus}
+          disabled={(item.labourBreakdown?.length ?? 0) > 0}
+          title={(item.labourBreakdown?.length ?? 0) > 0 ? 'Hours come from the activity breakdown' : undefined}
           className={numCls}
           placeholder="0"
         />

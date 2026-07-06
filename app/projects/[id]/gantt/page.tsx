@@ -23,7 +23,7 @@ import {
   toISODate,
   SHORT_MONTH_NAMES,
 } from '@/lib/utils'
-import { readLineItemRevenue, getEstimateContract, lineContractValue, addLineCost, emptyCostBreakdown, STD_LABOUR_RATE, type CostBreakdown } from '@/lib/estimateCalculations'
+import { readLineItemRevenue, getEstimateContract, lineContractValue, emptyCostBreakdown, splitByShares, STD_LABOUR_RATE, type CostBreakdown } from '@/lib/estimateCalculations'
 import { normalizedPcts, rebalancedPcts, datedPeriodCount } from '@/lib/ganttAllocation'
 import { labourWorkingDays } from '@/lib/ganttSchedule'
 import { vicPublicHolidayName } from '@/lib/publicHolidays'
@@ -271,20 +271,34 @@ function extractCategories(estimate: Estimate): CategorySummary[] {
   for (const item of estimate.lineItems.filter(i => i.enabled !== false)) {
     // Each (category, sub-category) is its own Gantt posting so a sub-category's cost + labour can be
     // scheduled independently. No sub-category → the category itself (unchanged for existing estimates).
-    const sub = (item.subcategory || '').trim()
-    const key = `${item.category}||${sub}`
-    const label = sub ? `${item.category} — ${sub}` : item.category
-    if (!map[key]) {
-      map[key] = { category: label, crewType: item.crewType, budgetedRevenue: 0, budgetedCost: 0, cost: emptyCostBreakdown(), rev: emptyCostBreakdown() }
-    }
+    // A labour line with an activity breakdown fans out into one posting PER ACTIVITY, its cost and
+    // revenue split by hours share — splitByShares guarantees the postings sum exactly to the line.
+    const breakdown = (item.labourBreakdown ?? []).filter(a => a.label.trim())
+    const parts: { sub: string; cost: number; rev: number }[] = []
     const lineRev = lineContractValue(item, contract)
-    map[key].budgetedRevenue += lineRev
-    map[key].budgetedCost += item.total
-    addLineCost(map[key].cost, item)
-    // Revenue split by the same type bucket as the line's cost, so revenue-by-type sums to the contract.
-    const rk = lineTypeKey(item.type)
-    map[key].rev[rk] += lineRev
-    map[key].rev.total += lineRev
+    if (breakdown.length > 0) {
+      const costShares = splitByShares(item.total, breakdown.map(a => a.hours))
+      const revShares = splitByShares(lineRev, breakdown.map(a => a.hours))
+      breakdown.forEach((a, i) => parts.push({ sub: a.label.trim(), cost: costShares[i], rev: revShares[i] }))
+    } else {
+      parts.push({ sub: (item.subcategory || '').trim(), cost: item.total || 0, rev: lineRev })
+    }
+
+    for (const part of parts) {
+      const key = `${item.category}||${part.sub}`
+      const label = part.sub ? `${item.category} — ${part.sub}` : item.category
+      if (!map[key]) {
+        map[key] = { category: label, crewType: item.crewType, budgetedRevenue: 0, budgetedCost: 0, cost: emptyCostBreakdown(), rev: emptyCostBreakdown() }
+      }
+      map[key].budgetedRevenue += part.rev
+      map[key].budgetedCost += part.cost
+      // Cost + revenue land in the same type bucket as the line, so per-type totals sum to the contract.
+      const tk = lineTypeKey(item.type)
+      map[key].cost[tk] += part.cost
+      map[key].cost.total += part.cost
+      map[key].rev[tk] += part.rev
+      map[key].rev.total += part.rev
+    }
   }
   return Object.values(map)
 }

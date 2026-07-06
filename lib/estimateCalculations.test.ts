@@ -7,6 +7,7 @@ import {
   getEstimateContract,
   variationContractValue,
   blendedTargetMargin,
+  splitByShares,
 } from './estimateCalculations'
 import type { Estimate, EstimateLineItem } from '@/types'
 
@@ -251,5 +252,30 @@ describe('variationContractValue', () => {
   it('falls back to the line-item contract value when no variationAmount', () => {
     const v = estimate([line({ total: 1000, revenue: 1400 })], { parentEstimateId: 'base' })
     expect(variationContractValue(v)).toBe(getEstimateContract(v).exGst)
+  })
+})
+
+describe('splitByShares', () => {
+  it('splits proportionally to weights', () => {
+    expect(splitByShares(100, [1, 3])).toEqual([25, 75])
+  })
+  it('sums back to EXACTLY the total (float remainder onto the last non-zero weight)', () => {
+    // 256 hrs across Chris's paving example: slab prep 48, slab pour 32, materials 16, install 144, clean up 16
+    const shares = splitByShares(17408.16, [48, 32, 16, 144, 16])
+    expect(shares.reduce((a, b) => a + b, 0)).toBe(17408.16)
+    expect(shares[3]).toBeCloseTo(17408.16 * (144 / 256), 6)
+  })
+  it('ignores zero-weight entries for the remainder correction', () => {
+    const shares = splitByShares(99.99, [1, 0, 2])
+    expect(shares[1]).toBe(0)
+    expect(shares.reduce((a, b) => a + b, 0)).toBe(99.99)
+  })
+  it('splits evenly when all weights are zero', () => {
+    const shares = splitByShares(90, [0, 0, 0])
+    expect(shares.reduce((a, b) => a + b, 0)).toBe(90)
+    expect(shares[0]).toBeCloseTo(30, 6)
+  })
+  it('returns [] for no weights', () => {
+    expect(splitByShares(100, [])).toEqual([])
   })
 })

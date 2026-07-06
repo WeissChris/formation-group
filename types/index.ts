@@ -153,6 +153,10 @@ export interface EstimateLineItem {
   revenue: number
   crewType: 'Formation' | 'Subcontractor'
   enabled?: boolean      // false = turned off: kept on the estimate for reference, excluded from totals/Gantt
+  /** Labour lines only: activity split of the line's hours (slab prep 48, paving install 144, ...).
+   *  units = sum of the activity hours (auto), and each activity becomes its OWN Gantt posting with
+   *  the line's cost/revenue split by hours share. One rate/markup/XCC for the whole line. */
+  labourBreakdown?: { id: string; label: string; hours: number }[]
   quoteFileName?: string // subcontractor quote attached to this line (required before contract for Subcontractor lines)
   quoteFileData?: string // LEGACY base64 data URI - new uploads use quoteFilePath (Storage bucket)
   quoteFilePath?: string // path in the private 'attachments' Storage bucket

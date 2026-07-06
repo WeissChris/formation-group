@@ -83,6 +83,26 @@ export function costBreakdown(items: EstimateLineItem[]): CostBreakdown {
 }
 
 /**
+ * Split `total` proportionally to `weights`, guaranteed to sum back to EXACTLY `total` (float
+ * arithmetic: the last non-zero weight takes the remainder). Used to split a labour line's
+ * cost/revenue across its activity breakdown by hours — the Gantt postings must sum to the line.
+ * All-zero weights split evenly (a breakdown someone typed labels into before hours).
+ */
+export function splitByShares(total: number, weights: number[]): number[] {
+  if (weights.length === 0) return []
+  const sum = weights.reduce((a, b) => a + b, 0)
+  const shares = sum > 0
+    ? weights.map(w => (total * w) / sum)
+    : weights.map(() => total / weights.length)
+  // Exact-sum correction onto the last non-zero share (or the last entry when all are zero).
+  let last = shares.length - 1
+  if (sum > 0) { for (let i = shares.length - 1; i >= 0; i--) { if (weights[i] > 0) { last = i; break } } }
+  const others = shares.reduce((a, s, i) => i === last ? a : a + s, 0)
+  shares[last] = total - others
+  return shares
+}
+
+/**
  * Cost-weighted blended target margin (0-1) for a Formation/Subcontractor cost mix. Single source for
  * BOTH the per-category Mixed blend and the project-level health target: a subbie-heavy job is pulled
  * down toward the 30% subbie minimum, an all-Formation job sits at 40%. Empty mix -> the Formation target.
