@@ -141,6 +141,11 @@ export function HandoverPdf({ checklist, projectName, address, supervisor }: {
                         <Text style={s.statusDone}>Passed</Text>
                         <Text style={s.statusMeta}>{fmtDate(st.doneAt)}{st.doneBy ? ` - ${st.doneBy}` : ''}</Text>
                       </View>
+                    ) : st?.na ? (
+                      <View>
+                        <Text style={s.statusOpen}>N/A</Text>
+                        <Text style={s.statusMeta}>Not on this job</Text>
+                      </View>
                     ) : <Text style={s.statusOpen}>Outstanding</Text>}
                   </View>
                 </View>
@@ -158,7 +163,7 @@ export function HandoverPdf({ checklist, projectName, address, supervisor }: {
         <View style={s.signBox} wrap={false}>
           <Text style={s.signTitle}>Supervisor sign-off</Text>
           <Text style={s.signText}>
-            I confirm this walkthrough has been completed (all {progress.total} checklist items ticked)
+            I confirm this walkthrough has been completed (all {progress.total} checklist items resolved)
             and {openBlueTapeCount(data) > 0
               ? `the ${openBlueTapeCount(data)} outstanding "Blue Tape" defect${openBlueTapeCount(data) === 1 ? '' : 's'} will be rectified within 24 hours.`
               : 'all "Blue Tape" defects have been rectified.'}

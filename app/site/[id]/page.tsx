@@ -1488,15 +1488,25 @@ function Handover({ projectId, supervisor, checklist, refresh }: {
       setSaveState(ok ? 'saved' : 'error')
     }, 600)
   }
-  const setItem = (key: string, patch: Partial<{ done: boolean; note: string; blueTape: BlueTapeEntry[]; doneAt?: string; doneBy?: string }>) => {
+  const setItem = (key: string, patch: Partial<{ done: boolean; na?: boolean; note: string; blueTape: BlueTapeEntry[]; doneAt?: string; doneBy?: string }>) => {
     const cur = data.items[key] ?? { done: false, note: '' }
     mutate({ ...data, items: { ...data.items, [key]: { ...cur, ...patch } } })
   }
   // Writing the defect list also clears the legacy free-text note (it's been folded into the list).
   const setBlueTape = (key: string, entries: BlueTapeEntry[]) => setItem(key, { blueTape: entries, note: '' })
   const toggleItem = (key: string) => {
-    const nowDone = !data.items[key]?.done
-    setItem(key, nowDone ? { done: true, doneAt: new Date().toISOString(), doneBy: supervisor } : { done: false, doneAt: undefined, doneBy: undefined })
+    const st = data.items[key]
+    // Ticking an N/A item flips it straight to passed; ticking a passed item clears it.
+    const nowDone = st?.na ? true : !st?.done
+    setItem(key, nowDone
+      ? { done: true, na: undefined, doneAt: new Date().toISOString(), doneBy: supervisor }
+      : { done: false, doneAt: undefined, doneBy: undefined })
+  }
+  const toggleNa = (key: string) => {
+    const st = data.items[key]
+    setItem(key, st?.na
+      ? { na: undefined, doneAt: undefined, doneBy: undefined }
+      : { na: true, done: false, doneAt: new Date().toISOString(), doneBy: supervisor })
   }
   const setRow = (list: 'subbieTasks' | 'plantLog', i: number, field: 'a' | 'b' | 'c', value: string) =>
     mutate({ ...data, [list]: data[list].map((r, j) => j === i ? { ...r, [field]: value } : r) })
@@ -1552,7 +1562,7 @@ function Handover({ projectId, supervisor, checklist, refresh }: {
       </div>
 
       {HANDOVER_SECTIONS.map(sec => {
-        const done = sec.items.filter(i => data.items[`${sec.key}.${i.key}`]?.done).length
+        const done = sec.items.filter(i => { const st = data.items[`${sec.key}.${i.key}`]; return st?.done || st?.na }).length
         const free = FREE_TABLES[sec.key]
         return (
           <div key={sec.key} className="rounded-xl border border-fg-border overflow-hidden">
@@ -1571,24 +1581,34 @@ function Handover({ projectId, supervisor, checklist, refresh }: {
                     <div className="flex items-start gap-3">
                       <button onClick={() => toggleItem(key)} aria-label={st?.done ? 'Mark not done' : 'Mark done'}
                         className={`mt-0.5 w-6 h-6 rounded-md border-2 shrink-0 flex items-center justify-center text-sm ${
-                          st?.done ? 'bg-fg-heading border-fg-heading text-white' : 'border-fg-border text-transparent'}`}>
-                        &#10003;
+                          st?.done ? 'bg-fg-heading border-fg-heading text-white'
+                          : st?.na ? 'bg-fg-border/30 border-fg-border text-fg-muted'
+                          : 'border-fg-border text-transparent'}`}>
+                        {st?.na ? '–' : '✓'}
                       </button>
                       <div className="min-w-0 flex-1">
-                        <p className={`text-sm leading-snug ${st?.done ? 'text-fg-muted' : ''}`}>{item.label}</p>
+                        <p className={`text-sm leading-snug ${st?.done || st?.na ? 'text-fg-muted' : ''}`}>{item.label}</p>
                         <p className="text-[11px] text-fg-muted leading-snug mt-0.5">{item.detail}</p>
                         {st?.done && st.doneAt && (
                           <p className="text-[10px] text-fg-muted mt-0.5">Passed {fmt(toISO(new Date(st.doneAt)))}{st.doneBy ? ` - ${st.doneBy}` : ''}</p>
                         )}
+                        {st?.na && (
+                          <p className="text-[10px] text-fg-muted mt-0.5">Not on this job{st.doneAt ? ` - ${fmt(toISO(new Date(st.doneAt)))}` : ''}</p>
+                        )}
                       </div>
-                      {!noteOpen && (
-                        <button
-                          onClick={() => {
-                            setOpenNotes(s => new Set(s).add(key))
-                            if (blueTapeOf(st).length === 0) setBlueTape(key, [{ id: generateId(), text: '', done: false }])
-                          }}
-                          className="text-[10px] text-blue-700 underline shrink-0 mt-1">Blue tape</button>
-                      )}
+                      <div className="flex items-center gap-2 shrink-0 mt-1">
+                        {!noteOpen && !st?.na && (
+                          <button
+                            onClick={() => {
+                              setOpenNotes(s => new Set(s).add(key))
+                              if (blueTapeOf(st).length === 0) setBlueTape(key, [{ id: generateId(), text: '', done: false }])
+                            }}
+                            className="text-[10px] text-blue-700 underline">Blue tape</button>
+                        )}
+                        <button onClick={() => toggleNa(key)}
+                          title={st?.na ? 'Put this item back on the checklist' : 'Not on this job (no pool, no kitchen, ...) - counts as resolved'}
+                          className="text-[10px] text-fg-muted underline">{st?.na ? 'Undo' : 'N/A'}</button>
+                      </div>
                     </div>
                     {noteOpen && (
                       <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2 space-y-1.5">

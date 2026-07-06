@@ -92,9 +92,10 @@ export interface BlueTapeEntry {
 
 export interface HandoverItemState {
   done: boolean
+  na?: boolean               // "not on this job" (e.g. Pool Barriers on a job with no pool) - counts as resolved
   note: string               // LEGACY free-text blue tape - surfaced via blueTapeOf(), migrated on first edit
   blueTape?: BlueTapeEntry[] // tickable defect list (replaces note)
-  doneAt?: string
+  doneAt?: string            // stamp for done OR na
   doneBy?: string
 }
 
@@ -124,10 +125,12 @@ export function emptyHandoverData(): HandoverData {
   return { items: {}, subbieTasks: [], plantLog: [] }
 }
 
+/** Resolved = passed OR marked not-on-this-job; the sign-off gate requires every item resolved. */
 export function handoverProgress(data: HandoverData): { done: number; total: number } {
   let done = 0
   for (const sec of HANDOVER_SECTIONS) for (const item of sec.items) {
-    if (data.items[`${sec.key}.${item.key}`]?.done) done++
+    const st = data.items[`${sec.key}.${item.key}`]
+    if (st?.done || st?.na) done++
   }
   return { done, total: HANDOVER_ITEM_COUNT }
 }
