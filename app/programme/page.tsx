@@ -124,7 +124,7 @@ export default function ProgrammePage() {
   const totalWidth = LABEL_W + CELL_W * WEEKS
 
   return (
-    <div className="max-w-[1400px] mx-auto px-6 lg:px-8 py-12">
+    <div className="w-full px-6 lg:px-12 2xl:px-16 py-12">
 
       {/* Header */}
       <div className="flex items-start justify-between mb-8 flex-wrap gap-4">
