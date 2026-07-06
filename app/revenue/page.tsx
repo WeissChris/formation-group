@@ -738,7 +738,7 @@ export default function RevenuePage() {
                           <table className="w-full text-left border-collapse table-fixed">
                             <colgroup>
                               {/* Slimmer fixed columns when the three months sit side by side */}
-                              <col className="w-[180px] min-[1700px]:w-[120px]" />
+                              <col className="w-[180px] min-[1700px]:w-[170px]" />
                               {mFridays.map((_, fi) => <col key={fi} />)}
                               <col className="w-[100px] min-[1700px]:w-[78px]" />
                             </colgroup>
