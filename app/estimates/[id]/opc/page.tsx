@@ -1,20 +1,29 @@
 'use client'
 
 // Opinion of Probable Cost - the preliminary-pricing document sent before formal quoting.
-// Generated from the estimate: categories become rows priced at their contract value (revenue +
-// their share of project markups) rounded to the nearest $100; the client-facing "Scope of Works"
-// prose is written here (stored on estimate.opc, seeded from templates) and edits autosave.
-// Print-styled like the Quote page: edit affordances are print:hidden, prose prints as clean text.
+// Styled in the Design Fee proposal language (hero cover, Formation green, warm cards).
+//
+// Rows are first-class: a row can MERGE several estimate categories into one client-facing line
+// (all the in-situ concrete scopes as one item) - its price is the members' combined contract
+// value rounded to the nearest $100. Scope prose lives on the row, written inline or inserted
+// from the shared snippet library (fg_opc_snippets, cross-device via liveSync). Edits autosave.
 
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { loadEstimates, loadProjects, loadProposals, saveEstimate } from '@/lib/storage'
-import { getEstimates, upsertEstimate } from '@/lib/storageAsync'
-import { formatCurrency } from '@/lib/utils'
+import { loadEstimates, loadProjects, loadProposals, saveEstimate, loadOpcSnippets } from '@/lib/storage'
+import { getEstimates, upsertEstimate, getOpcSnippets, upsertOpcSnippet, deleteOpcSnippetAsync } from '@/lib/storageAsync'
+import { formatCurrency, generateId } from '@/lib/utils'
 import { activeLineItems, getEstimateContract, itemsContractValue } from '@/lib/estimateCalculations'
-import type { Estimate, EstimateOpc } from '@/types'
-import { Printer, ArrowLeft, X, Plus } from 'lucide-react'
+import type { Estimate, EstimateOpc, OpcRow, OpcSnippet } from '@/types'
+import { Printer, ArrowLeft, X, Plus, ChevronDown } from 'lucide-react'
+
+const GREEN = '#3D5A3A'
+const HEADING = '#1a1a1a'
+const BODY = '#2d2d2d'
+const MUTED = '#6b6b6b'
+const BG_WARM = '#F0EEEB'
+const HERO_IMAGE = '/proposal-hero-8.jpg'
 
 const round100 = (n: number) => Math.round(n / 100) * 100
 
@@ -29,6 +38,22 @@ function defaultIntro(projectName: string, hasPool: boolean): string {
     hasPool ? 'both the landscape construction estimate and the pool & spa build quote' : 'the landscape construction estimate'}.`
 }
 
+/** Fold the estimate's current categories into the saved row layout: vanished categories drop out,
+ *  new ones append as their own row (scope seeded from the template's opcScopes when present). */
+function reconcileRows(saved: OpcRow[] | undefined, categories: string[], seeds: Record<string, string>): OpcRow[] {
+  const rows: OpcRow[] = []
+  const seen = new Set<string>()
+  for (const r of saved ?? []) {
+    const cats = r.categories.filter(c => categories.includes(c) && !seen.has(c))
+    cats.forEach(c => seen.add(c))
+    if (cats.length > 0) rows.push({ ...r, categories: cats })
+  }
+  for (const c of categories) {
+    if (!seen.has(c)) rows.push({ id: generateId(), title: c, categories: [c], scope: seeds[c] ?? '' })
+  }
+  return rows
+}
+
 /** Auto-growing textarea that prints as clean text (textarea hidden in print, div shown). */
 function ProseField({ value, onChange, placeholder, className = '' }: {
   value: string; onChange: (v: string) => void; placeholder: string; className?: string
@@ -40,12 +65,64 @@ function ProseField({ value, onChange, placeholder, className = '' }: {
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         rows={1}
-        className={`print:hidden w-full bg-transparent border border-transparent hover:border-gray-200 focus:border-gray-400 rounded-none outline-none resize-none transition-colors ${className}`}
+        className={`print:hidden w-full bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none resize-none transition-colors ${className}`}
         ref={el => { if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px` } }}
         onInput={e => { const t = e.target as HTMLTextAreaElement; t.style.height = 'auto'; t.style.height = `${t.scrollHeight}px` }}
       />
       <div className={`hidden print:block whitespace-pre-wrap ${className}`}>{value}</div>
     </>
+  )
+}
+
+/** "Insert scope ▾" - the snippet library dropdown on each row (insert / save-current / delete). */
+function SnippetMenu({ snippets, currentText, onInsert, onSaveCurrent, onDelete }: {
+  snippets: OpcSnippet[]
+  currentText: string
+  onInsert: (text: string) => void
+  onSaveCurrent: () => void
+  onDelete: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="print:hidden relative inline-block">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 border border-gray-200 hover:border-gray-300 px-2 py-0.5 transition-colors"
+      >
+        Insert scope <ChevronDown className="w-2.5 h-2.5" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute z-20 left-0 mt-1 w-80 max-h-72 overflow-y-auto bg-white border border-gray-200 shadow-lg">
+            {snippets.length === 0 && (
+              <p className="px-3 py-2.5 text-2xs text-gray-400">No saved scopes yet - write one below and save it.</p>
+            )}
+            {snippets.map(s => (
+              <div key={s.id} className="flex items-start gap-2 px-3 py-2 border-b border-gray-100 hover:bg-gray-50 group">
+                <button onClick={() => { onInsert(s.text); setOpen(false) }} className="flex-1 text-left">
+                  <p className="text-xs font-normal text-gray-800">{s.title}</p>
+                  <p className="text-2xs text-gray-400 line-clamp-2">{s.text}</p>
+                </button>
+                <button
+                  onClick={() => onDelete(s.id)}
+                  title="Delete from library"
+                  className="text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-0.5">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={() => { onSaveCurrent(); setOpen(false) }}
+              disabled={!currentText.trim()}
+              className="w-full flex items-center gap-1.5 px-3 py-2.5 text-2xs text-gray-500 hover:text-gray-800 disabled:opacity-40 transition-colors"
+            >
+              <Plus className="w-3 h-3" /> Save this row&apos;s text to the library
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -58,6 +135,7 @@ export default function OpcPage() {
   const [clientName, setClientName] = useState('')
   const [clientAddress, setClientAddress] = useState('')
   const [opc, setOpc] = useState<EstimateOpc | null>(null)
+  const [snippets, setSnippets] = useState<OpcSnippet[]>([])
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
 
   useEffect(() => {
@@ -72,9 +150,12 @@ export default function OpcPage() {
       if (!found) { router.push('/estimates'); return }
       setEstimate(found)
       const hasPool = found.projectType === 'landscape_and_pool' || found.projectType === 'pool_only'
+      const active = activeLineItems(found)
+      const categories = Array.from(new Set(active.map(i => i.category).filter(Boolean)))
       setOpc({
         date: found.opc?.date ?? new Date().toISOString().slice(0, 10),
         intro: found.opc?.intro ?? defaultIntro(found.name || found.projectName || 'client', hasPool),
+        rows: reconcileRows(found.opc?.rows, categories, found.opc?.scopes ?? {}),
         scopes: found.opc?.scopes ?? {},
         poolSubtotalExGst: found.opc?.poolSubtotalExGst ?? null,
         exclusions: found.opc?.exclusions ?? DEFAULT_EXCLUSIONS,
@@ -85,6 +166,20 @@ export default function OpcPage() {
       const linkedProposal = found.proposalId ? loadProposals().find(pr => pr.id === found.proposalId) : null
       setClientName(p?.clientName || linkedProposal?.clientName || found.clientName || found.projectName || 'Client')
       setClientAddress(p?.address || linkedProposal?.projectAddress || found.projectAddress || '')
+
+      // Snippet library: local copy immediately, then the cloud copy (covers a fresh device).
+      setSnippets(loadOpcSnippets())
+      getOpcSnippets().then(remote => {
+        if (cancelled || remote.length === 0) return
+        setSnippets(local => {
+          const byId = new Map(local.map(s => [s.id, s]))
+          for (const r of remote) {
+            const l = byId.get(r.id)
+            if (!l || (Date.parse(r.updatedAt || '') || 0) >= (Date.parse(l.updatedAt || '') || 0)) byId.set(r.id, r)
+          }
+          return Array.from(byId.values()).sort((a, b) => a.title.localeCompare(b.title))
+        })
+      }).catch(() => { /* offline - local list stands */ })
     })()
     return () => { cancelled = true }
   }, [id, router])
@@ -133,27 +228,70 @@ export default function OpcPage() {
 
   const active = activeLineItems(estimate)
   const contract = getEstimateContract(estimate)
-  const categories = Array.from(new Set(active.map(i => i.category).filter(Boolean)))
-  const rows = categories.map(category => ({
-    category,
-    price: round100(itemsContractValue(active.filter(i => i.category === category), contract)),
-  }))
+  const rows = opc.rows ?? []
+  const priceOf = (row: OpcRow) =>
+    round100(itemsContractValue(active.filter(i => row.categories.includes(i.category)), contract))
 
-  // The document must add up for the client: the landscape subtotal is the SUM OF THE ROUNDED ROWS
-  // (not the exact contract), GST and totals follow from it. Pool & spa is the manual Lume figure.
-  const landscapeExGst = rows.reduce((s, r) => s + r.price, 0)
+  const setRow = (rowId: string, patch: Partial<OpcRow>) =>
+    mutate({ rows: rows.map(r => r.id === rowId ? { ...r, ...patch } : r) })
+
+  /** Merge a row into a target: categories combine, scope text concatenates, source row goes. */
+  const mergeInto = (sourceId: string, targetId: string) => {
+    const source = rows.find(r => r.id === sourceId)
+    const target = rows.find(r => r.id === targetId)
+    if (!source || !target) return
+    mutate({
+      rows: rows
+        .filter(r => r.id !== sourceId)
+        .map(r => r.id === targetId
+          ? { ...r, categories: [...r.categories, ...source.categories], scope: [r.scope, source.scope].filter(s => s.trim()).join('\n') }
+          : r),
+    })
+  }
+
+  /** Eject a category out of a merged row back to its own line. */
+  const ejectCategory = (rowId: string, category: string) => {
+    const row = rows.find(r => r.id === rowId)
+    if (!row || row.categories.length < 2) return
+    const next = rows.map(r => r.id === rowId ? { ...r, categories: r.categories.filter(c => c !== category) } : r)
+    next.push({ id: generateId(), title: category, categories: [category], scope: '' })
+    mutate({ rows: next })
+  }
+
+  const saveSnippet = (row: OpcRow) => {
+    const title = window.prompt('Library title for this scope text:', row.title)
+    if (!title || !title.trim()) return
+    const snippet: OpcSnippet = { id: generateId(), title: title.trim(), text: row.scope }
+    void upsertOpcSnippet(snippet)
+    setSnippets(prev => [...prev, snippet].sort((a, b) => a.title.localeCompare(b.title)))
+  }
+  const removeSnippet = (snippetId: string) => {
+    if (!window.confirm('Remove this scope from the library?')) return
+    void deleteOpcSnippetAsync(snippetId)
+    setSnippets(prev => prev.filter(s => s.id !== snippetId))
+  }
+
+  // The document must add up for the client: the landscape subtotal is the SUM OF THE ROUNDED ROWS.
+  const landscapeExGst = rows.reduce((s, r) => s + priceOf(r), 0)
   const poolExGst = opc.poolSubtotalExGst ?? 0
   const hasPoolFigure = poolExGst > 0
   const combinedExGst = landscapeExGst + poolExGst
   const money = (n: number) => formatCurrency(n)
 
   const docDate = opc.date ? new Date(opc.date) : new Date()
-  const scopes = opc.scopes ?? {}
+  const dateLabel = docDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
   const exclusions = opc.exclusions ?? []
   const excludedItems = opc.excludedItems ?? []
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
+      <style>{`
+        @media print {
+          .opc-cover { height: 25cm; break-after: page; }
+          .opc-avoid-break { break-inside: avoid; }
+        }
+      `}</style>
+
       {/* Toolbar (hidden in print) */}
       <div className="print:hidden bg-fg-darker px-6 py-3 flex items-center justify-between">
         <Link
@@ -173,193 +311,225 @@ export default function OpcPage() {
         </div>
       </div>
 
-      <div className="max-w-[800px] mx-auto px-8 py-12 print:px-0 print:py-0">
-        {/* Header */}
-        <div className="flex items-start justify-between mb-10">
-          <div>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/formation-primary-dark.svg" alt="Formation Landscapes" className="h-10 w-auto mb-1"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
-            <p className="text-xs text-gray-400 font-light mt-2">Formation Landscapes Pty Ltd</p>
-            <p className="text-xs text-gray-400 font-light">Melbourne, Victoria</p>
-          </div>
-          <div className="text-right">
-            <h1 className="text-2xl font-light tracking-wide text-gray-900 mb-1">Opinion of Probable Cost</h1>
-            <input
-              type="date"
-              value={opc.date ?? ''}
-              onChange={e => mutate({ date: e.target.value })}
-              className="print:hidden text-xs text-gray-500 font-light bg-transparent border border-transparent hover:border-gray-200 rounded-none outline-none text-right"
-            />
-            <p className="hidden print:block text-xs text-gray-500 font-light">
-              {docDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}
-            </p>
-          </div>
+      {/* ── COVER ── */}
+      <div className="opc-cover relative h-[70vh] min-h-[480px]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={HERO_IMAGE} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: 'center 55%' }} />
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.15) 55%, rgba(0,0,0,0.1) 100%)' }} />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/formation-logo-white.svg" alt="Formation" className="absolute top-8 left-10 h-6 w-auto" />
+        <div className="absolute bottom-12 left-10 right-10">
+          <p className="text-white/60 text-xs tracking-[0.25em] uppercase mb-3">Preliminary Pricing</p>
+          <h1 className="text-white font-light leading-tight mb-4" style={{ fontSize: 'clamp(32px, 4.5vw, 52px)', letterSpacing: '0.01em' }}>
+            Opinion of Probable Cost
+          </h1>
+          <p className="text-white/90 font-light text-xl mb-1">{clientName}</p>
+          {clientAddress && <p className="text-white/70 font-light text-base">{clientAddress}</p>}
+          <input
+            type="date"
+            value={opc.date ?? ''}
+            onChange={e => mutate({ date: e.target.value })}
+            className="print:hidden mt-3 bg-transparent text-white/60 text-sm font-light border border-white/20 px-2 py-0.5 rounded-none outline-none [color-scheme:dark]"
+          />
+          <p className="hidden print:block text-white/60 text-sm font-light mt-3">{dateLabel}</p>
         </div>
+      </div>
 
-        {/* Client + intro */}
-        <div className="mb-10 border-t border-gray-200 pt-6">
-          <div className="grid grid-cols-2 gap-8 mb-6">
-            <div>
-              <p className="text-2xs font-light tracking-widest uppercase text-gray-400 mb-2">Client</p>
-              <p className="text-base font-light text-gray-900">{clientName}</p>
-            </div>
-            <div>
-              <p className="text-2xs font-light tracking-widest uppercase text-gray-400 mb-2">Site Address</p>
-              <p className="text-base font-light text-gray-900">{clientAddress || '—'}</p>
-            </div>
-          </div>
+      <div className="max-w-[860px] mx-auto px-8 py-14 print:px-0 print:py-10">
+        {/* Intro */}
+        <div className="mb-14">
           <ProseField
             value={opc.intro ?? ''}
             onChange={v => mutate({ intro: v })}
             placeholder="Intro paragraph…"
-            className="text-sm font-light text-gray-600 leading-relaxed"
+            className="text-lg font-light leading-relaxed"
           />
         </div>
 
-        {/* Landscape Construction Estimate */}
-        <h2 className="text-lg font-light tracking-wide text-gray-900 mb-4">Landscape Construction Estimate</h2>
-        <table className="w-full mb-10">
-          <thead>
-            <tr className="border-b-2 border-gray-900">
-              <th className="text-left pb-2 pr-4 text-xs font-normal tracking-widest uppercase text-gray-500 w-[170px]">Category</th>
-              <th className="text-left pb-2 pr-4 text-xs font-normal tracking-widest uppercase text-gray-500">Scope of Works</th>
-              <th className="text-right pb-2 text-xs font-normal tracking-widest uppercase text-gray-500 w-[90px]">Price</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(({ category, price }) => (
-              <tr key={category} className="border-b border-gray-100 align-top break-inside-avoid">
-                <td className="py-3 pr-4 text-sm font-light text-gray-900">{category}</td>
-                <td className="py-3 pr-4">
-                  <ProseField
-                    value={scopes[category] ?? ''}
-                    onChange={v => mutate({ scopes: { ...scopes, [category]: v } })}
-                    placeholder="Client-facing scope of works for this category…"
-                    className="text-xs font-light text-gray-600 leading-relaxed"
-                  />
-                </td>
-                <td className="py-3 text-sm font-light text-gray-900 text-right tabular-nums whitespace-nowrap">
-                  {price > 0 ? money(price) : ''}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* ── LANDSCAPE CONSTRUCTION ESTIMATE ── */}
+        <div className="mb-16">
+          <p className="text-xs tracking-[0.25em] uppercase mb-2" style={{ color: GREEN }}>01 — Landscape Construction Estimate</p>
+          <div className="h-px w-16 mb-8" style={{ backgroundColor: GREEN }} />
 
-        {/* Project Cost Summary */}
-        <h2 className="text-lg font-light tracking-wide text-gray-900 mb-4 break-before-auto">Project Cost Summary</h2>
-        <div className="mb-10 space-y-3">
-          <div className="flex items-baseline justify-between border-b border-gray-100 pb-3">
-            <p className="text-sm font-light text-gray-900">Landscape Construction</p>
-            <p className="text-xs font-light text-gray-600 tabular-nums">
-              Subtotal ex. GST: {money(landscapeExGst)} &nbsp;|&nbsp; GST: {money(landscapeExGst * 0.1)} &nbsp;|&nbsp; Total: {money(landscapeExGst * 1.1)}
-            </p>
-          </div>
-          <div className="flex items-baseline justify-between border-b border-gray-100 pb-3">
-            <div className="flex items-center gap-3">
-              <p className="text-sm font-light text-gray-900">Pool &amp; Spa</p>
-              <label className="print:hidden text-2xs text-gray-400 flex items-center gap-1">
-                ex GST $
-                <input
-                  type="number"
-                  value={opc.poolSubtotalExGst ?? ''}
-                  onChange={e => mutate({ poolSubtotalExGst: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
-                  placeholder="from Lume quote"
-                  className="w-28 px-1.5 py-0.5 border border-gray-200 rounded-none outline-none focus:border-gray-400 text-xs tabular-nums"
+          {rows.map(row => {
+            const price = priceOf(row)
+            const others = rows.filter(r => r.id !== row.id)
+            return (
+              <div key={row.id} className="opc-avoid-break border-b border-gray-200 py-6 grid grid-cols-[190px_1fr_110px] gap-6">
+                <div>
+                  <input
+                    value={row.title}
+                    onChange={e => setRow(row.id, { title: e.target.value })}
+                    className="print:hidden w-full text-sm font-normal bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none"
+                    style={{ color: HEADING }}
+                  />
+                  <p className="hidden print:block text-sm font-normal" style={{ color: HEADING }}>{row.title}</p>
+                  {row.categories.length > 1 && (
+                    <div className="print:hidden mt-1.5 flex flex-wrap gap-1">
+                      {row.categories.map(c => (
+                        <span key={c} className="inline-flex items-center gap-1 text-2xs text-gray-500 bg-gray-100 px-1.5 py-0.5">
+                          {c}
+                          <button onClick={() => ejectCategory(row.id, c)} title="Split back to its own row" className="text-gray-400 hover:text-red-400">
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="print:hidden mt-2 flex flex-col gap-1.5 items-start">
+                    {others.length > 0 && (
+                      <select
+                        value=""
+                        onChange={e => { if (e.target.value) mergeInto(row.id, e.target.value) }}
+                        className="text-2xs text-gray-400 bg-transparent border border-gray-200 rounded-none outline-none px-1 py-0.5 max-w-[180px]"
+                      >
+                        <option value="">Merge into…</option>
+                        {others.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}
+                      </select>
+                    )}
+                    <SnippetMenu
+                      snippets={snippets}
+                      currentText={row.scope}
+                      onInsert={text => setRow(row.id, { scope: row.scope.trim() ? `${row.scope}\n${text}` : text })}
+                      onSaveCurrent={() => saveSnippet(row)}
+                      onDelete={removeSnippet}
+                    />
+                  </div>
+                </div>
+                <ProseField
+                  value={row.scope}
+                  onChange={v => setRow(row.id, { scope: v })}
+                  placeholder="Client-facing scope of works…"
+                  className="text-sm font-light leading-relaxed"
                 />
-              </label>
-            </div>
-            <p className="text-xs font-light text-gray-600 tabular-nums">
-              {hasPoolFigure
-                ? <>Subtotal ex. GST: {money(poolExGst)} &nbsp;|&nbsp; GST: {money(poolExGst * 0.1)} &nbsp;|&nbsp; Total: {money(poolExGst * 1.1)}</>
-                : <span className="print:hidden text-gray-400">enter the Lume figure to include</span>}
-            </p>
-          </div>
-          {hasPoolFigure && (
-            <div className="flex items-baseline justify-between border-t-2 border-gray-900 pt-3">
-              <p className="text-sm font-normal text-gray-900">Combined Project Total</p>
-              <p className="text-xs font-normal text-gray-900 tabular-nums">
-                Ex. GST: {money(combinedExGst)} &nbsp;|&nbsp; GST: {money(combinedExGst * 0.1)} &nbsp;|&nbsp; Total inc. GST: {money(combinedExGst * 1.1)}
-              </p>
-            </div>
-          )}
-          {!hasPoolFigure && (
-            <div className="flex items-baseline justify-between border-t-2 border-gray-900 pt-3">
-              <p className="text-sm font-normal text-gray-900">Total inc. GST</p>
-              <p className="text-sm font-normal text-gray-900 tabular-nums">{money(landscapeExGst * 1.1)}</p>
-            </div>
-          )}
+                <p className="text-right text-base font-light tabular-nums whitespace-nowrap" style={{ color: price > 0 ? GREEN : MUTED }}>
+                  {price > 0 ? money(price) : ''}
+                </p>
+              </div>
+            )
+          })}
         </div>
 
-        {/* Exclusions & Key Notes */}
-        <h2 className="text-lg font-light tracking-wide text-gray-900 mb-4">Exclusions &amp; Key Notes</h2>
-        <div className="mb-8 bg-gray-50 px-6 py-5 break-inside-avoid">
-          <p className="text-xs font-normal tracking-widest uppercase text-gray-400 mb-4">
+        {/* ── PROJECT COST SUMMARY ── */}
+        <div className="mb-16 opc-avoid-break">
+          <p className="text-xs tracking-[0.25em] uppercase mb-2" style={{ color: GREEN }}>02 — Project Cost Summary</p>
+          <div className="h-px w-16 mb-8" style={{ backgroundColor: GREEN }} />
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-6 py-4" style={{ backgroundColor: BG_WARM }}>
+              <p className="text-base font-light" style={{ color: HEADING }}>Landscape Construction</p>
+              <p className="text-sm font-light tabular-nums" style={{ color: BODY }}>
+                Subtotal ex. GST: <span className="font-normal">{money(landscapeExGst)}</span>
+                <span className="mx-2 text-gray-300">|</span>GST: {money(landscapeExGst * 0.1)}
+                <span className="mx-2 text-gray-300">|</span>Total: <span className="font-normal">{money(landscapeExGst * 1.1)}</span>
+              </p>
+            </div>
+            <div className="flex items-center justify-between px-6 py-4" style={{ backgroundColor: BG_WARM }}>
+              <div className="flex items-center gap-3">
+                <p className="text-base font-light" style={{ color: HEADING }}>Pool &amp; Spa</p>
+                <label className="print:hidden text-2xs text-gray-400 flex items-center gap-1">
+                  ex GST $
+                  <input
+                    type="number"
+                    value={opc.poolSubtotalExGst ?? ''}
+                    onChange={e => mutate({ poolSubtotalExGst: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
+                    placeholder="from Lume quote"
+                    className="w-28 px-1.5 py-0.5 border border-gray-300 bg-white rounded-none outline-none focus:border-gray-400 text-xs tabular-nums"
+                  />
+                </label>
+              </div>
+              <p className="text-sm font-light tabular-nums" style={{ color: BODY }}>
+                {hasPoolFigure
+                  ? <>Subtotal ex. GST: <span className="font-normal">{money(poolExGst)}</span>
+                      <span className="mx-2 text-gray-300">|</span>GST: {money(poolExGst * 0.1)}
+                      <span className="mx-2 text-gray-300">|</span>Total: <span className="font-normal">{money(poolExGst * 1.1)}</span></>
+                  : <span className="print:hidden text-gray-400">enter the Lume figure to include</span>}
+              </p>
+            </div>
+            <div className="flex items-center justify-between px-6 py-5" style={{ backgroundColor: GREEN }}>
+              <p className="text-base font-normal text-white">{hasPoolFigure ? 'Combined Project Total' : 'Project Total'}</p>
+              <p className="text-sm font-light text-white/90 tabular-nums">
+                Ex. GST: <span className="font-normal text-white">{money(combinedExGst)}</span>
+                <span className="mx-2 text-white/30">|</span>GST: {money(combinedExGst * 0.1)}
+                <span className="mx-2 text-white/30">|</span>Total inc. GST: <span className="font-semibold text-white">{money(combinedExGst * 1.1)}</span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── EXCLUSIONS & KEY NOTES ── */}
+        <div className="mb-14 opc-avoid-break">
+          <p className="text-xs tracking-[0.25em] uppercase mb-2" style={{ color: GREEN }}>03 — Exclusions &amp; Key Notes</p>
+          <div className="h-px w-16 mb-8" style={{ backgroundColor: GREEN }} />
+
+          <p className="text-xs font-normal tracking-widest uppercase mb-4" style={{ color: MUTED }}>
             {hasPoolFigure ? 'Excluded from Both Quotes' : 'Excluded'}
           </p>
-          <div className="grid grid-cols-3 gap-6 print:grid-cols-3">
+          <div className="grid grid-cols-3 gap-4 mb-6">
             {exclusions.map((ex, i) => (
-              <div key={i} className="relative group">
+              <div key={i} className="relative group px-5 py-4" style={{ backgroundColor: BG_WARM }}>
                 <button
                   onClick={() => mutate({ exclusions: exclusions.filter((_, j) => j !== i) })}
-                  title="Remove" className="print:hidden absolute -top-1 -right-1 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                  title="Remove" className="print:hidden absolute top-2 right-2 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
                   <X className="w-3 h-3" />
                 </button>
                 <input
                   value={ex.title}
                   onChange={e => mutate({ exclusions: exclusions.map((x, j) => j === i ? { ...x, title: e.target.value } : x) })}
-                  className="print:hidden w-full text-xs font-normal text-gray-800 bg-transparent border border-transparent hover:border-gray-200 focus:border-gray-400 rounded-none outline-none mb-1"
+                  className="print:hidden w-full text-sm font-normal bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none mb-1.5"
+                  style={{ color: HEADING }}
                 />
-                <p className="hidden print:block text-xs font-normal text-gray-800 mb-1">{ex.title}</p>
+                <p className="hidden print:block text-sm font-normal mb-1.5" style={{ color: HEADING }}>{ex.title}</p>
                 <ProseField
                   value={ex.blurb}
                   onChange={v => mutate({ exclusions: exclusions.map((x, j) => j === i ? { ...x, blurb: v } : x) })}
                   placeholder="Why / what exactly is excluded…"
-                  className="text-2xs font-light text-gray-500 leading-relaxed"
+                  className="text-xs font-light leading-relaxed"
                 />
               </div>
             ))}
           </div>
           <button
             onClick={() => mutate({ exclusions: [...exclusions, { title: 'New exclusion', blurb: '' }] })}
-            className="print:hidden mt-3 flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 transition-colors">
+            className="print:hidden mb-8 flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 transition-colors">
             <Plus className="w-3 h-3" /> Add exclusion
           </button>
-        </div>
 
-        {/* Excluded items list */}
-        <div className="mb-10 bg-gray-50 px-6 py-5 break-inside-avoid">
-          <p className="text-xs font-normal tracking-widest uppercase text-gray-400 mb-3">Items</p>
-          <ul className="space-y-1.5">
-            {excludedItems.map((item, i) => (
-              <li key={i} className="flex items-center gap-2 text-xs font-light text-gray-500">
-                <span>·</span>
-                <input
-                  value={item}
-                  onChange={e => mutate({ excludedItems: excludedItems.map((x, j) => j === i ? e.target.value : x) })}
-                  className="print:hidden flex-1 bg-transparent border border-transparent hover:border-gray-200 focus:border-gray-400 rounded-none outline-none"
-                />
-                <span className="hidden print:inline">{item}</span>
-                <button
-                  onClick={() => mutate({ excludedItems: excludedItems.filter((_, j) => j !== i) })}
-                  className="print:hidden text-gray-300 hover:text-red-400"><X className="w-3 h-3" /></button>
-              </li>
-            ))}
-          </ul>
-          <button
-            onClick={() => mutate({ excludedItems: [...excludedItems, ''] })}
-            className="print:hidden mt-3 flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 transition-colors">
-            <Plus className="w-3 h-3" /> Add item
-          </button>
+          <p className="text-xs font-normal tracking-widest uppercase mb-4" style={{ color: MUTED }}>Items Not Included</p>
+          <div className="px-6 py-5" style={{ backgroundColor: BG_WARM }}>
+            <ul className="grid grid-cols-2 gap-x-8 gap-y-1.5">
+              {excludedItems.map((item, i) => (
+                <li key={i} className="flex items-center gap-2 text-sm font-light" style={{ color: BODY }}>
+                  <span style={{ color: GREEN }}>·</span>
+                  <input
+                    value={item}
+                    onChange={e => mutate({ excludedItems: excludedItems.map((x, j) => j === i ? e.target.value : x) })}
+                    className="print:hidden flex-1 bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none"
+                  />
+                  <span className="hidden print:inline">{item}</span>
+                  <button
+                    onClick={() => mutate({ excludedItems: excludedItems.filter((_, j) => j !== i) })}
+                    className="print:hidden text-gray-300 hover:text-red-400"><X className="w-3 h-3" /></button>
+                </li>
+              ))}
+            </ul>
+            <button
+              onClick={() => mutate({ excludedItems: [...excludedItems, ''] })}
+              className="print:hidden mt-3 flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 transition-colors">
+              <Plus className="w-3 h-3" /> Add item
+            </button>
+          </div>
         </div>
 
         {/* Footnote */}
-        <div className="mb-10 border-t border-gray-100 pt-6">
-          <p className="text-xs font-light text-gray-400 italic">
+        <div className="border-t border-gray-200 pt-6 pb-4">
+          <p className="text-xs font-light italic" style={{ color: MUTED }}>
             This Opinion of Probable Cost is preliminary pricing prepared from the design documentation
             available at the date above. It is not a fixed-price quotation; a formal quote will follow
             once the design and scope are finalised.
+          </p>
+          <p className="text-2xs font-light mt-3" style={{ color: MUTED }}>
+            Formation Landscapes Pty Ltd · Melbourne, Victoria
           </p>
         </div>
       </div>

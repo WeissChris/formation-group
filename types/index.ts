@@ -210,14 +210,32 @@ export interface Estimate {
   opc?: EstimateOpc           // Opinion of Probable Cost document data (see /estimates/[id]/opc)
 }
 
+/** One row of the OPC table. A row can merge several estimate categories (all the in-situ
+ *  concrete scopes as one line): price = the members' combined contract value, rounded. */
+export interface OpcRow {
+  id: string
+  title: string           // client-facing row name (defaults to the category name)
+  categories: string[]    // estimate categories priced into this row
+  scope: string           // client-facing "Scope of Works" prose
+}
+
 /** Everything the OPC print page stores beyond the estimate's own numbers. */
 export interface EstimateOpc {
   date?: string                       // document date (ISO); defaults to the day it's first opened
   intro?: string                      // intro paragraph (defaults by project type)
-  scopes?: Record<string, string>     // category -> client-facing "Scope of Works" prose
+  rows?: OpcRow[]                     // the table layout (merges/titles/prose); reconciled to the estimate's categories on load
+  scopes?: Record<string, string>     // category -> scope prose SEED (from templates); rows own the text once created
   poolSubtotalExGst?: number | null   // manual Pool & Spa subtotal ex GST (Lume quote is the source)
   exclusions?: { title: string; blurb: string }[]  // "Excluded from Both Quotes" blocks
   excludedItems?: string[]            // per-job excluded items list (front fence, firepit, ...)
+}
+
+/** Reusable OPC scope-of-works prose block (the snippet library). */
+export interface OpcSnippet {
+  id: string
+  title: string
+  text: string
+  updatedAt?: string   // stamped on save — drives cross-device newest-wins (liveSync)
 }
 
 // ── ESTIMATE TEMPLATES ────────────────────────────────────────────────────────

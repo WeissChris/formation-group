@@ -1,4 +1,4 @@
-﻿import type { Project, WeeklyRevenue, DesignProposal, Estimate, GanttEntry, WeeklyActual, ProgressPaymentStage, DesignProject, ProgressClaim, TakeoffData, TakeoffTemplate, ProposalInvoiceStage, SubcontractorPackage, Supervisor, EstimateTemplate } from '@/types'
+﻿import type { Project, WeeklyRevenue, DesignProposal, Estimate, GanttEntry, WeeklyActual, ProgressPaymentStage, DesignProject, ProgressClaim, TakeoffData, TakeoffTemplate, ProposalInvoiceStage, SubcontractorPackage, Supervisor, EstimateTemplate, OpcSnippet } from '@/types'
 import { notify } from './broadcast'
 import { getProposalPhases, phasesTotal } from './proposalPhases'
 import { generateId } from './utils'
@@ -755,4 +755,30 @@ export function deleteEstimateTemplate(id: string): void {
   localStorage.setItem('fg_estimate_templates', JSON.stringify(all))
   backupToIndexedDB('fg_estimate_templates', all)
   notify({ key: 'estimate_templates' })
+}
+
+// ── OPC scope snippets (reusable Scope of Works prose for the OPC document) ───
+export function loadOpcSnippets(): OpcSnippet[] {
+  if (typeof window === 'undefined') return []
+  try { return JSON.parse(localStorage.getItem('fg_opc_snippets') || '[]') } catch { return [] }
+}
+
+export function saveOpcSnippet(snippet: OpcSnippet): OpcSnippet {
+  // Stamp updatedAt on every save — drives cross-device newest-wins (see liveSync).
+  const stamped = { ...snippet, updatedAt: new Date().toISOString() }
+  const all = loadOpcSnippets()
+  const idx = all.findIndex(s => s.id === stamped.id)
+  if (idx >= 0) all[idx] = stamped
+  else all.push(stamped)
+  localStorage.setItem('fg_opc_snippets', JSON.stringify(all))
+  backupToIndexedDB('fg_opc_snippets', all)
+  notify({ key: 'opc_snippets' })
+  return stamped
+}
+
+export function deleteOpcSnippet(id: string): void {
+  const all = loadOpcSnippets().filter(s => s.id !== id)
+  localStorage.setItem('fg_opc_snippets', JSON.stringify(all))
+  backupToIndexedDB('fg_opc_snippets', all)
+  notify({ key: 'opc_snippets' })
 }

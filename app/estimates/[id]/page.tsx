@@ -1133,7 +1133,15 @@ export default function EstimateBuilderPage() {
       defaultMarkupSubcontractor: estimate.defaultMarkupSubcontractor,
       ...(estimate.projectMarkups ? { projectMarkups: estimate.projectMarkups } : {}),
       ...(estimate.categoryNotes ? { categoryNotes: estimate.categoryNotes } : {}),
-      ...(estimate.opc?.scopes && Object.keys(estimate.opc.scopes).length > 0 ? { opcScopes: estimate.opc.scopes } : {}),
+      // OPC scope prose travels with the template: single-category rows keyed by their category
+      // (merged rows are job-specific layouts and stay behind), plus any un-rowed seeds.
+      ...(() => {
+        const opcScopes: Record<string, string> = { ...(estimate.opc?.scopes || {}) }
+        for (const r of estimate.opc?.rows ?? []) {
+          if (r.categories.length === 1 && r.scope.trim()) opcScopes[r.categories[0]] = r.scope
+        }
+        return Object.keys(opcScopes).length > 0 ? { opcScopes } : {}
+      })(),
       lineItems: estimate.lineItems.map(li => {
         const { id: _id, estimateId: _eid, quoteFileName: _qn, quoteFileData: _qd, quoteFilePath: _qp, ...rest } = li
         return rest

@@ -20,7 +20,7 @@ import { supabase, isSupabaseConfigured } from './supabase'
 import {
   getEstimates, getProjects, getProposals, getRevenue, getAllGanttEntries,
   getActuals, getPaymentStages, getProgressClaims, getSubcontractors, getDesignProjects, getSupervisors,
-  getLibraryItems, getEstimateTemplates,
+  getLibraryItems, getEstimateTemplates, getOpcSnippets,
 } from './storageAsync'
 import { notify, notifyThisTab, type StorageEvent } from './broadcast'
 import { mergeKeyed, type Keyed } from './mergeKeyed'
@@ -70,6 +70,7 @@ const DATASETS: Dataset[] = [
   // Estimate template library: saved line items (custom item library) + full-estimate templates.
   { table: 'fg_library_items', lsKey: 'fg_library', bcKey: 'library', getRemote: getLibraryItems as () => Promise<Keyed[]> },
   { table: 'fg_estimate_templates', lsKey: 'fg_estimate_templates', bcKey: 'estimate_templates', getRemote: getEstimateTemplates as () => Promise<Keyed[]> },
+  { table: 'fg_opc_snippets', lsKey: 'fg_opc_snippets', bcKey: 'opc_snippets', getRemote: getOpcSnippets as () => Promise<Keyed[]> },
 ]
 
 function readLocal(lsKey: string): Keyed[] {

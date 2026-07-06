@@ -36,6 +36,9 @@ import {
   loadEstimateTemplates,
   saveEstimateTemplate,
   deleteEstimateTemplate,
+  loadOpcSnippets,
+  saveOpcSnippet,
+  deleteOpcSnippet,
 } from './storage'
 import { loadCustomLibrary, saveCustomLibraryItem, deleteCustomLibraryItem } from './itemLibrary'
 import type {
@@ -53,6 +56,7 @@ import type {
   Supervisor,
   LibraryItem,
   EstimateTemplate,
+  OpcSnippet,
 } from '@/types'
 
 // Gantt milestones are defined structurally in the gantt/programme pages (not in @/types). The sync
@@ -666,6 +670,34 @@ export async function deleteLibraryItemAsync(id: string): Promise<void> {
   if (isSupabaseConfigured() && supabase) {
     const { error } = await supabase.from('fg_library_items').delete().eq('id', id)
     if (error) console.error('[Formation] library item delete (Supabase) error:', error.message)
+  }
+}
+
+export async function getOpcSnippets(): Promise<OpcSnippet[]> {
+  if (isSupabaseConfigured() && supabase) {
+    const { data } = await supabase.from('fg_opc_snippets').select('*')
+    if (data) return data.map(r => r.data as OpcSnippet)
+  }
+  return []
+}
+
+export async function upsertOpcSnippet(snippet: OpcSnippet): Promise<void> {
+  const fresh = saveOpcSnippet(snippet) // localStorage (stamps updatedAt) + notify
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_opc_snippets').upsert({
+      id: fresh.id,
+      data: fresh,
+      updated_at: fresh.updatedAt ?? new Date().toISOString(),
+    })
+    if (error) console.error('[Formation] OPC snippet upsert (Supabase) error:', error.message)
+  }
+}
+
+export async function deleteOpcSnippetAsync(id: string): Promise<void> {
+  deleteOpcSnippet(id)
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_opc_snippets').delete().eq('id', id)
+    if (error) console.error('[Formation] OPC snippet delete (Supabase) error:', error.message)
   }
 }
 
