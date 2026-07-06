@@ -15,7 +15,7 @@ import { upsertLibraryItem, deleteLibraryItemAsync, upsertEstimateTemplate } fro
 import { getXeroAccounts, loadCachedXeroAccounts, type XeroAccountOption } from '@/lib/xero'
 import { loadXccDefaults, recordXccDefault, resolveXccDefault } from '@/lib/xcc'
 import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData, EstimateTemplate } from '@/types'
-import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch, Copy, Eye, EyeOff, Check, Star } from 'lucide-react'
+import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, ChevronRight, GitBranch, Copy, Eye, EyeOff, Check, Star, GripVertical } from 'lucide-react'
 import TakeoffTab from '@/components/TakeoffTab'
 
 const UOM_OPTIONS = ['m²', 'hour', 'm³', 'lm', 'EA', 'Allowance', 'Day', 'week', 'sheet', 'each']
@@ -1297,6 +1297,57 @@ export default function EstimateBuilderPage() {
     })
   }
 
+  // Buildxact-style category list: collapse to just the header line (name, totals, actions).
+  // Persisted per estimate so the working view survives reloads.
+  const [collapsedCats, setCollapsedCats] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`fg_estCollapsed_${id}`)
+      if (raw) setCollapsedCats(new Set(JSON.parse(raw)))
+    } catch { /* default: all expanded */ }
+  }, [id])
+  const persistCollapsed = (next: Set<string>) => {
+    setCollapsedCats(next)
+    try { localStorage.setItem(`fg_estCollapsed_${id}`, JSON.stringify(Array.from(next))) } catch { /* ignore */ }
+  }
+  const toggleCollapse = (category: string) => {
+    const next = new Set(collapsedCats)
+    if (next.has(category)) next.delete(category)
+    else next.add(category)
+    persistCollapsed(next)
+  }
+
+  // Delete a whole category (all its line items + its notes). Confirmed - it's not reversible.
+  const deleteCategory = (category: string) => {
+    if (!estimate) return
+    const count = estimate.lineItems.filter(i => i.category === category).length
+    if (!window.confirm(`Delete "${category}" and its ${count} line item${count === 1 ? '' : 's'}? This can't be undone.`)) return
+    setEstimate(prev => {
+      if (!prev) return prev
+      const notes = { ...(prev.categoryNotes || {}) }
+      delete notes[category]
+      return { ...prev, lineItems: prev.lineItems.filter(i => i.category !== category), categoryNotes: notes, updatedAt: new Date().toISOString() }
+    })
+    setHasUnsavedChanges(true)
+  }
+
+  // Drag-and-drop category reorder (grab handle on the header row): drop `from` onto `to` -> `from`
+  // lands before it. Category order IS the lineItems array order, so reorder = rebuild the array
+  // with each category's items contiguous in the new order.
+  const dragCatRef = useRef<string | null>(null)
+  const reorderCategoryBefore = (from: string, to: string) => {
+    if (!from || from === to) return
+    setEstimate(prev => {
+      if (!prev) return prev
+      const cats = Array.from(new Set(prev.lineItems.map(i => i.category)))
+      const order = cats.filter(c => c !== from)
+      const toIdx = order.indexOf(to)
+      order.splice(toIdx < 0 ? order.length : toIdx, 0, from)
+      return { ...prev, lineItems: order.flatMap(c => prev.lineItems.filter(i => i.category === c)), updatedAt: new Date().toISOString() }
+    })
+    setHasUnsavedChanges(true)
+  }
+
   const moveCategoryUp = (category: string) => {
     if (!estimate) return
     const cats = Array.from(new Set(estimate.lineItems.map(i => i.category)))
@@ -1511,6 +1562,17 @@ export default function EstimateBuilderPage() {
           >
             <Plus className="w-3 h-3" /> Blank Row
           </button>
+          {categories.length > 0 && (
+            <button
+              onClick={() => persistCollapsed(collapsedCats.size < categories.length ? new Set(categories) : new Set())}
+              title="Buildxact-style overview: every category collapsed to its header line"
+              className="flex items-center gap-2 px-3 py-1.5 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading transition-colors"
+            >
+              {collapsedCats.size < categories.length
+                ? <><ChevronRight className="w-3 h-3" /> Collapse All</>
+                : <><ChevronDown className="w-3 h-3" /> Expand All</>}
+            </button>
+          )}
           <button
             onClick={handleSave}
             title="Autosaves automatically — click to save now"
@@ -1766,25 +1828,37 @@ export default function EstimateBuilderPage() {
                   const catTotal = catActive.reduce((s, i) => s + i.total, 0)
                   const catRevenue = catActive.reduce((s, i) => s + readLineItemRevenue(i), 0)
                   const catIdx = categories.indexOf(category)
+                  const isCollapsed = collapsedCats.has(category)
 
-                  return [
-                    // Category header row
+                  const headerRow = (
                     <CategoryHeaderRow
                       key={`cat-${category}`}
                       category={category}
+                      itemCount={catItems.length}
                       total={catTotal}
                       revenue={catRevenue}
                       inclMarkups={itemsContractValue(catActive, contract)}
                       hidden={catHidden}
+                      collapsed={isCollapsed}
                       isFirst={catIdx === 0}
                       isLast={catIdx === categories.length - 1}
+                      onCollapse={() => toggleCollapse(category)}
                       onRename={(newName) => renameCategory(category, newName)}
                       onMoveUp={() => moveCategoryUp(category)}
                       onMoveDown={() => moveCategoryDown(category)}
                       onAddRow={() => addBlankRow(category)}
                       onDuplicate={() => duplicateCategory(category)}
+                      onDelete={() => deleteCategory(category)}
                       onToggle={() => toggleCategory(category)}
-                    />,
+                      onDragStart={() => { dragCatRef.current = category }}
+                      onDropOn={() => { reorderCategoryBefore(dragCatRef.current || '', category); dragCatRef.current = null }}
+                    />
+                  )
+                  // Collapsed: only the header line (Buildxact-style) - name, totals, actions.
+                  if (isCollapsed) return [headerRow]
+
+                  return [
+                    headerRow,
                     // Internal notes row
                     <tr key={`notes-${category}`}>
                       <td colSpan={12} className="px-2 pb-1.5">
@@ -1974,59 +2048,100 @@ export default function EstimateBuilderPage() {
 
 function CategoryHeaderRow({
   category,
+  itemCount,
   total,
   revenue,
   inclMarkups,
   hidden,
+  collapsed,
   isFirst,
   isLast,
+  onCollapse,
   onRename,
   onMoveUp,
   onMoveDown,
   onAddRow,
   onDuplicate,
+  onDelete,
   onToggle,
+  onDragStart,
+  onDropOn,
 }: {
   category: string
+  itemCount: number
   total: number
   revenue: number
   inclMarkups: number
   hidden: boolean
+  collapsed: boolean
   isFirst: boolean
   isLast: boolean
+  onCollapse: () => void
   onRename: (newName: string) => void
   onMoveUp: () => void
   onMoveDown: () => void
   onAddRow: () => void
   onDuplicate: () => void
+  onDelete: () => void
   onToggle: () => void
+  onDragStart: () => void
+  onDropOn: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(category)
+  const [dragOver, setDragOver] = useState(false)
 
   return (
-    <tr className={`bg-fg-card/30 border-b border-fg-border border-t border-t-fg-border group/cat ${hidden ? 'opacity-50' : ''}`}>
+    <tr
+      className={`bg-fg-card/30 border-b border-fg-border group/cat ${hidden ? 'opacity-50' : ''} ${
+        dragOver ? 'border-t-2 border-t-fg-heading' : 'border-t border-t-fg-border'}`}
+      onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={e => { e.preventDefault(); setDragOver(false); onDropOn() }}
+    >
       <td colSpan={8} className="py-2 px-2">
-        {editing ? (
-          <input
-            autoFocus
-            value={name}
-            onChange={e => setName(e.target.value)}
-            onBlur={() => { onRename(name); setEditing(false) }}
-            onKeyDown={e => {
-              if (e.key === 'Enter') { onRename(name); setEditing(false) }
-              if (e.key === 'Escape') { setName(category); setEditing(false) }
-            }}
-            className="bg-transparent text-xs font-light text-fg-heading border-b border-fg-heading outline-none tracking-wide uppercase"
-          />
-        ) : (
-          <button
-            onClick={() => setEditing(true)}
-            className="text-2xs font-medium tracking-wide uppercase text-[#5A5550] hover:text-fg-heading transition-colors"
+        <div className="flex items-center gap-1.5">
+          {/* Grab handle: drag a category and drop it onto another to land before it */}
+          <span
+            draggable
+            onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; onDragStart() }}
+            title="Drag to reorder categories"
+            className="cursor-grab active:cursor-grabbing text-fg-muted/40 hover:text-fg-heading transition-colors -ml-1"
           >
-            {category}
+            <GripVertical className="w-3.5 h-3.5" />
+          </span>
+          <button
+            onClick={onCollapse}
+            title={collapsed ? 'Expand category' : 'Collapse category (header line only)'}
+            className="text-fg-muted/60 hover:text-fg-heading transition-colors"
+          >
+            {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
-        )}
+          {editing ? (
+            <input
+              autoFocus
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onBlur={() => { onRename(name); setEditing(false) }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { onRename(name); setEditing(false) }
+                if (e.key === 'Escape') { setName(category); setEditing(false) }
+              }}
+              className="bg-transparent text-xs font-light text-fg-heading border-b border-fg-heading outline-none tracking-wide uppercase"
+            />
+          ) : (
+            <button
+              onClick={() => setEditing(true)}
+              title="Rename category"
+              className="text-2xs font-medium tracking-wide uppercase text-[#5A5550] hover:text-fg-heading transition-colors"
+            >
+              {category}
+            </button>
+          )}
+          {collapsed && (
+            <span className="text-2xs text-fg-muted/60 tabular-nums">· {itemCount} item{itemCount === 1 ? '' : 's'}</span>
+          )}
+        </div>
       </td>
       <td className="py-2 px-1 text-right text-2xs text-fg-muted tabular-nums">
         {fmtCurrency(total)}
@@ -2058,6 +2173,9 @@ function CategoryHeaderRow({
             </button>
             <button onClick={onAddRow} title="Add row" className="p-0.5 text-fg-muted hover:text-fg-heading transition-colors">
               <Plus className="w-3 h-3" />
+            </button>
+            <button onClick={onDelete} title="Delete category (all its line items)" className="p-0.5 text-fg-muted hover:text-red-500 transition-colors">
+              <Trash2 className="w-3 h-3" />
             </button>
           </div>
         </div>
