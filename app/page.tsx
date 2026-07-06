@@ -529,7 +529,7 @@ export default function DashboardPage() {
   })
 
   return (
-    <div className="max-w-[1200px] mx-auto px-6 lg:px-10 py-12">
+    <div className="w-full px-6 lg:px-12 2xl:px-16 py-12">
 
       {/* Page header */}
       <div className="mb-10">

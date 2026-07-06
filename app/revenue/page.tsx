@@ -509,7 +509,7 @@ export default function RevenuePage() {
   const hasHistory = currentQIdx > 0
 
   return (
-    <div className="max-w-[1200px] mx-auto px-6 lg:px-10 py-12">
+    <div className="w-full px-6 lg:px-12 2xl:px-16 py-12">
 
       {/* Page header */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-10">
@@ -683,8 +683,10 @@ export default function RevenuePage() {
               {/* Quarter row: monthly blocks + summary */}
               <div className="flex gap-5 items-start">
 
-                {/* Monthly blocks stacked */}
-                <div className="flex-1 space-y-4 min-w-0">
+                {/* Monthly blocks: the quarter's three months sit side by side on wide desktops so
+                    the whole quarter reads across the screen; stacked below ~1700px (each month
+                    table needs room for its 4-5 week columns). */}
+                <div className="flex-1 grid grid-cols-1 min-[1700px]:grid-cols-3 gap-4 min-w-0 items-start">
                   {q.months.map((m, mi) => {
                     const y = q.years[mi]
                     const mFridays = getFridaysInMonth(y, m)
@@ -735,9 +737,10 @@ export default function RevenuePage() {
                         ) : (
                           <table className="w-full text-left border-collapse table-fixed">
                             <colgroup>
-                              <col className="w-[180px]" />
+                              {/* Slimmer fixed columns when the three months sit side by side */}
+                              <col className="w-[180px] min-[1700px]:w-[120px]" />
                               {mFridays.map((_, fi) => <col key={fi} />)}
-                              <col className="w-[100px]" />
+                              <col className="w-[100px] min-[1700px]:w-[78px]" />
                             </colgroup>
                             {/* Column headers */}
                             <thead>
