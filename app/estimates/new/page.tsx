@@ -233,6 +233,8 @@ function NewEstimateForm() {
             { id: generateId(), description: 'Overhead', percent: 6 },
           ]),
       ...(importedItems.length === 0 && selectedTemplate?.categoryNotes ? { categoryNotes: selectedTemplate.categoryNotes } : {}),
+      // The template's OPC scope prose seeds the Opinion of Probable Cost page for this estimate.
+      ...(importedItems.length === 0 && selectedTemplate?.opcScopes ? { opc: { scopes: selectedTemplate.opcScopes } } : {}),
       notes: form.notes,
       ...(fromProposalId ? { proposalId: fromProposalId } : {}),
       ...(projectType ? { projectType: projectType as 'landscape_only' | 'landscape_and_pool' | 'pool_only' } : {}),

@@ -443,6 +443,7 @@ export async function upsertEstimate(estimate: Estimate): Promise<void> {
       declined_at: fresh.declinedAt ?? null,
       declined_by_name: fresh.declinedByName ?? null,
       archived: fresh.archived ?? false,
+      opc: fresh.opc ?? null,
       notes: fresh.notes,
       updated_at: fresh.updatedAt ?? new Date().toISOString(),
     })
@@ -961,6 +962,7 @@ export function mapEstimate(row: Record<string, unknown>): Estimate {
     declinedAt: (row.declined_at as string | null) || undefined,
     declinedByName: (row.declined_by_name as string | null) || undefined,
     archived: (row.archived as boolean) || undefined,
+    opc: (row.opc as Estimate['opc']) || undefined,
     notes: row.notes as string | undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,

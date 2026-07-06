@@ -1133,6 +1133,7 @@ export default function EstimateBuilderPage() {
       defaultMarkupSubcontractor: estimate.defaultMarkupSubcontractor,
       ...(estimate.projectMarkups ? { projectMarkups: estimate.projectMarkups } : {}),
       ...(estimate.categoryNotes ? { categoryNotes: estimate.categoryNotes } : {}),
+      ...(estimate.opc?.scopes && Object.keys(estimate.opc.scopes).length > 0 ? { opcScopes: estimate.opc.scopes } : {}),
       lineItems: estimate.lineItems.map(li => {
         const { id: _id, estimateId: _eid, quoteFileName: _qn, quoteFileData: _qd, quoteFilePath: _qp, ...rest } = li
         return rest
@@ -1590,6 +1591,16 @@ export default function EstimateBuilderPage() {
           >
             <ExternalLink className="w-3 h-3" /> {estimate.parentEstimateId ? 'Send' : 'Quote'}
           </Link>
+
+          {!estimate.parentEstimateId && (
+            <Link
+              href={`/estimates/${estimate.id}/opc`}
+              title="Opinion of Probable Cost - preliminary pricing document"
+              className="flex items-center gap-2 px-3 py-1.5 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading transition-colors"
+            >
+              <ExternalLink className="w-3 h-3" /> OPC
+            </Link>
+          )}
 
           {estimate.lineItems.length > 0 && (
             <Link

@@ -207,6 +207,17 @@ export interface Estimate {
   declinedAt?: string
   declinedByName?: string
   archived?: boolean          // rejected variations are archived (hidden from active lists)
+  opc?: EstimateOpc           // Opinion of Probable Cost document data (see /estimates/[id]/opc)
+}
+
+/** Everything the OPC print page stores beyond the estimate's own numbers. */
+export interface EstimateOpc {
+  date?: string                       // document date (ISO); defaults to the day it's first opened
+  intro?: string                      // intro paragraph (defaults by project type)
+  scopes?: Record<string, string>     // category -> client-facing "Scope of Works" prose
+  poolSubtotalExGst?: number | null   // manual Pool & Spa subtotal ex GST (Lume quote is the source)
+  exclusions?: { title: string; blurb: string }[]  // "Excluded from Both Quotes" blocks
+  excludedItems?: string[]            // per-job excluded items list (front fence, firepit, ...)
 }
 
 // ── ESTIMATE TEMPLATES ────────────────────────────────────────────────────────
@@ -221,6 +232,7 @@ export interface EstimateTemplate {
   defaultMarkupSubcontractor: number
   projectMarkups?: { id: string; description: string; percent: number }[]
   categoryNotes?: Record<string, string>
+  opcScopes?: Record<string, string>  // category -> OPC "Scope of Works" prose, seeded into new estimates
   lineItems: Omit<EstimateLineItem, 'id' | 'estimateId'>[]
   createdAt: string
   updatedAt?: string           // stamped on save — drives cross-device newest-wins (liveSync)
