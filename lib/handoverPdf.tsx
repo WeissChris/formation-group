@@ -5,7 +5,7 @@
 
 import React from 'react'
 import { Document, Page, View, Text, StyleSheet, Font } from '@react-pdf/renderer'
-import { HANDOVER_SECTIONS, handoverProgress, type HandoverChecklist, type HandoverRow } from './handoverChecklist'
+import { HANDOVER_SECTIONS, handoverProgress, blueTapeOf, openBlueTapeCount, type HandoverChecklist, type HandoverRow } from './handoverChecklist'
 
 Font.registerHyphenationCallback(word => [word])
 
@@ -124,10 +124,14 @@ export function HandoverPdf({ checklist, projectName, address, supervisor }: {
                     <Text style={s.itemDetail}>{item.detail}</Text>
                   </View>
                   <View style={s.colNotes}>
-                    {st?.note ? (
+                    {blueTapeOf(st).filter(b => b.text.trim()).length > 0 ? (
                       <View>
                         <Text style={s.blueTapeTag}>Blue tape</Text>
-                        <Text style={s.noteText}>{st.note}</Text>
+                        {blueTapeOf(st).filter(b => b.text.trim()).map(b => (
+                          <Text key={b.id} style={[s.noteText, b.done ? { color: GREEN } : {}]}>
+                            {b.done ? '[x] ' : '[  ] '}{b.text}{b.done ? ' - rectified' : ''}
+                          </Text>
+                        ))}
                       </View>
                     ) : <Text style={[s.noteText, { color: GREY }]}>-</Text>}
                   </View>
@@ -154,7 +158,10 @@ export function HandoverPdf({ checklist, projectName, address, supervisor }: {
         <View style={s.signBox} wrap={false}>
           <Text style={s.signTitle}>Supervisor sign-off</Text>
           <Text style={s.signText}>
-            I confirm this walkthrough has been completed and all &quot;Blue Tape&quot; items will be rectified within 24 hours.
+            I confirm this walkthrough has been completed (all {progress.total} checklist items ticked)
+            and {openBlueTapeCount(data) > 0
+              ? `the ${openBlueTapeCount(data)} outstanding "Blue Tape" defect${openBlueTapeCount(data) === 1 ? '' : 's'} will be rectified within 24 hours.`
+              : 'all "Blue Tape" defects have been rectified.'}
           </Text>
           <View style={s.signRow}>
             <View style={s.signCell}>

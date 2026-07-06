@@ -15,8 +15,9 @@ import {
   type SiteProject, type SitePlan, type SiteMilestone, type SiteSafety, type SiteBaseline, type SiteVariation,
   type SubbieBooking, type HandoverChecklist,
 } from '@/lib/siteData'
-import { HANDOVER_SECTIONS, handoverProgress, type HandoverData, type HandoverRow } from '@/lib/handoverChecklist'
+import { HANDOVER_SECTIONS, handoverProgress, blueTapeOf, openBlueTapeCount, type HandoverData, type HandoverRow, type BlueTapeEntry } from '@/lib/handoverChecklist'
 import { openAttachment } from '@/lib/attachments'
+import { generateId } from '@/lib/utils'
 import { SEVERITY_LABEL } from '@/lib/safetyDocs'
 import type { GanttEntry, WeeklyActual, SubcontractorPackage, Estimate } from '@/types'
 
@@ -1463,8 +1464,8 @@ function Handover({ projectId, supervisor, checklist, refresh }: {
   useEffect(() => {
     if (checklist && !data) {
       setData(checklist.data)
-      // Blue-tape notes already written should be visible without extra taps.
-      setOpenNotes(new Set(Object.entries(checklist.data.items).filter(([, v]) => v.note).map(([k]) => k)))
+      // Blue-tape defects already recorded should be visible without extra taps.
+      setOpenNotes(new Set(Object.entries(checklist.data.items).filter(([, v]) => blueTapeOf(v).length > 0).map(([k]) => k)))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checklist])
@@ -1487,10 +1488,12 @@ function Handover({ projectId, supervisor, checklist, refresh }: {
       setSaveState(ok ? 'saved' : 'error')
     }, 600)
   }
-  const setItem = (key: string, patch: Partial<{ done: boolean; note: string; doneAt?: string; doneBy?: string }>) => {
+  const setItem = (key: string, patch: Partial<{ done: boolean; note: string; blueTape: BlueTapeEntry[]; doneAt?: string; doneBy?: string }>) => {
     const cur = data.items[key] ?? { done: false, note: '' }
     mutate({ ...data, items: { ...data.items, [key]: { ...cur, ...patch } } })
   }
+  // Writing the defect list also clears the legacy free-text note (it's been folded into the list).
+  const setBlueTape = (key: string, entries: BlueTapeEntry[]) => setItem(key, { blueTape: entries, note: '' })
   const toggleItem = (key: string) => {
     const nowDone = !data.items[key]?.done
     setItem(key, nowDone ? { done: true, doneAt: new Date().toISOString(), doneBy: supervisor } : { done: false, doneAt: undefined, doneBy: undefined })
@@ -1503,10 +1506,10 @@ function Handover({ projectId, supervisor, checklist, refresh }: {
 
   const signOff = async (on: boolean) => {
     if (on) {
-      const hp = handoverProgress(data)
-      const outstanding = hp.total - hp.done
-      if (outstanding > 0 && !window.confirm(`${outstanding} item${outstanding === 1 ? ' is' : 's are'} still outstanding. Sign off anyway?`)) return
-      if (!window.confirm('Sign off the walkthrough? This confirms all Blue Tape items will be rectified within 24 hours.')) return
+      const openDefects = openBlueTapeCount(data)
+      if (!window.confirm(openDefects > 0
+        ? `Sign off the walkthrough? ${openDefects} blue tape defect${openDefects === 1 ? ' is' : 's are'} still open - you're confirming they'll be rectified within 24 hours.`
+        : 'Sign off the walkthrough? This confirms the audit is complete.')) return
     }
     setBusy(true)
     // A pending edit and the sign-off must not race - flush it first.
@@ -1579,14 +1582,42 @@ function Handover({ projectId, supervisor, checklist, refresh }: {
                         )}
                       </div>
                       {!noteOpen && (
-                        <button onClick={() => setOpenNotes(s => new Set(s).add(key))}
+                        <button
+                          onClick={() => {
+                            setOpenNotes(s => new Set(s).add(key))
+                            if (blueTapeOf(st).length === 0) setBlueTape(key, [{ id: generateId(), text: '', done: false }])
+                          }}
                           className="text-[10px] text-blue-700 underline shrink-0 mt-1">Blue tape</button>
                       )}
                     </div>
                     {noteOpen && (
-                      <textarea value={st?.note ?? ''} onChange={e => setItem(key, { note: e.target.value })} rows={2}
-                        placeholder="Blue tape issues - what needs fixing"
-                        className="mt-2 w-full border border-blue-200 bg-blue-50/50 rounded-lg px-3 py-2 text-sm" />
+                      <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50/50 px-3 py-2 space-y-1.5">
+                        {blueTapeOf(st).map((b, i) => (
+                          <div key={b.id} className="flex items-center gap-2">
+                            <button
+                              onClick={() => setBlueTape(key, blueTapeOf(st).map((x, j) => j === i
+                                ? { ...x, done: !x.done, doneAt: !x.done ? new Date().toISOString() : undefined }
+                                : x))}
+                              aria-label={b.done ? 'Mark defect outstanding' : 'Mark defect rectified'}
+                              className={`w-5 h-5 rounded border-2 shrink-0 flex items-center justify-center text-xs ${
+                                b.done ? 'bg-blue-700 border-blue-700 text-white' : 'border-blue-300 text-transparent bg-white'}`}>
+                              &#10003;
+                            </button>
+                            <input
+                              value={b.text}
+                              onChange={e => setBlueTape(key, blueTapeOf(st).map((x, j) => j === i ? { ...x, text: e.target.value } : x))}
+                              placeholder="Defect - what needs fixing"
+                              className={`flex-1 min-w-0 bg-white border border-blue-200 rounded-md px-2 py-1.5 text-sm ${b.done ? 'line-through text-fg-muted' : ''}`}
+                            />
+                            <button
+                              onClick={() => setBlueTape(key, blueTapeOf(st).filter((_, j) => j !== i))}
+                              aria-label="Remove defect" className="text-fg-muted/50 hover:text-red-500 shrink-0 px-0.5 text-sm">&times;</button>
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => setBlueTape(key, [...blueTapeOf(st), { id: generateId(), text: '', done: false }])}
+                          className="text-[11px] text-blue-700 underline">+ Add defect</button>
+                      </div>
                     )}
                   </li>
                 )
@@ -1625,10 +1656,18 @@ function Handover({ projectId, supervisor, checklist, refresh }: {
           </button>
         </div>
       ) : (
-        <button onClick={() => signOff(true)} disabled={busy}
-          className="w-full rounded-lg bg-fg-heading text-white py-2.5 text-sm font-medium disabled:opacity-40">
-          {busy ? 'Saving...' : 'Sign off walkthrough'}
-        </button>
+        <div>
+          {/* Hard gate: every checklist item must be ticked before sign-off (also enforced server-side). */}
+          <button onClick={() => signOff(true)} disabled={busy || hp.done < hp.total}
+            className="w-full rounded-lg bg-fg-heading text-white py-2.5 text-sm font-medium disabled:opacity-40">
+            {busy ? 'Saving...' : 'Sign off walkthrough'}
+          </button>
+          {hp.done < hp.total && (
+            <p className="text-xs text-fg-muted text-center mt-2">
+              All {hp.total} checklist items must be ticked before sign-off - {hp.total - hp.done} to go.
+            </p>
+          )}
+        </div>
       )}
     </section>
   )

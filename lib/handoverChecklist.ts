@@ -82,11 +82,27 @@ export const HANDOVER_ITEM_COUNT = HANDOVER_SECTIONS.reduce((s, sec) => s + sec.
 
 // ── Per-project state ─────────────────────────────────────────────────────────
 
+/** One taped defect on a checklist item. Ticked = rectified. */
+export interface BlueTapeEntry {
+  id: string
+  text: string
+  done: boolean
+  doneAt?: string
+}
+
 export interface HandoverItemState {
   done: boolean
-  note: string          // "Blue Tape issues"
+  note: string               // LEGACY free-text blue tape - surfaced via blueTapeOf(), migrated on first edit
+  blueTape?: BlueTapeEntry[] // tickable defect list (replaces note)
   doneAt?: string
   doneBy?: string
+}
+
+/** The item's blue-tape defects, folding a legacy free-text note in as a single entry. */
+export function blueTapeOf(st: HandoverItemState | undefined): BlueTapeEntry[] {
+  if (!st) return []
+  if (st.blueTape) return st.blueTape
+  return st.note?.trim() ? [{ id: 'legacy', text: st.note, done: false }] : []
 }
 
 export interface HandoverRow { a: string; b: string; c: string }   // free-table row (3 columns)
@@ -114,4 +130,11 @@ export function handoverProgress(data: HandoverData): { done: number; total: num
     if (data.items[`${sec.key}.${item.key}`]?.done) done++
   }
   return { done, total: HANDOVER_ITEM_COUNT }
+}
+
+/** Blue-tape defects still to rectify across the whole walkthrough. */
+export function openBlueTapeCount(data: HandoverData): number {
+  let open = 0
+  for (const st of Object.values(data.items)) open += blueTapeOf(st).filter(b => !b.done && b.text.trim()).length
+  return open
 }

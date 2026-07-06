@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { siteSessionFrom, loadOwnedProjectRow } from '@/lib/siteServer'
-import { emptyHandoverData, type HandoverData } from '@/lib/handoverChecklist'
+import { emptyHandoverData, handoverProgress, type HandoverData } from '@/lib/handoverChecklist'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -55,11 +55,22 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       plantLog: Array.isArray(body.data.plantLog) ? body.data.plantLog.slice(0, 100) : [],
     }
   }
-  if (body.signOff === true) { patch.signed_off_by = session.name; patch.signed_off_at = new Date().toISOString() }
+  const { data: existing } = await supabaseAdmin.from('fg_handover_checklists')
+    .select('project_id, data').eq('project_id', params.id).maybeSingle()
+
+  if (body.signOff === true) {
+    // Hard gate: the walkthrough can't be signed off until every checklist item is ticked.
+    // Enforced server-side so a stale client can't slip through.
+    const effective = (patch.data ?? existing?.data ?? emptyHandoverData()) as HandoverData
+    const hp = handoverProgress(effective)
+    if (hp.done < hp.total) {
+      return NextResponse.json({ ok: false, error: 'items_outstanding', done: hp.done, total: hp.total }, { status: 409 })
+    }
+    patch.signed_off_by = session.name
+    patch.signed_off_at = new Date().toISOString()
+  }
   if (body.signOff === false) { patch.signed_off_by = null; patch.signed_off_at = null }
 
-  const { data: existing } = await supabaseAdmin.from('fg_handover_checklists')
-    .select('project_id').eq('project_id', params.id).maybeSingle()
   const { error } = existing
     ? await supabaseAdmin.from('fg_handover_checklists').update(patch).eq('project_id', params.id)
     : await supabaseAdmin.from('fg_handover_checklists').insert(patch)
