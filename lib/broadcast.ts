@@ -26,6 +26,8 @@ export type StorageEvent =
   | { key: 'subcontractors' }
   | { key: 'supervisors' }
   | { key: 'takeoffs' }
+  | { key: 'library' }
+  | { key: 'estimate_templates' }
   | { key: 'all' }  // wildcard — emit on bulk operations (seed, recover-from-IDB)
 
 let channel: BroadcastChannel | null = null

@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import * as XLSX from 'xlsx'
-import { loadProjects, loadEstimates } from '@/lib/storage'
-import { upsertEstimate } from '@/lib/storageAsync'
+import { loadProjects, loadEstimates, loadEstimateTemplates } from '@/lib/storage'
+import { upsertEstimate, getEstimateTemplates, deleteEstimateTemplateAsync } from '@/lib/storageAsync'
 import { generateId } from '@/lib/utils'
-import type { Project, Estimate, EstimateLineItem } from '@/types'
+import type { Project, Estimate, EstimateLineItem, EstimateTemplate } from '@/types'
 import { Suspense } from 'react'
 import { FolderOpen } from 'lucide-react'
 
@@ -124,6 +124,45 @@ function NewEstimateForm() {
     setLoading(false)
   }, [])
 
+  // Estimate templates: local copy immediately, then merge the cloud copy (newest-wins per id) so
+  // a template saved on the other computer shows up here without waiting for liveSync.
+  const [templates, setTemplates] = useState<EstimateTemplate[]>([])
+  const [templateId, setTemplateId] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    setTemplates(loadEstimateTemplates())
+    getEstimateTemplates().then(remote => {
+      if (cancelled || remote.length === 0) return
+      setTemplates(local => {
+        const byId = new Map(local.map(t => [t.id, t]))
+        for (const r of remote) {
+          const l = byId.get(r.id)
+          if (!l || (Date.parse(r.updatedAt || '') || 0) >= (Date.parse(l.updatedAt || '') || 0)) byId.set(r.id, r)
+        }
+        return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name))
+      })
+    }).catch(() => { /* offline - local list stands */ })
+    return () => { cancelled = true }
+  }, [])
+  const selectedTemplate = templates.find(t => t.id === templateId) || null
+
+  const pickTemplate = (id: string) => {
+    setTemplateId(id)
+    const t = templates.find(x => x.id === id)
+    if (!t) return
+    // Pre-fill the estimate settings the template carries; the user can still change them.
+    setForm(f => ({ ...f, defaultMarkupFormation: t.defaultMarkupFormation, defaultMarkupSubcontractor: t.defaultMarkupSubcontractor }))
+    if (t.projectType) { setProjectType(t.projectType); setProjectTypeError(false) }
+  }
+
+  const removeTemplate = (id: string) => {
+    const t = templates.find(x => x.id === id)
+    if (!t || !window.confirm(`Delete the template "${t.name}"? This can't be undone.`)) return
+    void deleteEstimateTemplateAsync(id)
+    setTemplates(prev => prev.filter(x => x.id !== id))
+    setTemplateId('')
+  }
+
   const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -163,7 +202,10 @@ function NewEstimateForm() {
 
     const estimateId = generateId()
 
-    const lineItems: EstimateLineItem[] = importedItems.map(item => ({
+    // Line items: a Buildxact import wins if present; otherwise the selected template's set
+    // (fresh ids so the template rows stay independent of this estimate).
+    const sourceItems = importedItems.length > 0 ? importedItems : (selectedTemplate?.lineItems ?? [])
+    const lineItems: EstimateLineItem[] = sourceItems.map(item => ({
       ...item,
       id: generateId(),
       estimateId,
@@ -181,13 +223,16 @@ function NewEstimateForm() {
       defaultMarkupFormation: form.defaultMarkupFormation,
       defaultMarkupSubcontractor: form.defaultMarkupSubcontractor,
       lineItems,
-      // Default project markups (applied as a % of cost — see getEstimateContract). Editable/removable
-      // in the estimate's Markup & Rounding panel.
-      projectMarkups: [
-        { id: generateId(), description: 'Waste', percent: 5 },
-        { id: generateId(), description: 'Contingency', percent: 5 },
-        { id: generateId(), description: 'Overhead', percent: 6 },
-      ],
+      // Default project markups (applied as a % of cost — see getEstimateContract). A template
+      // carries its own set; otherwise the standard trio. Editable in Markup & Rounding.
+      projectMarkups: (importedItems.length === 0 && selectedTemplate?.projectMarkups?.length
+        ? selectedTemplate.projectMarkups.map(m => ({ ...m, id: generateId() }))
+        : [
+            { id: generateId(), description: 'Waste', percent: 5 },
+            { id: generateId(), description: 'Contingency', percent: 5 },
+            { id: generateId(), description: 'Overhead', percent: 6 },
+          ]),
+      ...(importedItems.length === 0 && selectedTemplate?.categoryNotes ? { categoryNotes: selectedTemplate.categoryNotes } : {}),
       notes: form.notes,
       ...(fromProposalId ? { proposalId: fromProposalId } : {}),
       ...(projectType ? { projectType: projectType as 'landscape_only' | 'landscape_and_pool' | 'pool_only' } : {}),
@@ -222,6 +267,40 @@ function NewEstimateForm() {
       )}
 
         <div className="max-w-md space-y-6">
+          {/* Start from template */}
+          {templates.length > 0 && (
+            <div className="p-5 border border-fg-border bg-fg-card/20">
+              <p className="text-xs font-light tracking-architectural uppercase text-fg-muted mb-3">Start from Template</p>
+              <div className="flex items-center gap-2">
+                <select
+                  value={templateId}
+                  onChange={e => pickTemplate(e.target.value)}
+                  className="flex-1 px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors appearance-none"
+                >
+                  <option value="">Blank estimate</option>
+                  {templates.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.lineItems.length} items)</option>
+                  ))}
+                </select>
+                {selectedTemplate && (
+                  <button
+                    onClick={() => removeTemplate(selectedTemplate.id)}
+                    title="Delete this template"
+                    className="px-2 py-2 text-fg-muted/50 hover:text-red-400 transition-colors text-sm"
+                  >
+                    &times;
+                  </button>
+                )}
+              </div>
+              {selectedTemplate && (
+                <p className="mt-2 text-xs font-light text-green-600">
+                  {selectedTemplate.lineItems.length} line items, markups and project type will pre-fill.
+                  {importedItems.length > 0 && ' A Buildxact import below overrides the template items.'}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Import section */}
           <div className="mb-8 p-5 border border-fg-border bg-fg-card/20">
             <p className="text-xs font-light tracking-architectural uppercase text-fg-muted mb-3">Import from Buildxact</p>

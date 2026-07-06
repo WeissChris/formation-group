@@ -10,11 +10,12 @@ import { formatCurrency, generateId } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract, activeLineItems, estimateLabourHours, lineContractValue, itemsContractValue } from '@/lib/estimateCalculations'
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
-import { getAllLibraryItems, getCategories, defaultMarkupForType, TARGET_MARGINS } from '@/lib/itemLibrary'
+import { getAllLibraryItems, getCategories, defaultMarkupForType, TARGET_MARGINS, saveLineItemToLibrary, isCustomLibraryItem } from '@/lib/itemLibrary'
+import { upsertLibraryItem, deleteLibraryItemAsync, upsertEstimateTemplate } from '@/lib/storageAsync'
 import { getXeroAccounts, loadCachedXeroAccounts, type XeroAccountOption } from '@/lib/xero'
 import { loadXccDefaults, recordXccDefault, resolveXccDefault } from '@/lib/xcc'
-import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData } from '@/types'
-import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch, Copy, Eye, EyeOff, Check } from 'lucide-react'
+import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData, EstimateTemplate } from '@/types'
+import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, GitBranch, Copy, Eye, EyeOff, Check, Star } from 'lucide-react'
 import TakeoffTab from '@/components/TakeoffTab'
 
 const UOM_OPTIONS = ['m²', 'hour', 'm³', 'lm', 'EA', 'Allowance', 'Day', 'week', 'sheet', 'each']
@@ -40,7 +41,14 @@ function ItemPickerModal({
 }) {
   const [search, setSearch] = useState(defaultCategory || '')
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const allItems = getAllLibraryItems()
+  // State (not a render-time read) so deleting a saved item refreshes the list in place.
+  const [allItems, setAllItems] = useState<LibraryItem[]>(() => getAllLibraryItems())
+  const removeCustom = (id: string) => {
+    if (!window.confirm('Remove this saved item from the library?')) return
+    void deleteLibraryItemAsync(id)
+    setAllItems(getAllLibraryItems())
+    setSelected(prev => { const next = new Set(prev); next.delete(id); return next })
+  }
 
   const filtered = allItems.filter(item => {
     const q = search.toLowerCase()
@@ -117,6 +125,16 @@ function ItemPickerModal({
                     <p className="text-xs font-light text-fg-heading tabular-nums ml-4 shrink-0">
                       {fmtCurrency(item.defaultUnitCost)}/{item.defaultUom}
                     </p>
+                    {isCustomLibraryItem(item.id) && (
+                      <span
+                        role="button"
+                        title="Remove saved item from library"
+                        onClick={e => { e.stopPropagation(); removeCustom(item.id) }}
+                        className="text-fg-muted/40 hover:text-red-400 transition-colors shrink-0 p-1"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </span>
+                    )}
                   </button>
                 )
               })}
@@ -354,6 +372,15 @@ function LineItemRow({
     onChange({ ...updated, total, revenue })
   }
 
+  // "Add to template": save this line into the item library for reuse on future estimates.
+  const [libSaved, setLibSaved] = useState(false)
+  const saveToLibrary = () => {
+    const res = saveLineItemToLibrary(item)
+    if (res) void upsertLibraryItem(res.item)   // push the saved copy to Supabase (cross-device)
+    setLibSaved(true)
+    setTimeout(() => setLibSaved(false), 1600)
+  }
+
   const inputCls = 'w-full px-1.5 py-1 bg-transparent border border-transparent hover:border-fg-border focus:border-fg-heading text-[#292929] text-xs font-light rounded-none outline-none transition-colors'
   const numCls = inputCls + ' tabular-nums text-right'
   const off = item.enabled === false
@@ -526,6 +553,13 @@ function LineItemRow({
           </button>
           <button onClick={onDuplicate} title="Duplicate" className="opacity-0 group-hover:opacity-100 text-fg-muted hover:text-fg-heading transition-all p-1">
             <Copy className="w-3 h-3" />
+          </button>
+          <button
+            onClick={saveToLibrary}
+            title="Add to template library (reusable on any estimate via Add Item)"
+            className={`transition-all p-1 ${libSaved ? 'opacity-100 text-green-600' : 'opacity-0 group-hover:opacity-100 text-fg-muted hover:text-amber-500'}`}
+          >
+            {libSaved ? <Check className="w-3 h-3" /> : <Star className="w-3 h-3" />}
           </button>
           <button onClick={onDelete} title="Delete" className="opacity-0 group-hover:opacity-100 text-fg-muted hover:text-red-400/60 transition-all p-1">
             <Trash2 className="w-3 h-3" />
@@ -953,10 +987,11 @@ export default function EstimateBuilderPage() {
           uom: li.type === 'Labour' ? 'hour' : li.defaultUom,
           unitCost: li.defaultUnitCost,
           total: 0,
-          markupPercent: defaultMarkupForType(li.type),   // per-type default (Material 45 / Labour 75 / Sub 35 / Equip 40)
+          // Items saved from an estimate carry their markup; built-ins fall back to the per-type default.
+          markupPercent: li.defaultMarkupPercent ?? defaultMarkupForType(li.type),
           revenue: 0,
           crewType: li.crewType,
-          xeroCategory: resolveXccDefault(xccDefaults, category, li.type),   // auto-fill from learned defaults
+          xeroCategory: li.xeroCategory || resolveXccDefault(xccDefaults, category, li.type),
         }
       })
       return { ...prev, lineItems: [...prev.lineItems, ...newItems], updatedAt: new Date().toISOString() }
@@ -1019,6 +1054,30 @@ export default function EstimateBuilderPage() {
     if (!estimate) return
     void upsertEstimate(estimate)   // "Save now" — autosave also runs on a debounce
     setHasUnsavedChanges(false)
+  }
+
+  // Save the whole estimate as a reusable template (line items + markups + project type). Ids and
+  // attached quote files are stripped - a template carries the pricing structure, not job identity.
+  const handleSaveAsTemplate = () => {
+    if (!estimate) return
+    const name = window.prompt('Template name:', estimate.name || estimate.projectName || '')
+    if (!name || !name.trim()) return
+    const template: EstimateTemplate = {
+      id: generateId(),
+      name: name.trim(),
+      ...(estimate.projectType ? { projectType: estimate.projectType } : {}),
+      defaultMarkupFormation: estimate.defaultMarkupFormation,
+      defaultMarkupSubcontractor: estimate.defaultMarkupSubcontractor,
+      ...(estimate.projectMarkups ? { projectMarkups: estimate.projectMarkups } : {}),
+      ...(estimate.categoryNotes ? { categoryNotes: estimate.categoryNotes } : {}),
+      lineItems: estimate.lineItems.map(li => {
+        const { id: _id, estimateId: _eid, quoteFileName: _qn, quoteFileData: _qd, quoteFilePath: _qp, ...rest } = li
+        return rest
+      }),
+      createdAt: new Date().toISOString(),
+    }
+    void upsertEstimateTemplate(template)
+    window.alert(`Template "${name.trim()}" saved - pick it under New Estimate > Start from template.`)
   }
 
   const handleConvertToProject = async () => {
@@ -1424,6 +1483,16 @@ export default function EstimateBuilderPage() {
             >
               <ExternalLink className="w-3 h-3" /> XCC
             </Link>
+          )}
+
+          {estimate.lineItems.length > 0 && (
+            <button
+              onClick={handleSaveAsTemplate}
+              title="Save this estimate's full line-item set as a reusable template for new estimates"
+              className="flex items-center gap-2 px-3 py-1.5 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading transition-colors"
+            >
+              <Star className="w-3 h-3" /> Save as Template
+            </button>
           )}
 
           {/* Convert to Project — base estimates only. A variation is sent to the client for approval

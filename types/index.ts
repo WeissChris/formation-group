@@ -123,12 +123,16 @@ export interface ProjectScope {
 export interface LibraryItem {
   id: string
   category: string
+  subcategory?: string
   description: string
   type: 'Material' | 'Labour' | 'Subcontractor' | 'Equipment'
   defaultUom: string
   defaultUnitCost: number
   crewType: 'Formation' | 'Subcontractor'
+  defaultMarkupPercent?: number  // saved from a line item; falls back to the per-type default
+  xeroCategory?: string
   notes?: string
+  updatedAt?: string             // stamped on save — drives cross-device newest-wins (liveSync)
 }
 
 // ── ESTIMATE LINE ITEMS ────────────────────────────────────────────────────────
@@ -199,6 +203,23 @@ export interface Estimate {
   declinedAt?: string
   declinedByName?: string
   archived?: boolean          // rejected variations are archived (hidden from active lists)
+}
+
+// ── ESTIMATE TEMPLATES ────────────────────────────────────────────────────────
+
+/** A reusable starting point for new estimates: the full line-item set (ids stripped and re-minted
+ *  on use) plus markups and project type. Saved from an existing estimate ("Save as template"). */
+export interface EstimateTemplate {
+  id: string
+  name: string
+  projectType?: 'landscape_only' | 'landscape_and_pool' | 'pool_only'
+  defaultMarkupFormation: number
+  defaultMarkupSubcontractor: number
+  projectMarkups?: { id: string; description: string; percent: number }[]
+  categoryNotes?: Record<string, string>
+  lineItems: Omit<EstimateLineItem, 'id' | 'estimateId'>[]
+  createdAt: string
+  updatedAt?: string           // stamped on save — drives cross-device newest-wins (liveSync)
 }
 
 // ── PROGRESS PAYMENT STAGES ───────────────────────────────────────────────────

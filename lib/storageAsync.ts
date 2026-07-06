@@ -33,7 +33,11 @@ import {
   loadSupervisors,
   saveSupervisor,
   deleteSupervisor,
+  loadEstimateTemplates,
+  saveEstimateTemplate,
+  deleteEstimateTemplate,
 } from './storage'
+import { loadCustomLibrary, saveCustomLibraryItem, deleteCustomLibraryItem } from './itemLibrary'
 import type {
   DesignProposal,
   Project,
@@ -47,6 +51,8 @@ import type {
   SubcontractorPackage,
   ProgressClaim,
   Supervisor,
+  LibraryItem,
+  EstimateTemplate,
 } from '@/types'
 
 // Gantt milestones are defined structurally in the gantt/programme pages (not in @/types). The sync
@@ -630,6 +636,64 @@ export async function getSubcontractors(): Promise<SubcontractorPackage[]> {
     if (data) return data.map(r => r.data as SubcontractorPackage)
   }
   return []
+}
+
+// ── ITEM LIBRARY + ESTIMATE TEMPLATES (jsonb-blob pattern, cross-device via liveSync) ─────────────
+
+export async function getLibraryItems(): Promise<LibraryItem[]> {
+  if (isSupabaseConfigured() && supabase) {
+    const { data } = await supabase.from('fg_library_items').select('*')
+    if (data) return data.map(r => r.data as LibraryItem)
+  }
+  return []
+}
+
+export async function upsertLibraryItem(item: LibraryItem): Promise<void> {
+  const fresh = saveCustomLibraryItem(item) // localStorage (stamps updatedAt) + notify
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_library_items').upsert({
+      id: fresh.id,
+      data: fresh,
+      updated_at: fresh.updatedAt ?? new Date().toISOString(),
+    })
+    if (error) console.error('[Formation] library item upsert (Supabase) error:', error.message)
+  }
+}
+
+export async function deleteLibraryItemAsync(id: string): Promise<void> {
+  deleteCustomLibraryItem(id)
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_library_items').delete().eq('id', id)
+    if (error) console.error('[Formation] library item delete (Supabase) error:', error.message)
+  }
+}
+
+export async function getEstimateTemplates(): Promise<EstimateTemplate[]> {
+  if (isSupabaseConfigured() && supabase) {
+    const { data } = await supabase.from('fg_estimate_templates').select('*')
+    if (data) return data.map(r => r.data as EstimateTemplate)
+  }
+  return []
+}
+
+export async function upsertEstimateTemplate(template: EstimateTemplate): Promise<void> {
+  const fresh = saveEstimateTemplate(template) // localStorage (stamps updatedAt) + notify
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_estimate_templates').upsert({
+      id: fresh.id,
+      data: fresh,
+      updated_at: fresh.updatedAt ?? new Date().toISOString(),
+    })
+    if (error) console.error('[Formation] estimate template upsert (Supabase) error:', error.message)
+  }
+}
+
+export async function deleteEstimateTemplateAsync(id: string): Promise<void> {
+  deleteEstimateTemplate(id)
+  if (isSupabaseConfigured() && supabase) {
+    const { error } = await supabase.from('fg_estimate_templates').delete().eq('id', id)
+    if (error) console.error('[Formation] estimate template delete (Supabase) error:', error.message)
+  }
 }
 
 export async function upsertSubcontractor(pkg: SubcontractorPackage): Promise<void> {

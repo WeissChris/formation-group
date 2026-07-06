@@ -1,4 +1,4 @@
-﻿import type { Project, WeeklyRevenue, DesignProposal, Estimate, GanttEntry, WeeklyActual, ProgressPaymentStage, DesignProject, ProgressClaim, TakeoffData, TakeoffTemplate, ProposalInvoiceStage, SubcontractorPackage, Supervisor } from '@/types'
+﻿import type { Project, WeeklyRevenue, DesignProposal, Estimate, GanttEntry, WeeklyActual, ProgressPaymentStage, DesignProject, ProgressClaim, TakeoffData, TakeoffTemplate, ProposalInvoiceStage, SubcontractorPackage, Supervisor, EstimateTemplate } from '@/types'
 import { notify } from './broadcast'
 import { getProposalPhases, phasesTotal } from './proposalPhases'
 import { generateId } from './utils'
@@ -730,4 +730,29 @@ export function deleteSupervisor(id: string): void {
   localStorage.setItem('fg_supervisors', JSON.stringify(all))
   backupToIndexedDB('fg_supervisors', all)
   notify({ key: 'supervisors' })
+}
+// ── Estimate templates (reusable starting points for new estimates) ───────────
+export function loadEstimateTemplates(): EstimateTemplate[] {
+  if (typeof window === 'undefined') return []
+  try { return JSON.parse(localStorage.getItem('fg_estimate_templates') || '[]') } catch { return [] }
+}
+
+export function saveEstimateTemplate(template: EstimateTemplate): EstimateTemplate {
+  // Stamp updatedAt on every save — drives cross-device newest-wins (see liveSync).
+  const stamped = { ...template, updatedAt: new Date().toISOString() }
+  const all = loadEstimateTemplates()
+  const idx = all.findIndex(t => t.id === stamped.id)
+  if (idx >= 0) all[idx] = stamped
+  else all.push(stamped)
+  localStorage.setItem('fg_estimate_templates', JSON.stringify(all))
+  backupToIndexedDB('fg_estimate_templates', all)
+  notify({ key: 'estimate_templates' })
+  return stamped
+}
+
+export function deleteEstimateTemplate(id: string): void {
+  const all = loadEstimateTemplates().filter(t => t.id !== id)
+  localStorage.setItem('fg_estimate_templates', JSON.stringify(all))
+  backupToIndexedDB('fg_estimate_templates', all)
+  notify({ key: 'estimate_templates' })
 }

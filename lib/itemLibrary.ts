@@ -1,4 +1,6 @@
-import type { LibraryItem } from '@/types'
+import type { LibraryItem, EstimateLineItem } from '@/types'
+import { notify } from './broadcast'
+import { generateId } from './utils'
 
 export const DEFAULT_LIBRARY_ITEMS: LibraryItem[] = [
   // LABOUR
@@ -74,12 +76,57 @@ export function getAllLibraryItems(): LibraryItem[] {
   return [...DEFAULT_LIBRARY_ITEMS, ...loadCustomLibrary()]
 }
 
-export function saveCustomLibraryItem(item: LibraryItem): void {
+export function saveCustomLibraryItem(item: LibraryItem): LibraryItem {
+  // Stamp updatedAt on every save — drives cross-device newest-wins (see liveSync); notify so an
+  // open item picker refreshes.
+  const stamped = { ...item, updatedAt: new Date().toISOString() }
   const custom = loadCustomLibrary()
-  const idx = custom.findIndex(i => i.id === item.id)
-  if (idx >= 0) custom[idx] = item
-  else custom.push(item)
+  const idx = custom.findIndex(i => i.id === stamped.id)
+  if (idx >= 0) custom[idx] = stamped
+  else custom.push(stamped)
   localStorage.setItem('fg_library', JSON.stringify(custom))
+  notify({ key: 'library' })
+  return stamped
+}
+
+export function deleteCustomLibraryItem(id: string): void {
+  localStorage.setItem('fg_library', JSON.stringify(loadCustomLibrary().filter(i => i.id !== id)))
+  notify({ key: 'library' })
+}
+
+/** True when the id belongs to a saved (deletable) item rather than a built-in default. */
+export function isCustomLibraryItem(id: string): boolean {
+  return loadCustomLibrary().some(i => i.id === id)
+}
+
+/**
+ * Save an estimate line item into the custom library ("Add to template" on a row). Dedupes on
+ * category + description (case-insensitive): an existing custom entry is updated with the line's
+ * current cost/uom/markup; a built-in default that already matches identically is left alone.
+ * Returns the item to push to Supabase, or null when nothing changed.
+ */
+export function saveLineItemToLibrary(li: EstimateLineItem): { item: LibraryItem; outcome: 'added' | 'updated' } | null {
+  const keyOf = (category: string, description: string) => `${category.trim().toLowerCase()}|${description.trim().toLowerCase()}`
+  const key = keyOf(li.category, li.description)
+  if (!li.description.trim()) return null
+
+  const builtin = DEFAULT_LIBRARY_ITEMS.find(i => keyOf(i.category, i.description) === key)
+  if (builtin && builtin.defaultUnitCost === li.unitCost && builtin.defaultUom === li.uom) return null
+
+  const existing = loadCustomLibrary().find(i => keyOf(i.category, i.description) === key)
+  const item: LibraryItem = {
+    id: existing?.id ?? generateId(),
+    category: li.category,
+    ...(li.subcategory ? { subcategory: li.subcategory } : {}),
+    description: li.description,
+    type: li.type,
+    defaultUom: li.uom,
+    defaultUnitCost: li.unitCost,
+    crewType: li.crewType,
+    defaultMarkupPercent: li.markupPercent,
+    ...(li.xeroCategory ? { xeroCategory: li.xeroCategory } : {}),
+  }
+  return { item: saveCustomLibraryItem(item), outcome: existing ? 'updated' : 'added' }
 }
 
 export function getCategories(): string[] {
