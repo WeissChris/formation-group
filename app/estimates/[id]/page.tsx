@@ -435,38 +435,42 @@ function LineItemRow({
               + Hours breakdown
             </button>
           ) : (
-            <div className="mt-1 space-y-0.5">
+            <div className="mt-1 border-l-2 border-fg-border/60 pl-2 py-0.5 space-y-0.5">
               {(item.labourBreakdown ?? []).map((a, i) => (
-                <div key={a.id} className="flex items-center gap-1 pl-1.5">
-                  <span className="text-2xs text-fg-muted/40">↳</span>
+                <div key={a.id} className="flex items-center gap-1.5">
                   <input
                     value={a.label}
                     onChange={e => setBreakdown((item.labourBreakdown ?? []).map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
-                    className={`${inputCls} text-2xs text-fg-muted flex-1`}
-                    placeholder="Activity (Gantt posting)…"
+                    className="flex-1 px-1.5 py-0.5 bg-fg-card/30 border border-fg-border/60 hover:border-fg-border focus:border-fg-heading text-xs font-light text-fg-heading rounded-none outline-none transition-colors"
+                    placeholder="Activity, e.g. slab prep…"
                   />
                   <input
                     type="number"
                     value={a.hours || ''}
                     onChange={e => setBreakdown((item.labourBreakdown ?? []).map((x, j) => j === i ? { ...x, hours: parseFloat(e.target.value) || 0 } : x))}
-                    className={`${inputCls} text-2xs tabular-nums text-right w-14`}
-                    placeholder="hrs"
+                    className="w-16 px-1.5 py-0.5 bg-fg-card/30 border border-fg-border/60 hover:border-fg-border focus:border-fg-heading text-xs tabular-nums text-right rounded-none outline-none transition-colors"
+                    placeholder="0"
                   />
-                  <span className="text-2xs text-fg-muted/50">hrs</span>
+                  <span className="text-2xs text-fg-muted w-6">hrs</span>
                   <button
                     onClick={() => setBreakdown((item.labourBreakdown ?? []).filter((_, j) => j !== i))}
                     title="Remove activity" className="text-fg-muted/40 hover:text-red-400 transition-colors px-0.5"
                   >
-                    <X className="w-2.5 h-2.5" />
+                    <X className="w-3 h-3" />
                   </button>
                 </div>
               ))}
-              <button
-                onClick={() => setBreakdown([...(item.labourBreakdown ?? []), { id: generateId(), label: '', hours: 0 }])}
-                className="pl-3 text-2xs text-fg-muted/60 hover:text-fg-heading transition-colors"
-              >
-                + Activity
-              </button>
+              <div className="flex items-center justify-between pr-6">
+                <button
+                  onClick={() => setBreakdown([...(item.labourBreakdown ?? []), { id: generateId(), label: '', hours: 0 }])}
+                  className="text-2xs text-fg-heading/70 hover:text-fg-heading transition-colors py-0.5"
+                >
+                  + Activity
+                </button>
+                <span className="text-2xs text-fg-muted tabular-nums">
+                  = {(item.labourBreakdown ?? []).reduce((s, x) => s + (x.hours || 0), 0)} hrs total
+                </span>
+              </div>
             </div>
           )
         )}
