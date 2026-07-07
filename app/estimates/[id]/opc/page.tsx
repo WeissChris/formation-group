@@ -603,34 +603,9 @@ export default function OpcPage() {
           </div>
           <button
             onClick={() => mutate({ exclusions: [...exclusions, { title: 'New exclusion', blurb: '' }] })}
-            className="print:hidden mb-8 flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 transition-colors">
+            className="print:hidden flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 transition-colors">
             <Plus className="w-3 h-3" /> Add exclusion
           </button>
-
-          <p className="text-xs font-normal tracking-widest uppercase mb-4" style={{ color: MUTED }}>Items Not Included</p>
-          <div className="px-6 py-5" style={{ backgroundColor: BG_WARM }}>
-            <ul className="grid grid-cols-2 gap-x-8 gap-y-1.5">
-              {excludedItems.map((item, i) => (
-                <li key={i} className="flex items-center gap-2 text-sm font-light" style={{ color: BODY }}>
-                  <span style={{ color: GREEN }}>·</span>
-                  <input
-                    value={item}
-                    onChange={e => mutate({ excludedItems: excludedItems.map((x, j) => j === i ? e.target.value : x) })}
-                    className="print:hidden flex-1 bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none"
-                  />
-                  <span className="hidden print:inline">{item}</span>
-                  <button
-                    onClick={() => mutate({ excludedItems: excludedItems.filter((_, j) => j !== i) })}
-                    className="print:hidden text-gray-300 hover:text-red-400"><X className="w-3 h-3" /></button>
-                </li>
-              ))}
-            </ul>
-            <button
-              onClick={() => mutate({ excludedItems: [...excludedItems, ''] })}
-              className="print:hidden mt-3 flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 transition-colors">
-              <Plus className="w-3 h-3" /> Add item
-            </button>
-          </div>
         </div>
 
         {/* Footnote */}
