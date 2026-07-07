@@ -427,7 +427,9 @@ export default function ProgrammePage() {
                   const startIdx = start ? fridays.findIndex(f => toISODate(f) >= start) : -1
                   const endIdx = end ? fridays.findIndex(f => toISODate(f) >= end) : -1
                   const hasWindow = startIdx >= 0
-                  const effEnd = endIdx >= 0 ? endIdx : fridays.length - 1
+                  // No completion date (common before scheduling) -> a short ~4-week ghost anchored
+                  // at the start, rather than stretching the bar across the whole horizon.
+                  const effEnd = endIdx >= 0 ? endIdx : Math.min(startIdx + 3, fridays.length - 1)
                   const left = hasWindow ? startIdx * CELL_W : 0
                   const width = hasWindow ? Math.max(CELL_W, (effEnd - startIdx + 1) * CELL_W) - 4 : 0
                   return (
