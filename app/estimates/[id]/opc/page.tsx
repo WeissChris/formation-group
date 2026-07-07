@@ -424,6 +424,9 @@ export default function OpcPage() {
                 <span className="mx-2 text-gray-300">|</span>Total: <span className="font-normal">{money(landscapeExGst * 1.1)}</span>
               </p>
             </div>
+            {/* Pool & Spa only exists on pool projects (or when a figure was already entered) -
+                a landscape-only OPC shouldn't show an empty pool band. */}
+            {(estimate.projectType === 'landscape_and_pool' || estimate.projectType === 'pool_only' || hasPoolFigure) && (
             <div className="flex items-center justify-between px-6 py-4" style={{ backgroundColor: BG_WARM }}>
               <div className="flex items-center gap-3">
                 <p className="text-base font-light" style={{ color: HEADING }}>Pool &amp; Spa</p>
@@ -446,6 +449,7 @@ export default function OpcPage() {
                   : <span className="print:hidden text-gray-400">enter the Lume figure to include</span>}
               </p>
             </div>
+            )}
             <div className="flex items-center justify-between px-6 py-5" style={{ backgroundColor: GREEN }}>
               <p className="text-base font-normal text-white">{hasPoolFigure ? 'Combined Project Total' : 'Project Total'}</p>
               <p className="text-sm font-light text-white/90 tabular-nums">
