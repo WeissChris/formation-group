@@ -123,7 +123,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
             bookings={bookings} refreshBookings={refreshBookings} handover={handover} />
         )}
         {tab === 'schedule' && <Schedule gantt={gantt} projectId={project.id} />}
-        {tab === 'boq' && <Boq projectId={project.id} />}
+        {tab === 'boq' && <Boq projectId={project.id} projectName={project.name} address={project.address} />}
         {tab === 'subbies' && <Subbies projectId={project.id} />}
         {tab === 'plans' && <Plans projectId={project.id} />}
         {tab === 'safety' && <Safety projectId={project.id} safety={safety} refresh={refreshSafety} />}
@@ -938,10 +938,20 @@ function Schedule({ gantt, projectId }: { gantt: GanttEntry[]; projectId: string
 }
 
 // ── BOQ (read-only bill of quantities from the accepted estimate) ──────────────────
-function Boq({ projectId }: { projectId: string }) {
+function Boq({ projectId, projectName, address }: { projectId: string; projectName: string; address: string }) {
   const [estimate, setEstimate] = useState<Estimate | null | undefined>(undefined)   // undefined = loading
   const [open, setOpen] = useState<Record<string, boolean>>({})
   useEffect(() => { getSiteBoq(projectId).then(setEstimate) }, [projectId])
+
+  // Print: expand every category first so the printout is the complete bill, then hand to the
+  // browser's print dialog (on a phone that's "Save as PDF" / share).
+  const printBoq = () => {
+    if (!estimate) return
+    const items = activeLineItems(estimate)
+    const cats = Array.from(new Set(items.map(i => i.category || 'Uncategorised')))
+    setOpen(Object.fromEntries(cats.map(c => [c, true])))
+    setTimeout(() => window.print(), 150)
+  }
 
   const view = useMemo(() => {
     if (!estimate) return null
@@ -971,8 +981,37 @@ function Boq({ projectId }: { projectId: string }) {
   const typeTag = (t?: string) => t === 'Labour' ? 'L' : t === 'Subcontractor' ? 'S' : t === 'Equipment' ? 'E' : 'M'
 
   return (
-    <section className="space-y-4">
-      <div className="grid grid-cols-2 gap-2">
+    <section className="space-y-4 boq-print">
+      {/* Print only the BOQ: everything else on the page goes invisible, the BOQ takes the sheet. */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          .boq-print, .boq-print * { visibility: visible; }
+          .boq-print { position: absolute; left: 0; top: 0; right: 0; padding: 0 4mm; }
+          .boq-print li, .boq-print .rounded-lg { break-inside: avoid; }
+        }
+      `}</style>
+      {/* Document header (print only) */}
+      <div className="hidden print:block border-b-2 border-black pb-3 mb-2">
+        <p className="text-lg font-medium">{projectName}</p>
+        <p className="text-xs text-fg-muted">{address}</p>
+        <p className="text-xs text-fg-muted mt-1">
+          Bill of Quantities · {new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}
+        </p>
+      </div>
+
+      <div className="flex items-start justify-between gap-3 print:hidden">
+        <div className="grid grid-cols-2 gap-2 flex-1">
+          <Stat label="Cost allowance">{money(view.totalCost)}</Stat>
+          <Stat label="Labour allowed">{Math.round(view.totalHours).toLocaleString('en-AU')} hrs</Stat>
+        </div>
+        <button onClick={printBoq}
+          className="shrink-0 rounded-lg border border-fg-border px-3 py-2 text-xs text-fg-heading underline">
+          Print / PDF
+        </button>
+      </div>
+      {/* The stat pair again for print (the screen block above is hidden there to drop the button) */}
+      <div className="hidden print:grid grid-cols-2 gap-2">
         <Stat label="Cost allowance">{money(view.totalCost)}</Stat>
         <Stat label="Labour allowed">{Math.round(view.totalHours).toLocaleString('en-AU')} hrs</Stat>
       </div>
