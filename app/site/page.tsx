@@ -106,14 +106,7 @@ function MyProjects({ me, onSignOut }: { me: { supervisorId: string; name: strin
           <p className="text-[10px] tracking-[0.2em] uppercase text-fg-muted">My projects</p>
           <p className="text-lg font-light leading-tight">{me.name}</p>
         </div>
-        <div className="flex items-center gap-3">
-          {/* One-click management-meeting pack: done last month / next month plan / tracking, per project */}
-          <a href="/api/site/monthly-report" target="_blank" rel="noopener noreferrer"
-            className="rounded-lg bg-fg-heading text-white px-3 py-2 text-xs font-medium">
-            Monthly report
-          </a>
-          <button onClick={signOut} className="text-xs text-fg-muted underline">Sign out</button>
-        </div>
+        <button onClick={signOut} className="text-xs text-fg-muted underline">Sign out</button>
       </header>
 
       {projects === null ? (
@@ -123,9 +116,9 @@ function MyProjects({ me, onSignOut }: { me: { supervisorId: string; name: strin
       ) : (
         <ul className="space-y-3 mt-4">
           {projects.map(p => (
-            <li key={p.id}>
+            <li key={p.id} className="rounded-xl border border-fg-border overflow-hidden">
               <Link href={`/site/${p.id}`}
-                className="block rounded-xl border border-fg-border p-4 active:bg-fg-card/30 transition-colors">
+                className="block p-4 active:bg-fg-card/30 transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium truncate">{p.name}</p>
@@ -137,6 +130,11 @@ function MyProjects({ me, onSignOut }: { me: { supervisorId: string; name: strin
                   <p className="text-xs text-fg-muted mt-2">Due {formatDate(p.plannedCompletion)}</p>
                 )}
               </Link>
+              {/* One-click meeting pack for THIS job: last month done / next month plan / usage-vs-budget bars */}
+              <a href={`/api/site/monthly-report?projectId=${p.id}`} target="_blank" rel="noopener noreferrer"
+                className="block border-t border-fg-border/60 px-4 py-2.5 text-xs font-medium text-fg-heading bg-fg-card/30 active:bg-fg-card/60">
+                Monthly meeting report
+              </a>
             </li>
           ))}
         </ul>

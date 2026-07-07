@@ -11,6 +11,9 @@ export interface ReportScopeLine { category: string; label: string; start: strin
 export interface ReportUpcoming { category: string; label: string; start: string; end: string }
 export interface ReportSlip { category: string; days: number }
 export interface ReportVariation { number: number; reason: string; amount: number; status: string }
+// A usage-vs-budget bar (labour hours or $). fillPct = used/budget (may exceed 1); markPct = the
+// share of this work's time already elapsed - the pacing line the bar should be tracking against.
+export interface ReportLever { label: string; usedLabel: string; fillPct: number; markPct: number | null; over: boolean }
 
 export interface ProjectReport {
   name: string
@@ -20,7 +23,7 @@ export interface ProjectReport {
   score: number | null
   scoreLabel: string
   scheduleNote: string           // timeline vs the ORIGINAL baseline (creep penalty breakdown)
-  levers: { label: string; used: string; base: string }[]   // pre-formatted (hours / $ / committed)
+  levers: ReportLever[]          // usage-vs-budget bars (labour hours, materials $, subbies $)
   forecastEnd: string
   plannedEnd: string
   slipDays: number | null        // + = behind
@@ -66,6 +69,28 @@ const s = StyleSheet.create({
 })
 
 const fmtD = (iso: string) => iso ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '-'
+
+// One usage-vs-budget bar. Fill = used/budget capped at the track; colour goes green (comfortably
+// under) -> amber (nearly spent) -> red (over). The thin marker is where the job's time says the
+// spend should be, so a bar running past its marker reads as "burning faster than we're building".
+function Bar({ lever }: { lever: ReportLever }) {
+  const color = lever.over ? RED : lever.fillPct > 0.9 ? AMBER : GREEN
+  const fill = Math.max(0, Math.min(1, lever.fillPct))
+  return (
+    <View style={{ marginTop: 7 }} wrap={false}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2.5 }}>
+        <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold' }}>{lever.label}</Text>
+        <Text style={{ fontSize: 8.5, color, fontFamily: 'Helvetica-Bold' }}>{lever.usedLabel}</Text>
+      </View>
+      <View style={{ height: 11, backgroundColor: '#E7E3DE', borderRadius: 2, position: 'relative' }}>
+        <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${fill * 100}%`, backgroundColor: color, borderRadius: 2 }} />
+        {lever.markPct !== null && (
+          <View style={{ position: 'absolute', left: `${Math.max(0, Math.min(100, lever.markPct * 100))}%`, top: -2, bottom: -2, width: 1.5, backgroundColor: BLACK }} />
+        )}
+      </View>
+    </View>
+  )
+}
 
 function Footer({ left }: { left: string }) {
   return (
@@ -116,12 +141,15 @@ export function MonthlyReportPdf({ report }: { report: MonthlyReport }) {
             <Text style={{ width: '30%', color: GREY }}>Timeline vs original plan</Text>
             <Text style={{ width: '70%', color: /penalty/.test(p.scheduleNote) ? RED : /No baseline/.test(p.scheduleNote) ? GREY : GREEN }}>{p.scheduleNote}</Text>
           </View>
-          {p.levers.map((l, i) => (
-            <View key={i} style={s.row}>
-              <Text style={{ width: '30%', color: GREY }}>{l.label}</Text>
-              <Text style={{ width: '70%' }}>{l.used}{l.base ? `  ·  ${l.base}` : ''}</Text>
-            </View>
-          ))}
+          {p.levers.length > 0 ? (
+            <>
+              <Text style={[s.note, { marginTop: 8, fontFamily: 'Helvetica-Bold', color: BLACK, fontSize: 9 }]}>Budget usage</Text>
+              {p.levers.map((l, i) => <Bar key={i} lever={l} />)}
+              <Text style={[s.note, { marginTop: 6 }]}>Bar = spent of budget. The thin line marks how far this work has progressed - a bar past its line is spending ahead of build.</Text>
+            </>
+          ) : (
+            <Text style={s.note}>No labour or cost budget on this job yet - add an accepted estimate to track usage.</Text>
+          )}
           {p.slips.length > 0 ? (
             <>
               <Text style={[s.note, { marginTop: 6, fontFamily: 'Helvetica-Bold', color: BLACK }]}>Categories running late vs baseline:</Text>

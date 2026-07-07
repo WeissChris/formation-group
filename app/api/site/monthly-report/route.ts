@@ -39,8 +39,13 @@ export async function GET(request: NextRequest) {
   if (!session) return NextResponse.json({ ok: false }, { status: 401 })
   if (!supabaseAdmin) return NextResponse.json({ ok: false, error: 'not_configured' }, { status: 503 })
 
-  const { data: projRows } = await supabaseAdmin.from('fg_projects').select('*')
+  // Reports are per-job: the meeting walks one project at a time. ?projectId= builds that single
+  // job; without it we fall back to every project this foreman runs (one page each).
+  const projectId = request.nextUrl.searchParams.get('projectId')
+  let query = supabaseAdmin.from('fg_projects').select('*')
     .eq('foreman', session.name).not('status', 'in', '("complete","invoiced")')
+  if (projectId) query = query.eq('id', projectId)
+  const { data: projRows } = await query
   const projects = (projRows ?? []) as Record<string, unknown>[]
   if (projects.length === 0) return NextResponse.json({ ok: false, error: 'no_projects' }, { status: 404 })
 
@@ -160,18 +165,22 @@ export async function GET(request: NextRequest) {
 
     const lever = (key: string) => card.levers.find(l => l.key === key)
     const lab = lever('labour'), mat = lever('materials'), sub = lever('subbies')
+    const pct = (a: number, b: number) => b > 0 ? Math.round((a / b) * 100) : 0
     const levers: ProjectReport['levers'] = []
     if (lab && lab.budget > 0) levers.push({
       label: 'Labour',
-      used: `${Math.round(lab.actual / STD_LABOUR_RATE)}h used of ${Math.round(lab.budget / STD_LABOUR_RATE)}h allowed`,
-      base: `${Math.round(lab.progressPct * 100)}% of its work elapsed`,
+      usedLabel: `${Math.round(lab.actual / STD_LABOUR_RATE)}h of ${Math.round(lab.budget / STD_LABOUR_RATE)}h  (${pct(lab.actual, lab.budget)}%)`,
+      fillPct: lab.actual / lab.budget, markPct: lab.progressPct, over: lab.actual > lab.budget,
     })
     if (mat && mat.budget > 0) levers.push({
-      label: 'Materials', used: `${money(mat.actual)} of ${money(mat.budget)} allowance`,
-      base: `${Math.round(mat.progressPct * 100)}% of its work elapsed`,
+      label: 'Materials',
+      usedLabel: `${money(mat.actual)} of ${money(mat.budget)}  (${pct(mat.actual, mat.budget)}%)`,
+      fillPct: mat.actual / mat.budget, markPct: mat.progressPct, over: mat.actual > mat.budget,
     })
     if (sub && sub.budget > 0) levers.push({
-      label: 'Subcontractors', used: `${money(sub.actual)} committed of ${money(sub.budget)} allowance`, base: '',
+      label: 'Subcontractors',
+      usedLabel: `${money(sub.actual)} committed of ${money(sub.budget)}  (${pct(sub.actual, sub.budget)}%)`,
+      fillPct: sub.actual / sub.budget, markPct: null, over: sub.actual > sub.budget,
     })
 
     // Variations raised since the window opened (any status).
@@ -216,11 +225,13 @@ export async function GET(request: NextRequest) {
     projects: reports.sort((a, b) => a.name.localeCompare(b.name)),
   }
 
+  const slugSource = projectId && reports.length === 1 ? reports[0].name : session.name
+  const slug = (slugSource || 'report').replace(/[^\w]+/g, '-').toLowerCase()
   const buffer = await renderToBuffer(React.createElement(MonthlyReportPdf, { report }) as never)
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="monthly-report-${session.name.replace(/[^\w]+/g, '-').toLowerCase()}.pdf"`,
+      'Content-Disposition': `inline; filename="monthly-report-${slug}.pdf"`,
       'Cache-Control': 'private, max-age=0, must-revalidate',
     },
   })
