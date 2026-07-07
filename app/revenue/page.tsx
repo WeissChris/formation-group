@@ -42,9 +42,19 @@ function gpBarColor(gp: number | null): string {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function isSameWeek(dateStr: string, friday: Date) {
+// The Friday that ends a date's week (working week Mon-Fri; Sat/Sun roll to the coming Friday).
+// Every revenue row is bucketed by THIS, not its raw week_ending, so a non-Friday-dated entry
+// still lands in the right week column - and the cells, month totals and quarter total reconcile
+// (a handful of Thursday-dated rows were counted in the quarter but dropped from the grid).
+function weekFriday(dateStr: string): Date {
   const d = new Date(dateStr)
-  return d.toDateString() === friday.toDateString()
+  const f = new Date(d)
+  f.setDate(d.getDate() + ((5 - d.getDay() + 7) % 7))   // getDay: Sun=0..Sat=6, Fri=5
+  return f
+}
+
+function isSameWeek(dateStr: string, friday: Date) {
+  return weekFriday(dateStr).toDateString() === friday.toDateString()
 }
 
 function isCurrentWeek(friday: Date): boolean {
@@ -490,8 +500,8 @@ export default function RevenuePage() {
   const quarterTotals = quarterDefs.map(q =>
     q.months.reduce((sum, m, i) =>
       sum + revenue.filter(r => {
-        const d = new Date(r.weekEnding)
-        return d.getMonth() === m && d.getFullYear() === q.years[i]
+        const f = weekFriday(r.weekEnding)   // bucket by the entry's week, matching the month grid
+        return f.getMonth() === m && f.getFullYear() === q.years[i]
       }).reduce((s, r) => s + r.plannedRevenue, 0)
     , 0)
   )
@@ -660,7 +670,7 @@ export default function RevenuePage() {
           const qTotal = quarterTotals[qi]
           const qActual = q.months.reduce((sum, m, mi) => {
             const y = q.years[mi]
-            return sum + revenue.filter(r => { const d = new Date(r.weekEnding); return d.getMonth() === m && d.getFullYear() === y }).reduce((s, r) => s + (r.actualInvoiced || 0), 0)
+            return sum + revenue.filter(r => { const f = weekFriday(r.weekEnding); return f.getMonth() === m && f.getFullYear() === y }).reduce((s, r) => s + (r.actualInvoiced || 0), 0)
           }, 0)
           const prevQTotal = qi > 0 ? quarterTotals[qi - 1] : null
           const vsQPct = prevQTotal && prevQTotal > 0 ? ((qTotal - prevQTotal) / prevQTotal) * 100 : null
@@ -690,7 +700,7 @@ export default function RevenuePage() {
                   {q.months.map((m, mi) => {
                     const y = q.years[mi]
                     const mFridays = getFridaysInMonth(y, m)
-                    const mRevenue = revenue.filter(r => { const d = new Date(r.weekEnding); return d.getMonth() === m && d.getFullYear() === y })
+                    const mRevenue = revenue.filter(r => { const f = weekFriday(r.weekEnding); return f.getMonth() === m && f.getFullYear() === y })
                     const mProjects = projects.filter(proj => mRevenue.some(r => r.projectId === proj.id && (r.plannedRevenue > 0 || (r.scheduledCost ?? 0) > 0)))
                     const mColTotals = mFridays.map(fri => mRevenue.filter(r => isSameWeek(r.weekEnding, fri)).reduce((s, r) => s + r.plannedRevenue, 0))
                     const mActualTotals = mFridays.map(fri => mRevenue.filter(r => isSameWeek(r.weekEnding, fri)).reduce((s, r) => s + (r.actualInvoiced || 0), 0))
