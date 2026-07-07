@@ -58,6 +58,7 @@ export default function ProgrammePage() {
   const [filterStatus, setFilterStatus] = useState<'active' | 'all'>('active')
   const [supervisors, setSupervisors] = useState<Supervisor[]>([])
   const [colourBy, setColourBy] = useState<'entity' | 'supervisor'>('entity')
+  const [showTbc, setShowTbc] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -121,6 +122,15 @@ export default function ProgrammePage() {
     return true
   })
 
+  // TBC = won/contracted (live) but with no scheduled bars yet - the supervisor hasn't built the
+  // Gantt. Self-clears the moment any dated bar exists. Shown as a ghosted block at the contract
+  // window so the committed pipeline reads on the programme without cluttering the scheduled work.
+  const hasSchedule = (p: Project) =>
+    (ganttByProject[p.id] || []).some(e => entrySegments(e).some(s => s.startDate && s.endDate))
+  const isTbc = (p: Project) => isLiveProject(p) && !hasSchedule(p)
+  const tbcProjects = filtered.filter(isTbc)
+  const scheduledProjects = filtered.filter(p => !isTbc(p))
+
   const totalWidth = LABEL_W + CELL_W * WEEKS
 
   return (
@@ -177,6 +187,13 @@ export default function ProgrammePage() {
           </select>
         )}
 
+        {/* Show contracted-but-unscheduled (TBC) rows */}
+        <button onClick={() => setShowTbc(v => !v)}
+          title="Show contracted projects that haven't been scheduled yet"
+          className={`px-3 py-1.5 border text-[10px] font-light tracking-wide uppercase transition-colors ${showTbc ? 'bg-fg-dark text-white/80 border-fg-dark' : 'border-fg-border text-fg-muted hover:text-fg-heading'}`}>
+          TBC{tbcProjects.length > 0 ? ` (${tbcProjects.length})` : ''}
+        </button>
+
         <span className="text-2xs text-fg-muted ml-auto">{filtered.length} project{filtered.length !== 1 ? 's' : ''}</span>
       </div>
 
@@ -206,6 +223,12 @@ export default function ProgrammePage() {
         <div className="flex items-center gap-1.5">
           <span className="text-xs" style={{ color: '#8A8580' }}>◆</span>
           <span className="text-[10px] font-light text-fg-muted uppercase tracking-wide">Milestone</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-6 h-2.5 rounded-sm" style={{
+            background: 'repeating-linear-gradient(45deg, rgba(138,133,128,0.28), rgba(138,133,128,0.28) 4px, rgba(138,133,128,0.08) 4px, rgba(138,133,128,0.08) 8px)',
+            border: '1px dashed rgba(138,133,128,0.55)' }} />
+          <span className="text-[10px] font-light text-fg-muted uppercase tracking-wide">Contracted (TBC)</span>
         </div>
       </div>
 
@@ -242,7 +265,7 @@ export default function ProgrammePage() {
             </div>
 
             {/* ── Project rows ── */}
-            {filtered.map(p => {
+            {scheduledProjects.map(p => {
               const entries = ganttByProject[p.id] || []
               const milestones = milestonesByProject[p.id] || []
               const { status, daysSlippage } = scheduleStatus(p, entries)
@@ -390,17 +413,89 @@ export default function ProgrammePage() {
                 </div>
               )
             })}
+
+            {/* ── Contracted, awaiting schedule (TBC) ── */}
+            {showTbc && tbcProjects.length > 0 && (
+              <>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-fg-card/25 border-b border-fg-border/40 border-t border-t-fg-border">
+                  <span className="text-[10px] font-medium tracking-wide uppercase text-fg-muted">Contracted &mdash; awaiting schedule</span>
+                  <span className="text-[9px] text-fg-muted/60">{tbcProjects.length}</span>
+                </div>
+                {tbcProjects.map(p => {
+                  const start = p.startDate
+                  const end = p.plannedCompletion
+                  const startIdx = start ? fridays.findIndex(f => toISODate(f) >= start) : -1
+                  const endIdx = end ? fridays.findIndex(f => toISODate(f) >= end) : -1
+                  const hasWindow = startIdx >= 0
+                  const effEnd = endIdx >= 0 ? endIdx : fridays.length - 1
+                  const left = hasWindow ? startIdx * CELL_W : 0
+                  const width = hasWindow ? Math.max(CELL_W, (effEnd - startIdx + 1) * CELL_W) - 4 : 0
+                  return (
+                    <div key={p.id} className="border-b border-fg-border/40 hover:bg-fg-card/10 transition-colors">
+                      <div className="flex" style={{ minHeight: 42 }}>
+                        {/* Project info column */}
+                        <div className="flex-shrink-0 flex flex-col justify-center px-3 py-2 border-r border-fg-border" style={{ width: LABEL_W }}>
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <EntityBadge entity={p.entity} short />
+                            <Link href={`/projects/${p.id}/gantt`}
+                              className="text-xs font-light text-fg-heading hover:text-fg-dark transition-colors truncate max-w-[110px]">
+                              {p.name}
+                            </Link>
+                            <span className="text-[8px] font-semibold tracking-wide uppercase text-fg-muted border border-fg-border/70 px-1 leading-tight rounded-sm">TBC</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {p.foreman
+                              ? <span className="text-[9px] text-fg-muted/70">{p.foreman}</span>
+                              : <span className="text-[9px] text-amber-600/90">No supervisor</span>}
+                            {start
+                              ? <span className="text-[9px] text-fg-muted/60">Target {formatDate(start)}</span>
+                              : <span className="text-[9px] text-amber-600/80">Dates TBC</span>}
+                          </div>
+                        </div>
+
+                        {/* Timeline */}
+                        <div className="relative flex flex-1" style={{ height: 42 }}>
+                          {fridays.map((fri, i) => {
+                            const iso = toISODate(fri)
+                            const isToday = iso === currentWeekIso
+                            const isMonth1 = i > 0 && fri.getMonth() !== fridays[i-1].getMonth()
+                            return (
+                              <div key={i} style={{ width: CELL_W, minWidth: CELL_W, height: '100%',
+                                borderLeft: isMonth1 ? '2px solid rgba(255,255,255,0.08)' : undefined, position: 'relative' }}
+                                className={`border-r border-fg-border/20 ${isToday ? 'bg-fg-card/30' : ''}`}>
+                                {isToday && <div className="absolute inset-y-0 left-0 w-0.5 bg-red-500/50 z-10 pointer-events-none" />}
+                              </div>
+                            )
+                          })}
+                          {/* Ghosted TBC block at the contract window (hatched, dashed) */}
+                          {hasWindow && (
+                            <div className="absolute top-3 rounded-sm flex items-center justify-center pointer-events-none"
+                              style={{ left, width, height: 18,
+                                background: 'repeating-linear-gradient(45deg, rgba(138,133,128,0.28), rgba(138,133,128,0.28) 5px, rgba(138,133,128,0.08) 5px, rgba(138,133,128,0.08) 10px)',
+                                border: '1px dashed rgba(138,133,128,0.55)' }}
+                              title={`${p.name} — target ${start ? formatDate(start) : ''}${end ? ` to ${formatDate(end)}` : ''} (not yet scheduled)`}>
+                              <span className="text-[8px] font-medium text-fg-muted tracking-wide">TBC</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
+            )}
           </div>
         </div>
       )}
 
       {/* Summary footer */}
       {filtered.length > 0 && (
-        <div className="mt-6 grid grid-cols-3 gap-4">
+        <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
-            { label: 'On Schedule', count: filtered.filter(p => scheduleStatus(p).status === 'green').length, colour: 'text-green-600' },
-            { label: 'Watching',    count: filtered.filter(p => scheduleStatus(p).status === 'amber').length, colour: 'text-amber-500' },
-            { label: 'Delayed',     count: filtered.filter(p => scheduleStatus(p).status === 'red').length,   colour: 'text-red-500' },
+            { label: 'On Schedule', count: scheduledProjects.filter(p => scheduleStatus(p).status === 'green').length, colour: 'text-green-600' },
+            { label: 'Watching',    count: scheduledProjects.filter(p => scheduleStatus(p).status === 'amber').length, colour: 'text-amber-500' },
+            { label: 'Delayed',     count: scheduledProjects.filter(p => scheduleStatus(p).status === 'red').length,   colour: 'text-red-500' },
+            { label: 'Awaiting Schedule', count: tbcProjects.length, colour: 'text-fg-muted' },
           ].map(s => (
             <div key={s.label} className="border border-fg-border px-4 py-3 text-center">
               <p className={`text-xl font-light tabular-nums ${s.colour}`}>{s.count}</p>
