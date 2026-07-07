@@ -8,7 +8,12 @@ import { useState } from 'react'
 import { SpellCheck, X, Check } from 'lucide-react'
 import { checkSpelling, addToIgnoreList, type SpellingIssue } from '@/lib/spellcheck'
 
-export default function SpellCheckButton({ getTexts }: { getTexts: () => string[] }) {
+export default function SpellCheckButton({ getTexts, onReplace }: {
+  getTexts: () => string[]
+  /** When provided, suggestions become click-to-fix: replaces every occurrence of the word in the
+   *  document. Without it (read-only docs) suggestions display as hints. */
+  onReplace?: (word: string, replacement: string) => void
+}) {
   const [issues, setIssues] = useState<SpellingIssue[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
@@ -27,6 +32,11 @@ export default function SpellCheckButton({ getTexts }: { getTexts: () => string[
 
   const ignore = (word: string) => {
     addToIgnoreList(word)
+    setIssues(prev => (prev ?? []).filter(i => i.word !== word))
+  }
+
+  const fix = (word: string, replacement: string) => {
+    onReplace?.(word, replacement)
     setIssues(prev => (prev ?? []).filter(i => i.word !== word))
   }
 
@@ -66,7 +76,22 @@ export default function SpellCheckButton({ getTexts }: { getTexts: () => string[
                       {issue.count > 1 && <span className="text-gray-400 font-light"> ×{issue.count}</span>}
                     </p>
                     {issue.suggestions.length > 0 && (
-                      <p className="text-xs font-light text-gray-500 mt-0.5">Did you mean: {issue.suggestions.join(', ')}?</p>
+                      onReplace ? (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          <span className="text-xs font-light text-gray-500">Replace with:</span>
+                          {issue.suggestions.map(sug => (
+                            <button
+                              key={sug}
+                              onClick={() => fix(issue.word, sug)}
+                              className="text-xs px-2 py-0.5 border border-green-600/40 text-green-700 hover:bg-green-50 transition-colors"
+                            >
+                              {sug}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs font-light text-gray-500 mt-0.5">Did you mean: {issue.suggestions.join(', ')}?</p>
+                      )
                     )}
                   </div>
                   <button

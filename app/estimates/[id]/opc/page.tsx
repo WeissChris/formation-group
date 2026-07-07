@@ -316,6 +316,21 @@ export default function OpcPage() {
     mutate({ rows: next })
   }
 
+  // Click-to-fix from the spell check panel: swap every whole-word occurrence across the
+  // document's prose (intro, row titles + scopes, exclusions, items). Scope fields hold HTML,
+  // so the swap runs on the fragment - a word split by a formatting tag stays put (rare; the
+  // checker will flag it again and it can be fixed in the field).
+  const replaceWord = (word: string, replacement: string) => {
+    const re = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g')
+    const swap = (s: string) => s.replace(re, replacement)
+    mutate({
+      intro: swap(opc.intro ?? ''),
+      rows: rows.map(r => ({ ...r, title: swap(r.title), scope: swap(r.scope) })),
+      exclusions: (opc.exclusions ?? []).map(ex => ({ title: swap(ex.title), blurb: swap(ex.blurb) })),
+      excludedItems: (opc.excludedItems ?? []).map(swap),
+    })
+  }
+
   const saveSnippet = (row: OpcRow) => {
     const title = window.prompt('Library title for this scope text:', row.title)
     if (!title || !title.trim()) return
@@ -365,12 +380,15 @@ export default function OpcPage() {
         </Link>
         <div className="flex items-center gap-3">
           <span className="text-2xs text-white/40 w-14">{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : ''}</span>
-          <SpellCheckButton getTexts={() => [
-            stripProse(opc.intro ?? ''),
-            ...rows.flatMap(r => [r.title, stripProse(r.scope)]),
-            ...(opc.exclusions ?? []).flatMap(ex => [ex.title, stripProse(ex.blurb)]),
-            ...(opc.excludedItems ?? []),
-          ]} />
+          <SpellCheckButton
+            getTexts={() => [
+              stripProse(opc.intro ?? ''),
+              ...rows.flatMap(r => [r.title, stripProse(r.scope)]),
+              ...(opc.exclusions ?? []).flatMap(ex => [ex.title, stripProse(ex.blurb)]),
+              ...(opc.excludedItems ?? []),
+            ]}
+            onReplace={replaceWord}
+          />
           <button
             onClick={() => window.print()}
             className="flex items-center gap-2 px-4 py-1.5 bg-white/10 text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-white/20 transition-colors"
