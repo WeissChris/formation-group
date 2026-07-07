@@ -351,32 +351,54 @@ export default function OpcPage() {
           <p className="text-xs tracking-[0.25em] uppercase mb-2" style={{ color: GREEN }}>01 — Landscape Construction Estimate</p>
           <div className="h-px w-16 mb-8" style={{ backgroundColor: GREEN }} />
 
-          {rows.map(row => {
-            const price = priceOf(row)
-            const others = rows.filter(r => r.id !== row.id)
-            return (
-              <div key={row.id} className="opc-avoid-break border-b border-gray-200 py-6 grid grid-cols-[190px_1fr_110px] gap-6">
-                <div>
-                  <input
-                    value={row.title}
-                    onChange={e => setRow(row.id, { title: e.target.value })}
-                    className="print:hidden w-full text-sm font-normal bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none"
-                    style={{ color: HEADING }}
-                  />
-                  <p className="hidden print:block text-sm font-normal" style={{ color: HEADING }}>{row.title}</p>
-                  {row.categories.length > 1 && (
-                    <div className="print:hidden mt-1.5 flex flex-wrap gap-1">
-                      {row.categories.map(c => (
-                        <span key={c} className="inline-flex items-center gap-1 text-2xs text-gray-500 bg-gray-100 px-1.5 py-0.5">
-                          {c}
-                          <button onClick={() => ejectCategory(row.id, c)} title="Split back to its own row" className="text-gray-400 hover:text-red-400">
-                            <X className="w-2.5 h-2.5" />
-                          </button>
-                        </span>
-                      ))}
+          <div className="space-y-3">
+            {rows.map(row => {
+              const price = priceOf(row)
+              const others = rows.filter(r => r.id !== row.id)
+              return (
+                <div key={row.id} className="opc-avoid-break rounded-lg px-6 py-5" style={{ backgroundColor: BG_WARM, borderLeft: `3px solid ${GREEN}` }}>
+                  <div className="flex items-start justify-between gap-6">
+                    <div className="flex-1 min-w-0">
+                      <input
+                        value={row.title}
+                        onChange={e => setRow(row.id, { title: e.target.value })}
+                        className="print:hidden w-full text-base font-normal bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none"
+                        style={{ color: HEADING }}
+                      />
+                      <p className="hidden print:block text-base font-normal" style={{ color: HEADING }}>{row.title}</p>
+                      {row.categories.length > 1 && (
+                        <div className="print:hidden mt-1.5 flex flex-wrap gap-1">
+                          {row.categories.map(c => (
+                            <span key={c} className="inline-flex items-center gap-1 text-2xs text-gray-500 bg-white/70 px-1.5 py-0.5">
+                              {c}
+                              <button onClick={() => ejectCategory(row.id, c)} title="Split back to its own row" className="text-gray-400 hover:text-red-400">
+                                <X className="w-2.5 h-2.5" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                  <div className="print:hidden mt-2 flex flex-col gap-1.5 items-start">
+                    <p className="text-lg font-light tabular-nums whitespace-nowrap shrink-0" style={{ color: price > 0 ? GREEN : MUTED }}>
+                      {price > 0 ? money(price) : ''}
+                    </p>
+                  </div>
+                  <div className="mt-2.5">
+                    <ProseField
+                      value={row.scope}
+                      onChange={v => setRow(row.id, { scope: v })}
+                      placeholder="Client-facing scope of works…"
+                      className="text-sm font-light leading-relaxed"
+                    />
+                  </div>
+                  <div className="print:hidden mt-2.5 flex items-center gap-2">
+                    <SnippetMenu
+                      snippets={snippets}
+                      currentText={row.scope}
+                      onInsert={text => setRow(row.id, { scope: row.scope.trim() ? `${row.scope}\n${text}` : text })}
+                      onSaveCurrent={() => saveSnippet(row)}
+                      onDelete={removeSnippet}
+                    />
                     {others.length > 0 && (
                       <select
                         value=""
@@ -387,27 +409,11 @@ export default function OpcPage() {
                         {others.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}
                       </select>
                     )}
-                    <SnippetMenu
-                      snippets={snippets}
-                      currentText={row.scope}
-                      onInsert={text => setRow(row.id, { scope: row.scope.trim() ? `${row.scope}\n${text}` : text })}
-                      onSaveCurrent={() => saveSnippet(row)}
-                      onDelete={removeSnippet}
-                    />
                   </div>
                 </div>
-                <ProseField
-                  value={row.scope}
-                  onChange={v => setRow(row.id, { scope: v })}
-                  placeholder="Client-facing scope of works…"
-                  className="text-sm font-light leading-relaxed"
-                />
-                <p className="text-right text-base font-light tabular-nums whitespace-nowrap" style={{ color: price > 0 ? GREEN : MUTED }}>
-                  {price > 0 ? money(price) : ''}
-                </p>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
 
         {/* ── PROJECT COST SUMMARY ── */}
