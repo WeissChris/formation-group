@@ -11,7 +11,7 @@ import {
   siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, getSiteBoq,
   getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours, getSiteMilestones, getSiteSafety, postSiteSafety,
   getSiteBaseline, getSiteVariations, createSiteVariation, getSiteBookings, saveSiteBooking,
-  getSiteHandover, saveSiteHandover,
+  getSiteHandover, saveSiteHandover, getSiteIntroPack,
   type SiteProject, type SitePlan, type SiteMilestone, type SiteSafety, type SiteBaseline, type SiteVariation,
   type SubbieBooking, type HandoverChecklist,
 } from '@/lib/siteData'
@@ -55,6 +55,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
   const [variations, setVariations] = useState<SiteVariation[]>([])
   const [bookings, setBookings] = useState<SubbieBooking[]>([])
   const [handover, setHandover] = useState<HandoverChecklist | null>(null)
+  const [introSentAt, setIntroSentAt] = useState<string | null | undefined>(undefined)
 
   const refreshSafety = () => getSiteSafety(params.id).then(setSafety)
   const refreshHandover = () => getSiteHandover(params.id).then(setHandover)
@@ -80,6 +81,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
       getSiteVariations(params.id).then(setVariations)
       getSiteBookings(params.id).then(setBookings)
       getSiteHandover(params.id).then(setHandover)
+      getSiteIntroPack(params.id).then(p => setIntroSentAt(p.sentAt ?? null))
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id, router])
@@ -124,7 +126,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
           <Dashboard project={project} gantt={gantt} card={card} milestones={milestones} openTab={setTab}
             safety={safety} plans={plans} baseline={baseline} hoursWeeks={hoursWeeks}
             variations={variations} refreshVariations={refreshVariations}
-            bookings={bookings} refreshBookings={refreshBookings} handover={handover} />
+            bookings={bookings} refreshBookings={refreshBookings} handover={handover} introSentAt={introSentAt} />
         )}
         {tab === 'schedule' && <Schedule gantt={gantt} projectId={project.id} />}
         {tab === 'boq' && <Boq projectId={project.id} projectName={project.name} address={project.address} />}
@@ -515,7 +517,7 @@ function ThisWeekStrip({ gantt, offset = 0, title = 'This week' }: { gantt: Gant
 }
 
 // ── Dashboard (default landing — the at-a-glance cockpit view) ─────────────────────
-function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, baseline, hoursWeeks, variations, refreshVariations, bookings, refreshBookings, handover }: {
+function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, baseline, hoursWeeks, variations, refreshVariations, bookings, refreshBookings, handover, introSentAt }: {
   project: SiteProject; gantt: GanttEntry[]; card: ReturnType<typeof computeScorecard>
   milestones: SiteMilestone[]; openTab: (t: Tab) => void
   safety: SiteSafety | null; plans: SitePlan[]; baseline: SiteBaseline | null
@@ -523,6 +525,7 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
   variations: SiteVariation[]; refreshVariations: () => void
   bookings: SubbieBooking[]; refreshBookings: () => void
   handover: HandoverChecklist | null
+  introSentAt: string | null | undefined   // undefined = still loading; null = not sent
 }) {
   const todayIso = toISO(new Date())
   const [scoreOpen, setScoreOpen] = useState(false)
@@ -625,7 +628,7 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
   // Heads up: the act-on-it list. Monday toolbox rule, SWMS ack gaps, subbie docs, holidays,
   // open incidents, freshly-updated drawings.
   const nudges = useMemo(() => {
-    const out: { text: string; level: 'red' | 'amber' | 'info'; tab?: Tab }[] = []
+    const out: { text: string; level: 'red' | 'amber' | 'info'; tab?: Tab; href?: string }[] = []
     const now = new Date()
     const mon = thisMonday()
 
@@ -691,8 +694,14 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
       })
     }
 
+    // Client introduction pack: must be sent once the Gantt is built (planning day). Stays up
+    // until the foreman marks it sent on the intro pack. introSentAt: undefined = still loading.
+    if (forecastEnd && introSentAt === null) {
+      out.push({ text: 'Send the client introduction pack', level: 'red', href: `/site/${project.id}/intro-pack` })
+    }
+
     return out
-  }, [safety, plans, subbieScopes, card.progressPct, handover])
+  }, [safety, plans, subbieScopes, card.progressPct, handover, forecastEnd, introSentAt, project.id])
 
   const overall = STATUS_UI[card.status]
 
@@ -722,17 +731,20 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
         <div className="rounded-xl border border-fg-border overflow-hidden">
           <p className="text-[10px] uppercase tracking-wide text-fg-muted px-3 pt-3">Heads up</p>
           <ul className="divide-y divide-fg-border/40 mt-1">
-            {nudges.map((n, i) => (
-              <li key={i}>
-                <button onClick={() => n.tab && openTab(n.tab)} disabled={!n.tab}
-                  className="w-full flex items-start gap-2 px-3 py-2 text-left">
-                  <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${n.level === 'red' ? 'bg-red-500' : n.level === 'amber' ? 'bg-amber-500' : 'bg-fg-border'}`} />
-                  <span className={`text-xs leading-snug ${n.level === 'red' ? 'text-red-700 font-medium' : n.level === 'amber' ? 'text-amber-700' : 'text-fg-muted'}`}>
-                    {n.text}
-                  </span>
-                </button>
-              </li>
-            ))}
+            {nudges.map((n, i) => {
+              const dot = <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${n.level === 'red' ? 'bg-red-500' : n.level === 'amber' ? 'bg-amber-500' : 'bg-fg-border'}`} />
+              const label = <span className={`text-xs leading-snug ${n.level === 'red' ? 'text-red-700 font-medium' : n.level === 'amber' ? 'text-amber-700' : 'text-fg-muted'}`}>{n.text}</span>
+              const cls = 'w-full flex items-start gap-2 px-3 py-2 text-left'
+              return (
+                <li key={i}>
+                  {n.href ? (
+                    <Link href={n.href} className={cls}>{dot}{label}</Link>
+                  ) : (
+                    <button onClick={() => n.tab && openTab(n.tab)} disabled={!n.tab} className={cls}>{dot}{label}</button>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         </div>
       )}

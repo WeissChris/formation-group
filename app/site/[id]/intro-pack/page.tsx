@@ -60,10 +60,12 @@ export default function IntroPackPage() {
   const [roster, setRoster] = useState<IntroRoster>(DEFAULT_ROSTER)
   const [editTeam, setEditTeam] = useState(false)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [meName, setMeName] = useState('')
 
   useEffect(() => {
     siteMe().then(m => {
       if (!m) { router.replace('/site'); return }
+      setMeName(m.name)
       getSiteProject(id).then(p => { if (!p) { router.replace('/site'); return } setProject(p) })
       getSiteGantt(id).then(setGantt)
       getSiteIntroPack(id).then(setPack)
@@ -141,6 +143,17 @@ export default function IntroPackPage() {
         </Link>
         <div className="flex items-center gap-3">
           <span className="text-2xs text-white/40 w-12">{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : ''}</span>
+          {pack.sentAt ? (
+            <button onClick={() => { if (window.confirm('Mark this pack as NOT sent? It will reappear in the foreman heads-up.')) mutate({ sentAt: undefined, sentBy: undefined }) }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-light tracking-architectural uppercase bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition-colors">
+              Sent {new Date(pack.sentAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+            </button>
+          ) : (
+            <button onClick={() => mutate({ sentAt: new Date().toISOString(), sentBy: meName })}
+              className="px-3 py-1.5 text-xs font-light tracking-architectural uppercase bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
+              Mark as sent
+            </button>
+          )}
           <button onClick={() => setEditTeam(v => !v)}
             className={`px-3 py-1.5 text-xs font-light tracking-architectural uppercase transition-colors ${editTeam ? 'bg-white/25 text-white' : 'bg-white/10 text-white/80 hover:bg-white/20'}`}>
             {editTeam ? 'Done editing team' : 'Edit team'}

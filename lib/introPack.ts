@@ -97,6 +97,8 @@ export interface IntroPackData {
   includePool?: boolean       // override; defaults from the project type
   landscapeSteps?: ProcessStep[]   // override of LANDSCAPE_PROCESS
   poolSteps?: ProcessStep[]        // override of POOL_PROCESS
+  sentAt?: string                  // ISO - stamped when the foreman marks the pack sent to the client
+  sentBy?: string
 }
 
 export const DEFAULT_WELCOME_BODY =
