@@ -362,6 +362,15 @@ export default function OpcPage() {
   // an older OPC already carries a pool figure. Landscape-only jobs get one total band.
   const poolRelevant = estimate.projectType === 'landscape_and_pool' || estimate.projectType === 'pool_only' || hasPoolFigure
   const combinedExGst = landscapeExGst + poolExGst
+
+  // Cost breakdown (table + chart): every priced category, plus Pool & Spa when present, largest
+  // first. Bars scale to the biggest line; the % column is share of the whole project.
+  const breakdown = [
+    ...rows.map(r => ({ title: r.title, price: priceOf(r) })),
+    ...(hasPoolFigure ? [{ title: 'Pool & Spa', price: poolExGst }] : []),
+  ].filter(b => b.price > 0).sort((a, b) => b.price - a.price)
+  const breakdownTotal = breakdown.reduce((s, b) => s + b.price, 0)
+  const breakdownMax = Math.max(...breakdown.map(b => b.price), 1)
   const money = (n: number) => formatCurrency(n)
 
   const docDate = opc.date ? new Date(opc.date) : new Date()
@@ -521,6 +530,32 @@ export default function OpcPage() {
           <p className="text-xs tracking-[0.25em] uppercase mb-2" style={{ color: GREEN }}>02 — Project Cost Summary</p>
           <div className="h-px w-16 mb-8" style={{ backgroundColor: GREEN }} />
 
+          {/* Breakdown: table + chart in one - category, spend bar (scaled to the biggest line),
+              amount and % of total, largest first so the story reads at a glance. */}
+          {breakdown.length > 0 && (
+            <div className="mb-8">
+              <div className="flex items-center gap-3 pb-2 mb-1 border-b border-gray-200">
+                <span className="w-44 shrink-0 text-2xs font-normal tracking-widest uppercase" style={{ color: MUTED }}>Category</span>
+                <span className="flex-1 text-2xs font-normal tracking-widest uppercase" style={{ color: MUTED }}>Share of project</span>
+                <span className="w-24 text-right text-2xs font-normal tracking-widest uppercase" style={{ color: MUTED }}>Amount</span>
+                <span className="w-12 text-right text-2xs font-normal tracking-widest uppercase" style={{ color: MUTED }}>%</span>
+              </div>
+              {breakdown.map(b => {
+                const pctOfTotal = breakdownTotal > 0 ? (b.price / breakdownTotal) * 100 : 0
+                return (
+                  <div key={b.title} className="flex items-center gap-3 py-1.5 border-b border-gray-100 break-inside-avoid">
+                    <span className="w-44 shrink-0 text-sm font-light truncate" style={{ color: HEADING }} title={b.title}>{b.title}</span>
+                    <div className="flex-1 h-3.5 rounded-sm" style={{ backgroundColor: '#EDEBE8' }}>
+                      <div className="h-full rounded-sm" style={{ width: `${(b.price / breakdownMax) * 100}%`, backgroundColor: GREEN }} />
+                    </div>
+                    <span className="w-24 text-right text-sm font-light tabular-nums" style={{ color: BODY }}>{money(b.price)}</span>
+                    <span className="w-12 text-right text-xs font-light tabular-nums" style={{ color: MUTED }}>{Math.round(pctOfTotal)}%</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           <div className="space-y-3">
             {/* Landscape-only jobs get ONE total band - the per-section + combined breakdown only
                 earns its place when a pool figure joins the landscape number. */}
@@ -567,6 +602,10 @@ export default function OpcPage() {
               </p>
             </div>
           </div>
+
+          <p className="text-xs font-light italic mt-4" style={{ color: MUTED }}>
+            A formal fixed-price quote will follow once the design and scope are finalised.
+          </p>
         </div>
 
         {/* ── EXCLUSIONS & KEY NOTES ── */}
