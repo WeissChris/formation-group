@@ -71,11 +71,37 @@ function reconcileRows(saved: OpcRow[] | undefined, categories: string[], seeds:
 
 const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
-/** Plain text -> HTML fragment (idempotent: existing HTML passes straight through). */
+// Only these tags carry meaning in a scope block; everything else (Word's <span style>, <font>,
+// <o:p>, class/style attributes) is presentational junk that overrides the card's own type. Strip
+// it so pasted-from-Word text renders in the document's style, not Century Gothic 10pt black.
+const ALLOWED_PROSE_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'UL', 'OL', 'LI', 'BR', 'P', 'DIV'])
+function sanitizeProse(html: string): string {
+  if (typeof document === 'undefined' || !html) return html
+  const tmp = document.createElement('div')
+  tmp.innerHTML = html
+  const walk = (node: Node) => {
+    Array.from(node.childNodes).forEach(child => {
+      if (child.nodeType === 8) { node.removeChild(child); return }   // strip comments (Word cond.)
+      if (child.nodeType !== 1) return
+      const el = child as HTMLElement
+      walk(el)
+      if (ALLOWED_PROSE_TAGS.has(el.tagName)) {
+        Array.from(el.attributes).forEach(a => el.removeAttribute(a.name))   // drop style/class/lang
+      } else {
+        while (el.firstChild) node.insertBefore(el.firstChild, el)           // unwrap span/font/o:p
+        node.removeChild(el)
+      }
+    })
+  }
+  walk(tmp)
+  return tmp.innerHTML
+}
+
+/** Plain text -> HTML fragment (idempotent), sanitised so stored/pasted junk never wins. */
 function toHtml(value: string): string {
   if (!value) return ''
-  if (/<(br|p|ul|ol|li|strong|b|em|i|div)\b/i.test(value)) return value
-  return escapeHtml(value).replace(/\n/g, '<br>')
+  const html = /<[a-z]/i.test(value) ? value : escapeHtml(value).replace(/\n/g, '<br>')
+  return sanitizeProse(html)
 }
 
 /** HTML fragment -> plain text (for spell check + snippet previews). */
@@ -145,6 +171,15 @@ function ProseField({ value, onChange, placeholder, className = '' }: {
         onFocus={() => setFocused(true)}
         onBlur={() => { setFocused(false); emit() }}
         onInput={emit}
+        onPaste={e => {
+          // Intercept the paste so Word/web styling never enters the field - insert clean HTML.
+          e.preventDefault()
+          const cd = e.clipboardData
+          const rawHtml = cd.getData('text/html')
+          const clean = rawHtml ? sanitizeProse(rawHtml) : escapeHtml(cd.getData('text/plain')).replace(/\n/g, '<br>')
+          document.execCommand('insertHTML', false, clean)
+          emit()
+        }}
         data-placeholder={placeholder}
         className={`opc-prose w-full outline-none border border-transparent hover:border-gray-300 focus:border-gray-400 print:border-0 transition-colors ${className}`}
       />
