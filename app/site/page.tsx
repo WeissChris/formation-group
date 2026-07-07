@@ -131,7 +131,7 @@ function MyProjects({ me, onSignOut }: { me: { supervisorId: string; name: strin
                     <p className="font-medium truncate">{p.name}</p>
                     <p className="text-sm text-fg-muted truncate">{p.address || p.clientName}</p>
                   </div>
-                  <StatusChip status={p.status} />
+                  <StatusChip status={p.status} stage={p.stage} />
                 </div>
                 {p.plannedCompletion && (
                   <p className="text-xs text-fg-muted mt-2">Due {formatDate(p.plannedCompletion)}</p>
@@ -145,8 +145,14 @@ function MyProjects({ me, onSignOut }: { me: { supervisorId: string; name: strin
   )
 }
 
-function StatusChip({ status }: { status: string }) {
-  const label = status === 'active' ? 'On site' : status === 'planning' ? 'Planning' : status
+// Prefer the granular STAGE (Contracted/Pre-Start/Active/...) over the coarse status field, which
+// is often left on 'planning' after a job has actually started - so an in-progress job read "Planning".
+const STAGE_CHIP: Record<string, string> = {
+  design: 'Design', estimating: 'Estimating', contracted: 'Contracted', pre_start: 'Pre-Start',
+  active: 'On site', completion: 'Completion', handover: 'Handover',
+}
+function StatusChip({ status, stage }: { status: string; stage?: string | null }) {
+  const label = (stage && STAGE_CHIP[stage]) || (status === 'active' ? 'On site' : status === 'planning' ? 'Planning' : status)
   return (
     <span className="shrink-0 text-[10px] uppercase tracking-wide px-2 py-1 rounded-full bg-fg-card/60 text-fg-heading">
       {label}
