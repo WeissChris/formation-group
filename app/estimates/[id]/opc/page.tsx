@@ -17,6 +17,7 @@ import { formatCurrency, generateId } from '@/lib/utils'
 import { activeLineItems, getEstimateContract, itemsContractValue } from '@/lib/estimateCalculations'
 import type { Estimate, EstimateOpc, OpcRow, OpcSnippet } from '@/types'
 import { Printer, ArrowLeft, X, Plus, ChevronDown } from 'lucide-react'
+import SpellCheckButton from '@/components/SpellCheckButton'
 
 const GREEN = '#3D5A3A'
 const HEADING = '#1a1a1a'
@@ -300,8 +301,14 @@ export default function OpcPage() {
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Estimate
         </Link>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <span className="text-2xs text-white/40 w-14">{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : ''}</span>
+          <SpellCheckButton getTexts={() => [
+            opc.intro ?? '',
+            ...rows.flatMap(r => [r.title, r.scope]),
+            ...(opc.exclusions ?? []).flatMap(ex => [ex.title, ex.blurb]),
+            ...(opc.excludedItems ?? []),
+          ]} />
           <button
             onClick={() => window.print()}
             className="flex items-center gap-2 px-4 py-1.5 bg-white/10 text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-white/20 transition-colors"

@@ -9,6 +9,7 @@ import { formatCurrency } from '@/lib/utils'
 import { getEstimateTotals, readLineItemRevenue, activeLineItems, getEstimateContract, itemsContractValue } from '@/lib/estimateCalculations'
 import type { Estimate, Project } from '@/types'
 import { Printer, ArrowLeft } from 'lucide-react'
+import SpellCheckButton from '@/components/SpellCheckButton'
 
 export default function QuotePage() {
   const params = useParams()
@@ -99,12 +100,20 @@ export default function QuotePage() {
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Estimate
         </Link>
-        <button
-          onClick={() => window.print()}
-          className="flex items-center gap-2 px-4 py-1.5 bg-white/10 text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-white/20 transition-colors"
-        >
-          <Printer className="w-3.5 h-3.5" /> Print
-        </button>
+        <div className="flex items-center gap-3">
+          <SpellCheckButton getTexts={() => [
+            clientName,
+            clientAddress,
+            ...categoryTotals.map(c => c.category),
+            estimate.notes ?? '',
+          ]} />
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-2 px-4 py-1.5 bg-white/10 text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-white/20 transition-colors"
+          >
+            <Printer className="w-3.5 h-3.5" /> Print
+          </button>
+        </div>
       </div>
 
       {/* Quote document */}
