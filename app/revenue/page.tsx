@@ -747,10 +747,11 @@ export default function RevenuePage() {
                         ) : (
                           <table className="w-full text-left border-collapse table-fixed">
                             <colgroup>
-                              {/* Slimmer total column when the three months sit side by side */}
-                              <col className="w-[180px]" />
+                              {/* Narrow the project column in the 3-across view to keep the Total
+                                  column wide enough for six-figure sums (they were overflowing). */}
+                              <col className="w-[180px] min-[1700px]:w-[128px]" />
                               {mFridays.map((_, fi) => <col key={fi} />)}
-                              <col className="w-[100px] min-[1700px]:w-[78px]" />
+                              <col className="w-[100px]" />
                             </colgroup>
                             {/* Column headers */}
                             <thead>
@@ -761,7 +762,7 @@ export default function RevenuePage() {
                                     {formatDayMonth(fri)}
                                   </th>
                                 ))}
-                                <th className="py-2 px-4 text-2xs font-light text-fg-muted text-right">Total</th>
+                                <th className="py-2 px-2 text-2xs font-light text-fg-muted text-right">Total</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -822,7 +823,7 @@ export default function RevenuePage() {
                                         </td>
                                       )
                                     })}
-                                    <td className="py-0 px-4 text-right">
+                                    <td className="py-0 px-2 text-right">
                                       <span className={`text-xs font-light tabular-nums ${rowTotal > 0 ? 'text-fg-heading' : 'text-fg-muted/30'}`}>
                                         {rowTotal > 0 ? formatCurrency(rowTotal) : '—'}
                                       </span>
@@ -842,8 +843,8 @@ export default function RevenuePage() {
                                     </span>
                                   </td>
                                 ))}
-                                <td className="py-0 px-4 text-right">
-                                  <span className="text-sm font-semibold text-fg-heading tabular-nums">{formatCurrency(mTotal)}</span>
+                                <td className="py-0 px-2 text-right">
+                                  <span className="text-xs font-semibold text-fg-heading tabular-nums">{formatCurrency(mTotal)}</span>
                                 </td>
                               </tr>
                               {/* Cashflow: budgeted cost out (from the Gantt) + net. Only shown when a Gantt
@@ -861,7 +862,7 @@ export default function RevenuePage() {
                                         </span>
                                       </td>
                                     ))}
-                                    <td className="py-0 px-4 text-right">
+                                    <td className="py-0 px-2 text-right">
                                       <span className="text-xs font-light text-fg-muted tabular-nums">{formatCurrency(mCostTotal)}</span>
                                     </td>
                                   </tr>
@@ -879,8 +880,8 @@ export default function RevenuePage() {
                                         </td>
                                       )
                                     })}
-                                    <td className="py-0 px-4 text-right">
-                                      <span className={`text-sm font-semibold tabular-nums ${(mTotal - mCostTotal) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                    <td className="py-0 px-2 text-right">
+                                      <span className={`text-xs font-semibold tabular-nums ${(mTotal - mCostTotal) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                                         {formatCurrency(mTotal - mCostTotal)}
                                       </span>
                                     </td>
