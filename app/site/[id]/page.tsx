@@ -105,6 +105,10 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
         <h1 className="text-xl font-light leading-tight mt-1">{project.name}</h1>
         <p className="text-sm text-fg-muted truncate">{project.address}</p>
         <nav className="flex gap-1 overflow-x-auto mt-3 -mx-4 px-4 no-scrollbar">
+          <Link href={`/site/${project.id}/intro-pack`}
+            className="shrink-0 text-xs px-3 py-1.5 rounded-full whitespace-nowrap bg-fg-card/50 text-fg-heading transition-colors">
+            Intro pack
+          </Link>
           {TABS.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`shrink-0 text-xs px-3 py-1.5 rounded-full whitespace-nowrap transition-colors ${

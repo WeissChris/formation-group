@@ -249,3 +249,28 @@ export async function saveSiteHandover(id: string, payload: { data?: HandoverDat
   })
   return res.ok
 }
+
+// ── Client introduction pack ──────────────────────────────────────────────────
+import type { IntroPackData, IntroRoster } from '@/lib/introPack'
+export type { IntroPackData, IntroRoster }
+
+export async function getSiteIntroPack(id: string): Promise<IntroPackData> {
+  const d = await getJson<{ ok: boolean; pack: IntroPackData }>(`/api/site/projects/${id}/intro`)
+  return d?.pack ?? {}
+}
+export async function saveSiteIntroPack(id: string, data: IntroPackData): Promise<boolean> {
+  const res = await fetch(`/api/site/projects/${id}/intro`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }),
+  })
+  return res.ok
+}
+export async function getIntroRoster(): Promise<IntroRoster | null> {
+  const d = await getJson<{ ok: boolean; roster: IntroRoster }>(`/api/site/intro-roster`)
+  return d?.ok ? d.roster : null
+}
+export async function saveIntroRoster(roster: IntroRoster): Promise<boolean> {
+  const res = await fetch(`/api/site/intro-roster`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roster }),
+  })
+  return res.ok
+}
