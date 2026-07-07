@@ -16,7 +16,7 @@ import { getEstimates, upsertEstimate, getOpcSnippets, upsertOpcSnippet, deleteO
 import { formatCurrency, generateId } from '@/lib/utils'
 import { activeLineItems, getEstimateContract, itemsContractValue } from '@/lib/estimateCalculations'
 import type { Estimate, EstimateOpc, OpcRow, OpcSnippet } from '@/types'
-import { Printer, ArrowLeft, X, Plus, ChevronDown } from 'lucide-react'
+import { Printer, ArrowLeft, X, Plus, ChevronDown, Bold, Italic, List } from 'lucide-react'
 import SpellCheckButton from '@/components/SpellCheckButton'
 
 const GREEN = '#3D5A3A'
@@ -55,23 +55,80 @@ function reconcileRows(saved: OpcRow[] | undefined, categories: string[], seeds:
   return rows
 }
 
-/** Auto-growing textarea that prints as clean text (textarea hidden in print, div shown). */
+// ── Rich prose (bold / italics / dot points) ──────────────────────────────────────
+// Scope text is stored as a light HTML fragment. Legacy plain-text values (and plain snippet
+// text) convert on the way in; stripProse() gives back plain text for spell check and previews.
+
+const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+/** Plain text -> HTML fragment (idempotent: existing HTML passes straight through). */
+function toHtml(value: string): string {
+  if (!value) return ''
+  if (/<(br|p|ul|ol|li|strong|b|em|i|div)\b/i.test(value)) return value
+  return escapeHtml(value).replace(/\n/g, '<br>')
+}
+
+/** HTML fragment -> plain text (for spell check + snippet previews). */
+function stripProse(value: string): string {
+  return value
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+}
+
+const joinProse = (a: string, b: string) =>
+  stripProse(a).trim() ? `${toHtml(a)}<br>${toHtml(b)}` : toHtml(b)
+
+/** contentEditable prose field: formatting toolbar (bold / italic / bullets) appears on focus,
+ *  prints exactly as styled. Uncontrolled while focused so the caret never jumps. */
 function ProseField({ value, onChange, placeholder, className = '' }: {
   value: string; onChange: (v: string) => void; placeholder: string; className?: string
 }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [focused, setFocused] = useState(false)
+  const html = toHtml(value)
+  useEffect(() => {
+    if (ref.current && !focused && ref.current.innerHTML !== html) ref.current.innerHTML = html
+  }, [html, focused])
+
+  const emit = () => onChange(ref.current?.innerHTML ?? '')
+  const exec = (command: string) => {
+    document.execCommand(command)
+    emit()
+  }
+
   return (
-    <>
-      <textarea
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        rows={1}
-        className={`print:hidden w-full bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none resize-none transition-colors ${className}`}
-        ref={el => { if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px` } }}
-        onInput={e => { const t = e.target as HTMLTextAreaElement; t.style.height = 'auto'; t.style.height = `${t.scrollHeight}px` }}
+    <div className="relative">
+      {focused && (
+        <div className="print:hidden absolute -top-8 left-0 z-10 flex items-center bg-white border border-gray-200 shadow-sm">
+          {/* onMouseDown + preventDefault keeps the text selection alive through the click */}
+          <button onMouseDown={e => { e.preventDefault(); exec('bold') }} title="Bold" className="px-2.5 py-1 hover:bg-gray-100 transition-colors">
+            <Bold className="w-3 h-3 text-gray-600" />
+          </button>
+          <button onMouseDown={e => { e.preventDefault(); exec('italic') }} title="Italic" className="px-2.5 py-1 hover:bg-gray-100 transition-colors border-l border-gray-100">
+            <Italic className="w-3 h-3 text-gray-600" />
+          </button>
+          <button onMouseDown={e => { e.preventDefault(); exec('insertUnorderedList') }} title="Dot points" className="px-2.5 py-1 hover:bg-gray-100 transition-colors border-l border-gray-100">
+            <List className="w-3 h-3 text-gray-600" />
+          </button>
+        </div>
+      )}
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        spellCheck
+        onFocus={() => setFocused(true)}
+        onBlur={() => { setFocused(false); emit() }}
+        onInput={emit}
+        data-placeholder={placeholder}
+        className={`opc-prose w-full outline-none border border-transparent hover:border-gray-300 focus:border-gray-400 print:border-0 transition-colors ${className}`}
       />
-      <div className={`hidden print:block whitespace-pre-wrap ${className}`}>{value}</div>
-    </>
+    </div>
   )
 }
 
@@ -103,7 +160,7 @@ function SnippetMenu({ snippets, currentText, onInsert, onSaveCurrent, onDelete 
               <div key={s.id} className="flex items-start gap-2 px-3 py-2 border-b border-gray-100 hover:bg-gray-50 group">
                 <button onClick={() => { onInsert(s.text); setOpen(false) }} className="flex-1 text-left">
                   <p className="text-xs font-normal text-gray-800">{s.title}</p>
-                  <p className="text-2xs text-gray-400 line-clamp-2">{s.text}</p>
+                  <p className="text-2xs text-gray-400 line-clamp-2">{stripProse(s.text)}</p>
                 </button>
                 <button
                   onClick={() => onDelete(s.id)}
@@ -245,7 +302,7 @@ export default function OpcPage() {
       rows: rows
         .filter(r => r.id !== sourceId)
         .map(r => r.id === targetId
-          ? { ...r, categories: [...r.categories, ...source.categories], scope: [r.scope, source.scope].filter(s => s.trim()).join('\n') }
+          ? { ...r, categories: [...r.categories, ...source.categories], scope: joinProse(r.scope, source.scope) }
           : r),
     })
   }
@@ -287,9 +344,14 @@ export default function OpcPage() {
   return (
     <div className="min-h-screen bg-white" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
       <style>{`
+        .opc-prose { min-height: 1.5em; }
+        .opc-prose:empty::before { content: attr(data-placeholder); color: #9ca3af; }
+        .opc-prose ul { list-style: disc; padding-left: 1.4em; margin: 0.25em 0; }
+        .opc-prose ol { list-style: decimal; padding-left: 1.4em; margin: 0.25em 0; }
         @media print {
           .opc-cover { height: 25cm; break-after: page; }
           .opc-avoid-break { break-inside: avoid; }
+          .opc-prose:empty::before { content: ''; }
         }
       `}</style>
 
@@ -304,9 +366,9 @@ export default function OpcPage() {
         <div className="flex items-center gap-3">
           <span className="text-2xs text-white/40 w-14">{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : ''}</span>
           <SpellCheckButton getTexts={() => [
-            opc.intro ?? '',
-            ...rows.flatMap(r => [r.title, r.scope]),
-            ...(opc.exclusions ?? []).flatMap(ex => [ex.title, ex.blurb]),
+            stripProse(opc.intro ?? ''),
+            ...rows.flatMap(r => [r.title, stripProse(r.scope)]),
+            ...(opc.exclusions ?? []).flatMap(ex => [ex.title, stripProse(ex.blurb)]),
             ...(opc.excludedItems ?? []),
           ]} />
           <button
@@ -401,8 +463,8 @@ export default function OpcPage() {
                   <div className="print:hidden mt-2.5 flex items-center gap-2">
                     <SnippetMenu
                       snippets={snippets}
-                      currentText={row.scope}
-                      onInsert={text => setRow(row.id, { scope: row.scope.trim() ? `${row.scope}\n${text}` : text })}
+                      currentText={stripProse(row.scope)}
+                      onInsert={text => setRow(row.id, { scope: joinProse(row.scope, text) })}
                       onSaveCurrent={() => saveSnippet(row)}
                       onDelete={removeSnippet}
                     />
