@@ -358,6 +358,9 @@ export default function OpcPage() {
   const landscapeExGst = rows.reduce((s, r) => s + priceOf(r), 0)
   const poolExGst = opc.poolSubtotalExGst ?? 0
   const hasPoolFigure = poolExGst > 0
+  // Pool bands (and the landscape/pool/combined breakdown) only exist on pool projects, or when
+  // an older OPC already carries a pool figure. Landscape-only jobs get one total band.
+  const poolRelevant = estimate.projectType === 'landscape_and_pool' || estimate.projectType === 'pool_only' || hasPoolFigure
   const combinedExGst = landscapeExGst + poolExGst
   const money = (n: number) => formatCurrency(n)
 
@@ -519,6 +522,9 @@ export default function OpcPage() {
           <div className="h-px w-16 mb-8" style={{ backgroundColor: GREEN }} />
 
           <div className="space-y-3">
+            {/* Landscape-only jobs get ONE total band - the per-section + combined breakdown only
+                earns its place when a pool figure joins the landscape number. */}
+            {poolRelevant && (
             <div className="flex items-center justify-between px-6 py-4" style={{ backgroundColor: BG_WARM }}>
               <p className="text-base font-light" style={{ color: HEADING }}>Landscape Construction</p>
               <p className="text-sm font-light tabular-nums" style={{ color: BODY }}>
@@ -527,9 +533,8 @@ export default function OpcPage() {
                 <span className="mx-2 text-gray-300">|</span>Total: <span className="font-normal">{money(landscapeExGst * 1.1)}</span>
               </p>
             </div>
-            {/* Pool & Spa only exists on pool projects (or when a figure was already entered) -
-                a landscape-only OPC shouldn't show an empty pool band. */}
-            {(estimate.projectType === 'landscape_and_pool' || estimate.projectType === 'pool_only' || hasPoolFigure) && (
+            )}
+            {poolRelevant && (
             <div className="flex items-center justify-between px-6 py-4" style={{ backgroundColor: BG_WARM }}>
               <div className="flex items-center gap-3">
                 <p className="text-base font-light" style={{ color: HEADING }}>Pool &amp; Spa</p>
