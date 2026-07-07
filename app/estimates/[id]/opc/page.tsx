@@ -26,6 +26,14 @@ const MUTED = '#6b6b6b'
 const BG_WARM = '#F0EEEB'
 const HERO_IMAGE = '/proposal-hero-8.jpg'
 
+// Company contact details for the closing block + repeating page footer. Only non-empty lines
+// render, so phone/email can be filled in once confirmed without touching the layout.
+const CONTACT = {
+  web: 'formationlandscapes.com.au',
+  email: '',
+  phone: '',
+}
+
 const round100 = (n: number) => Math.round(n / 100) * 100
 
 const DEFAULT_EXCLUSIONS: { title: string; blurb: string }[] = [
@@ -354,6 +362,17 @@ export default function OpcPage() {
     setSnippets(prev => prev.filter(s => s.id !== snippetId))
   }
 
+  // Print, but warn first if any priced category has no scope written - a half-finished OPC
+  // shouldn't reach a client by accident.
+  const printOpc = () => {
+    const blank = rows.filter(r => priceOf(r) > 0 && !stripProse(r.scope).trim()).map(r => r.title)
+    if (blank.length > 0) {
+      const list = blank.slice(0, 4).join(', ') + (blank.length > 4 ? `, +${blank.length - 4} more` : '')
+      if (!window.confirm(`${blank.length} priced categor${blank.length === 1 ? 'y has' : 'ies have'} no scope written (${list}). Print anyway?`)) return
+    }
+    window.print()
+  }
+
   // The document must add up for the client: the landscape subtotal is the SUM OF THE ROUNDED ROWS.
   const landscapeExGst = rows.reduce((s, r) => s + priceOf(r), 0)
   const poolExGst = opc.poolSubtotalExGst ?? 0
@@ -412,7 +431,7 @@ export default function OpcPage() {
             onReplace={replaceWord}
           />
           <button
-            onClick={() => window.print()}
+            onClick={printOpc}
             className="flex items-center gap-2 px-4 py-1.5 bg-white/10 text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-white/20 transition-colors"
           >
             <Printer className="w-3.5 h-3.5" /> Print
@@ -647,16 +666,27 @@ export default function OpcPage() {
           </button>
         </div>
 
-        {/* Footnote */}
-        <div className="border-t border-gray-200 pt-6 pb-4">
-          <p className="text-xs font-light italic" style={{ color: MUTED }}>
+        {/* Closing block: disclaimer + get-in-touch + contact details */}
+        <div className="border-t border-gray-200 pt-6 pb-2 opc-avoid-break">
+          <p className="text-xs font-light italic mb-6" style={{ color: MUTED }}>
             This Opinion of Probable Cost is preliminary pricing prepared from the design documentation
             available at the date above. It is not a fixed-price quotation; a formal quote will follow
             once the design and scope are finalised.
           </p>
-          <p className="text-2xs font-light mt-3" style={{ color: MUTED }}>
-            Formation Landscapes Pty Ltd · Melbourne, Victoria
-          </p>
+          <div className="flex items-end justify-between gap-6">
+            <div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/formation-primary-black.svg" alt="Formation Landscapes" className="h-8 w-auto mb-2"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+              <p className="text-2xs font-light" style={{ color: MUTED }}>Formation Landscapes Pty Ltd · Melbourne, Victoria</p>
+            </div>
+            <div className="text-right text-xs font-light leading-relaxed" style={{ color: BODY }}>
+              <p className="text-2xs tracking-widest uppercase mb-1.5" style={{ color: MUTED }}>To proceed or discuss</p>
+              {CONTACT.phone && <p>{CONTACT.phone}</p>}
+              {CONTACT.email && <p>{CONTACT.email}</p>}
+              {CONTACT.web && <p style={{ color: GREEN }}>{CONTACT.web}</p>}
+            </div>
+          </div>
         </div>
       </div>
     </div>
