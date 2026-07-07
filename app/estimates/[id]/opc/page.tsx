@@ -29,9 +29,11 @@ const HERO_IMAGE = '/proposal-hero-8.jpg'
 // Company contact details for the closing block + repeating page footer. Only non-empty lines
 // render, so phone/email can be filled in once confirmed without touching the layout.
 const CONTACT = {
+  phone: '0402 032 690',
+  email: 'Chris@formationlandscapes.com.au',
   web: 'formationlandscapes.com.au',
-  email: '',
-  phone: '',
+  abnFormation: '21 148 216 031',
+  abnLume: '11 609 197 613',
 }
 
 const round100 = (n: number) => Math.round(n / 100) * 100
@@ -679,6 +681,9 @@ export default function OpcPage() {
               <img src="/formation-primary-black.svg" alt="Formation Landscapes" className="h-8 w-auto mb-2"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
               <p className="text-2xs font-light" style={{ color: MUTED }}>Formation Landscapes Pty Ltd · Melbourne, Victoria</p>
+              <p className="text-2xs font-light" style={{ color: MUTED }}>
+                ABN {CONTACT.abnFormation}{poolRelevant ? ` · Lume Pools ABN ${CONTACT.abnLume}` : ''}
+              </p>
             </div>
             <div className="text-right text-xs font-light leading-relaxed" style={{ color: BODY }}>
               <p className="text-2xs tracking-widest uppercase mb-1.5" style={{ color: MUTED }}>To proceed or discuss</p>
