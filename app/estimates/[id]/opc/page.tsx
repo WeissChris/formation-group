@@ -467,35 +467,35 @@ export default function OpcPage() {
 
       <div className="max-w-[860px] mx-auto px-8 py-14 print:px-0 print:py-10">
         {/* Intro */}
-        <div className="mb-14">
+        <div className="mb-10">
           <ProseField
             value={opc.intro ?? ''}
             onChange={v => mutate({ intro: v })}
             placeholder="Intro paragraph…"
-            className="text-lg font-light leading-relaxed"
+            className="text-sm font-light leading-relaxed"
           />
         </div>
 
         {/* ── LANDSCAPE CONSTRUCTION ESTIMATE ── */}
-        <div className="mb-16">
-          <p className="text-xs tracking-[0.25em] uppercase mb-2" style={{ color: GREEN }}>01 — Landscape Construction Estimate</p>
-          <div className="h-px w-16 mb-8" style={{ backgroundColor: GREEN }} />
+        <div className="mb-10">
+          <p className="text-2xs tracking-[0.25em] uppercase mb-2" style={{ color: GREEN }}>01 — Landscape Construction Estimate</p>
+          <div className="h-px w-16 mb-6" style={{ backgroundColor: GREEN }} />
 
-          <div className="space-y-3">
+          <div className="space-y-2">
             {rows.map(row => {
               const price = priceOf(row)
               const others = rows.filter(r => r.id !== row.id)
               return (
-                <div key={row.id} className="opc-avoid-break rounded-lg px-6 py-5" style={{ backgroundColor: BG_WARM, borderLeft: `3px solid ${GREEN}` }}>
+                <div key={row.id} className="opc-avoid-break rounded-lg px-5 py-3.5" style={{ backgroundColor: BG_WARM, borderLeft: `3px solid ${GREEN}` }}>
                   <div className="flex items-start justify-between gap-6">
                     <div className="flex-1 min-w-0">
                       <input
                         value={row.title}
                         onChange={e => setRow(row.id, { title: e.target.value })}
-                        className="print:hidden w-full text-base font-normal bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none"
+                        className="print:hidden w-full text-sm font-medium bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none"
                         style={{ color: HEADING }}
                       />
-                      <p className="hidden print:block text-base font-normal" style={{ color: HEADING }}>{row.title}</p>
+                      <p className="hidden print:block text-sm font-medium" style={{ color: HEADING }}>{row.title}</p>
                       {row.categories.length > 1 && (
                         <div className="print:hidden mt-1.5 flex flex-wrap gap-1">
                           {row.categories.map(c => (
@@ -509,16 +509,16 @@ export default function OpcPage() {
                         </div>
                       )}
                     </div>
-                    <p className="text-lg font-light tabular-nums whitespace-nowrap shrink-0" style={{ color: price > 0 ? GREEN : MUTED }}>
+                    <p className="text-base font-normal tabular-nums whitespace-nowrap shrink-0" style={{ color: price > 0 ? GREEN : MUTED }}>
                       {price > 0 ? money(price) : ''}
                     </p>
                   </div>
-                  <div className="mt-2.5">
+                  <div className="mt-1.5">
                     <ProseField
                       value={row.scope}
                       onChange={v => setRow(row.id, { scope: v })}
                       placeholder="Client-facing scope of works…"
-                      className="text-sm font-light leading-relaxed"
+                      className="text-xs font-light leading-relaxed"
                     />
                   </div>
                   <div className="print:hidden mt-2.5 flex items-center gap-2">
@@ -547,14 +547,14 @@ export default function OpcPage() {
         </div>
 
         {/* ── PROJECT COST SUMMARY ── */}
-        <div className="mb-16 opc-avoid-break">
-          <p className="text-xs tracking-[0.25em] uppercase mb-2" style={{ color: GREEN }}>02 — Project Cost Summary</p>
-          <div className="h-px w-16 mb-8" style={{ backgroundColor: GREEN }} />
+        <div className="mb-10 opc-avoid-break">
+          <p className="text-2xs tracking-[0.25em] uppercase mb-2" style={{ color: GREEN }}>02 — Project Cost Summary</p>
+          <div className="h-px w-16 mb-6" style={{ backgroundColor: GREEN }} />
 
           {/* Breakdown: table + chart in one - category, spend bar (scaled to the biggest line),
               amount and % of total, largest first so the story reads at a glance. */}
           {breakdown.length > 0 && (
-            <div className="mb-8">
+            <div className="mb-6">
               <div className="flex items-center gap-3 pb-2 mb-1 border-b border-gray-200">
                 <span className="w-44 shrink-0 text-2xs font-normal tracking-widest uppercase" style={{ color: MUTED }}>Category</span>
                 <span className="flex-1 text-2xs font-normal tracking-widest uppercase" style={{ color: MUTED }}>Share of project</span>
@@ -565,11 +565,11 @@ export default function OpcPage() {
                 const pctOfTotal = breakdownTotal > 0 ? (b.price / breakdownTotal) * 100 : 0
                 return (
                   <div key={b.title} className="flex items-center gap-3 py-1.5 border-b border-gray-100 break-inside-avoid">
-                    <span className="w-44 shrink-0 text-sm font-light truncate" style={{ color: HEADING }} title={b.title}>{b.title}</span>
-                    <div className="flex-1 h-3.5 rounded-sm" style={{ backgroundColor: '#EDEBE8' }}>
+                    <span className="w-44 shrink-0 text-xs font-light truncate" style={{ color: HEADING }} title={b.title}>{b.title}</span>
+                    <div className="flex-1 h-3 rounded-sm" style={{ backgroundColor: '#EDEBE8' }}>
                       <div className="h-full rounded-sm" style={{ width: `${(b.price / breakdownMax) * 100}%`, backgroundColor: GREEN }} />
                     </div>
-                    <span className="w-24 text-right text-sm font-light tabular-nums" style={{ color: BODY }}>{money(b.price)}</span>
+                    <span className="w-24 text-right text-xs font-light tabular-nums" style={{ color: BODY }}>{money(b.price)}</span>
                     <span className="w-12 text-right text-xs font-light tabular-nums" style={{ color: MUTED }}>{Math.round(pctOfTotal)}%</span>
                   </div>
                 )
@@ -577,13 +577,13 @@ export default function OpcPage() {
             </div>
           )}
 
-          <div className="space-y-3">
+          <div className="space-y-2">
             {/* Landscape-only jobs get ONE total band - the per-section + combined breakdown only
                 earns its place when a pool figure joins the landscape number. */}
             {poolRelevant && (
-            <div className="flex items-center justify-between px-6 py-4" style={{ backgroundColor: BG_WARM }}>
-              <p className="text-base font-light" style={{ color: HEADING }}>Landscape Construction</p>
-              <p className="text-sm font-light tabular-nums" style={{ color: BODY }}>
+            <div className="flex items-center justify-between px-6 py-3" style={{ backgroundColor: BG_WARM }}>
+              <p className="text-sm font-light" style={{ color: HEADING }}>Landscape Construction</p>
+              <p className="text-xs font-light tabular-nums" style={{ color: BODY }}>
                 Subtotal ex. GST: <span className="font-normal">{money(landscapeExGst)}</span>
                 <span className="mx-2 text-gray-300">|</span>GST: {money(landscapeExGst * 0.1)}
                 <span className="mx-2 text-gray-300">|</span>Total: <span className="font-normal">{money(landscapeExGst * 1.1)}</span>
@@ -591,9 +591,9 @@ export default function OpcPage() {
             </div>
             )}
             {poolRelevant && (
-            <div className="flex items-center justify-between px-6 py-4" style={{ backgroundColor: BG_WARM }}>
+            <div className="flex items-center justify-between px-6 py-3" style={{ backgroundColor: BG_WARM }}>
               <div className="flex items-center gap-3">
-                <p className="text-base font-light" style={{ color: HEADING }}>Pool &amp; Spa</p>
+                <p className="text-sm font-light" style={{ color: HEADING }}>Pool &amp; Spa</p>
                 <label className="print:hidden text-2xs text-gray-400 flex items-center gap-1">
                   ex GST $
                   <input
@@ -605,7 +605,7 @@ export default function OpcPage() {
                   />
                 </label>
               </div>
-              <p className="text-sm font-light tabular-nums" style={{ color: BODY }}>
+              <p className="text-xs font-light tabular-nums" style={{ color: BODY }}>
                 {hasPoolFigure
                   ? <>Subtotal ex. GST: <span className="font-normal">{money(poolExGst)}</span>
                       <span className="mx-2 text-gray-300">|</span>GST: {money(poolExGst * 0.1)}
@@ -614,9 +614,9 @@ export default function OpcPage() {
               </p>
             </div>
             )}
-            <div className="flex items-center justify-between px-6 py-5" style={{ backgroundColor: GREEN }}>
-              <p className="text-base font-normal text-white">{hasPoolFigure ? 'Combined Project Total' : 'Project Total'}</p>
-              <p className="text-sm font-light text-white/90 tabular-nums">
+            <div className="flex items-center justify-between px-6 py-4" style={{ backgroundColor: GREEN }}>
+              <p className="text-sm font-normal text-white">{hasPoolFigure ? 'Combined Project Total' : 'Project Total'}</p>
+              <p className="text-xs font-light text-white/90 tabular-nums">
                 Ex. GST: <span className="font-normal text-white">{money(combinedExGst)}</span>
                 <span className="mx-2 text-white/30">|</span>GST: {money(combinedExGst * 0.1)}
                 <span className="mx-2 text-white/30">|</span>Total inc. GST: <span className="font-semibold text-white">{money(combinedExGst * 1.1)}</span>
@@ -630,16 +630,16 @@ export default function OpcPage() {
         </div>
 
         {/* ── EXCLUSIONS & KEY NOTES ── */}
-        <div className="mb-14 opc-avoid-break">
-          <p className="text-xs tracking-[0.25em] uppercase mb-2" style={{ color: GREEN }}>03 — Exclusions &amp; Key Notes</p>
-          <div className="h-px w-16 mb-8" style={{ backgroundColor: GREEN }} />
+        <div className="mb-10 opc-avoid-break">
+          <p className="text-2xs tracking-[0.25em] uppercase mb-2" style={{ color: GREEN }}>03 — Exclusions &amp; Key Notes</p>
+          <div className="h-px w-16 mb-6" style={{ backgroundColor: GREEN }} />
 
-          <p className="text-xs font-normal tracking-widest uppercase mb-4" style={{ color: MUTED }}>
+          <p className="text-2xs font-normal tracking-widest uppercase mb-3" style={{ color: MUTED }}>
             {hasPoolFigure ? 'Excluded from Both Quotes' : 'Excluded'}
           </p>
           <div className="grid grid-cols-3 gap-4 mb-6">
             {exclusions.map((ex, i) => (
-              <div key={i} className="relative group px-5 py-4" style={{ backgroundColor: BG_WARM }}>
+              <div key={i} className="relative group px-4 py-3" style={{ backgroundColor: BG_WARM }}>
                 <button
                   onClick={() => mutate({ exclusions: exclusions.filter((_, j) => j !== i) })}
                   title="Remove" className="print:hidden absolute top-2 right-2 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -648,10 +648,10 @@ export default function OpcPage() {
                 <input
                   value={ex.title}
                   onChange={e => mutate({ exclusions: exclusions.map((x, j) => j === i ? { ...x, title: e.target.value } : x) })}
-                  className="print:hidden w-full text-sm font-normal bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none mb-1.5"
+                  className="print:hidden w-full text-xs font-medium bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none mb-1"
                   style={{ color: HEADING }}
                 />
-                <p className="hidden print:block text-sm font-normal mb-1.5" style={{ color: HEADING }}>{ex.title}</p>
+                <p className="hidden print:block text-xs font-medium mb-1" style={{ color: HEADING }}>{ex.title}</p>
                 <ProseField
                   value={ex.blurb}
                   onChange={v => mutate({ exclusions: exclusions.map((x, j) => j === i ? { ...x, blurb: v } : x) })}
