@@ -765,33 +765,41 @@ export default function RevenuePage() {
                                       <span className="text-xs font-light text-fg-heading truncate block">{proj.name}</span>
                                     </td>
                                     {mFridays.map((fri, fi) => {
-                                      const entry = rowEntries.find(r => isSameWeek(r.weekEnding, fri))
+                                      // A project can have several revenue rows in one week (the Gantt
+                                      // forecast writes one per category+discipline). The cell must SUM
+                                      // them, or it under-shows against the row/column/month totals which
+                                      // already reduce over every row.
+                                      const weekEntries = rowEntries.filter(r => isSameWeek(r.weekEnding, fri))
+                                      const entry = weekEntries[0]   // click target (edits the first row)
+                                      const cellPlanned = weekEntries.reduce((s, r) => s + r.plannedRevenue, 0)
+                                      const cellActual = weekEntries.reduce((s, r) => s + (r.actualInvoiced || 0), 0)
+                                      const cellCost = weekEntries.reduce((s, r) => s + (r.scheduledCost || 0), 0)
                                       const past = isPastWeek(fri)
                                       const curr = isCurrentWeek(fri)
-                                      const slipped = entry && past && entry.plannedRevenue > 0 && (entry.actualInvoiced || 0) === 0
-                                      const invoiced = entry && (entry.actualInvoiced || 0) > 0
+                                      const slipped = cellPlanned > 0 && past && cellActual === 0
+                                      const invoiced = cellActual > 0
                                       return (
                                         <td key={fi} className={`py-0 px-2 text-right ${curr ? 'bg-fg-border/10' : ''}`}>
                                           {entry ? (
                                             <button onClick={() => setModal({ open: true, entry })} className="w-full text-right leading-tight">
-                                              {entry.plannedRevenue > 0 && (
+                                              {cellPlanned > 0 && (
                                                 <span className={`block text-xs tabular-nums ${
                                                   invoiced ? 'text-green-600' :
                                                   slipped  ? 'text-amber-500/70' :
                                                   past     ? 'text-fg-muted/40' :
                                                              'text-fg-heading'
                                                 }`}>
-                                                  {formatCurrency(entry.plannedRevenue)}
+                                                  {formatCurrency(cellPlanned)}
                                                 </span>
                                               )}
-                                              {invoiced && entry.actualInvoiced !== entry.plannedRevenue && (
+                                              {invoiced && cellActual !== cellPlanned && (
                                                 <span className="block text-2xs text-green-600/70 tabular-nums">
-                                                  {formatCurrency(entry.actualInvoiced || 0)} actual
+                                                  {formatCurrency(cellActual)} actual
                                                 </span>
                                               )}
-                                              {(entry.scheduledCost ?? 0) > 0 && (
+                                              {cellCost > 0 && (
                                                 <span className="block text-2xs text-fg-muted/50 tabular-nums" title="Cost out (money out this week)">
-                                                  −{formatCurrency(entry.scheduledCost ?? 0)}
+                                                  −{formatCurrency(cellCost)}
                                                 </span>
                                               )}
                                             </button>
