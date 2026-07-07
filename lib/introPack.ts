@@ -26,7 +26,6 @@ export interface IntroRoster {
 // bundled brand images.
 export const DEFAULT_ROSTER: IntroRoster = {
   contacts: [
-    { role: 'Landscape Construction Manager', name: 'Andrew Ferguson', phone: '0402 983 787', email: 'andrew@formationlandscapes.com.au' },
     { role: 'Pool Construction Manager', name: 'Ryan', phone: '0402 983 787', email: 'ryan@formationlandscapes.com.au', pool: true },
   ],
   members: [
