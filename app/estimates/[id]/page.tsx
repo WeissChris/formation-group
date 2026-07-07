@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { loadEstimates, loadProposals, saveEstimate, loadTakeoffAsync } from '@/lib/storage'
+import { loadEstimates, loadProposals, saveEstimate, loadTakeoffAsync, loadEstimateTemplates } from '@/lib/storage'
 import { uploadAttachment, openAttachment, safeFileName } from '@/lib/attachments'
 import { upsertEstimate, upsertProject, getEstimates, getTakeoff, upsertSubcontractor } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
@@ -11,7 +11,7 @@ import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEst
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
 import { getAllLibraryItems, getCategories, defaultMarkupForType, TARGET_MARGINS, saveLineItemToLibrary, isCustomLibraryItem } from '@/lib/itemLibrary'
-import { upsertLibraryItem, deleteLibraryItemAsync, upsertEstimateTemplate } from '@/lib/storageAsync'
+import { upsertLibraryItem, deleteLibraryItemAsync, upsertEstimateTemplate, getEstimateTemplates } from '@/lib/storageAsync'
 import { getXeroAccounts, loadCachedXeroAccounts, type XeroAccountOption } from '@/lib/xero'
 import { loadXccDefaults, recordXccDefault, resolveXccDefault } from '@/lib/xcc'
 import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData, EstimateTemplate } from '@/types'
@@ -162,6 +162,122 @@ function ItemPickerModal({
               className="px-4 py-1.5 text-2xs font-light tracking-architectural uppercase bg-fg-dark text-white/90 hover:bg-fg-darker transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Add{selected.size > 0 ? ` ${selected.size} ` : ' '}{selected.size === 1 ? 'item' : 'items'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Template category picker (add whole scopes from a saved template) ──────────
+
+function TemplatePickerModal({ existingCategories, onAdd, onClose }: {
+  existingCategories: string[]
+  onAdd: (items: Omit<EstimateLineItem, 'id' | 'estimateId'>[], scopes: Record<string, string>) => void
+  onClose: () => void
+}) {
+  const [templates, setTemplates] = useState<EstimateTemplate[]>([])
+  const [templateId, setTemplateId] = useState('')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    let cancelled = false
+    setTemplates(loadEstimateTemplates())
+    getEstimateTemplates().then(remote => {
+      if (cancelled || remote.length === 0) return
+      setTemplates(local => {
+        const byId = new Map(local.map(t => [t.id, t]))
+        for (const r of remote) {
+          const l = byId.get(r.id)
+          if (!l || (Date.parse(r.updatedAt || '') || 0) >= (Date.parse(l.updatedAt || '') || 0)) byId.set(r.id, r)
+        }
+        return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name))
+      })
+    }).catch(() => { /* offline - local list stands */ })
+    return () => { cancelled = true }
+  }, [])
+
+  const tmpl = templates.find(t => t.id === templateId) || null
+  const cats = tmpl ? Array.from(new Set(tmpl.lineItems.map(li => (li.category || '').trim()).filter(Boolean))) : []
+  const catCount = (c: string) => tmpl ? tmpl.lineItems.filter(li => (li.category || '').trim() === c).length : 0
+
+  const pick = (id: string) => {
+    setTemplateId(id)
+    const t = templates.find(x => x.id === id)
+    if (!t) { setSelected(new Set()); return }
+    // Pre-tick the categories not already in this estimate - the natural "add what's missing" default.
+    const c = Array.from(new Set(t.lineItems.map(li => (li.category || '').trim()).filter(Boolean)))
+    setSelected(new Set(c.filter(x => !existingCategories.includes(x))))
+  }
+  const toggle = (c: string) => setSelected(prev => {
+    const next = new Set(prev); if (next.has(c)) next.delete(c); else next.add(c); return next
+  })
+
+  const add = () => {
+    if (!tmpl || selected.size === 0) return
+    const items = tmpl.lineItems.filter(li => selected.has((li.category || '').trim()))
+    const scopes = Object.fromEntries(Object.entries(tmpl.opcScopes || {}).filter(([c]) => selected.has(c)))
+    onAdd(items, scopes)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-fg-darker/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-fg-bg border border-fg-border w-full max-w-lg mx-4 shadow-2xl flex flex-col max-h-[80vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-fg-border shrink-0">
+          <h3 className="text-sm font-light tracking-wide text-fg-heading uppercase">Add scope from Template</h3>
+          <button onClick={onClose} className="text-fg-muted hover:text-fg-heading transition-colors"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="px-6 py-3 border-b border-fg-border shrink-0">
+          <select
+            value={templateId}
+            onChange={e => pick(e.target.value)}
+            className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors appearance-none"
+          >
+            <option value="">Choose a template…</option>
+            {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+          {tmpl && cats.length > 0 && (
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-2xs text-fg-muted">{selected.size} of {cats.length} selected</p>
+              <div className="flex gap-3 text-2xs">
+                <button onClick={() => setSelected(new Set(cats))} className="text-fg-muted hover:text-fg-heading">All</button>
+                <button onClick={() => setSelected(new Set())} className="text-fg-muted hover:text-fg-heading">None</button>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="overflow-y-auto flex-1">
+          {!tmpl && <p className="px-6 py-10 text-center text-sm font-light text-fg-muted">Pick a template to see its scope.</p>}
+          {tmpl && cats.map(cat => {
+            const on = selected.has(cat)
+            const already = existingCategories.includes(cat)
+            return (
+              <button
+                key={cat}
+                onClick={() => toggle(cat)}
+                className={`w-full flex items-center gap-3 px-6 py-3 border-b border-fg-border/40 text-left transition-colors ${on ? 'bg-fg-card/60' : 'hover:bg-fg-card/40'}`}
+              >
+                <span className={`flex items-center justify-center w-4 h-4 border shrink-0 ${on ? 'bg-fg-heading border-fg-heading text-white' : 'border-fg-border'}`}>
+                  {on && <Check className="w-3 h-3" />}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="text-xs font-light text-fg-heading">{cat}</span>
+                  {already && <span className="ml-2 text-2xs text-amber-600">already in estimate</span>}
+                </span>
+                <span className="text-2xs text-fg-muted shrink-0">{catCount(cat)} item{catCount(cat) === 1 ? '' : 's'}</span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="flex items-center justify-between px-6 py-3 border-t border-fg-border shrink-0">
+          <p className="text-2xs font-light text-fg-muted">Adds the ticked categories&apos; priced line items (and their OPC scope).</p>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="px-3 py-1.5 text-2xs font-light tracking-wide uppercase border border-fg-border text-fg-muted hover:text-fg-heading hover:border-fg-heading transition-colors">Cancel</button>
+            <button onClick={add} disabled={selected.size === 0}
+              className="px-4 py-1.5 text-2xs font-light tracking-architectural uppercase bg-fg-dark text-white/90 hover:bg-fg-darker transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              Add {selected.size > 0 ? selected.size : ''} categor{selected.size === 1 ? 'y' : 'ies'}
             </button>
           </div>
         </div>
@@ -754,6 +870,7 @@ export default function EstimateBuilderPage() {
     void getXeroAccounts().then(setXeroAccounts)
   }, [])
   const [showPicker, setShowPicker] = useState(false)
+  const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [pickerCategory, setPickerCategory] = useState<string | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
@@ -1063,6 +1180,28 @@ export default function EstimateBuilderPage() {
     setPickerCategory(null)
     setHasUnsavedChanges(true)
   }, [pickerCategory])
+
+  // Graft whole categories in from a template later (the "add more scope" path). Template line
+  // items come in fully priced (unlike the item library); their OPC scope prose merges in too.
+  const addTemplateCategories = useCallback((items: Omit<EstimateLineItem, 'id' | 'estimateId'>[], scopes: Record<string, string>) => {
+    if (items.length === 0) return
+    setEstimate(prev => {
+      if (!prev) return prev
+      const base = prev.lineItems.length
+      const newItems: EstimateLineItem[] = items.map((it, i) => ({
+        ...it, id: generateId(), estimateId: prev.id, displayOrder: String(base + i + 1),
+      }))
+      const mergedScopes = { ...(prev.opc?.scopes || {}), ...scopes }
+      return {
+        ...prev,
+        lineItems: [...prev.lineItems, ...newItems],
+        ...(Object.keys(mergedScopes).length ? { opc: { ...(prev.opc || {}), scopes: mergedScopes } } : {}),
+        updatedAt: new Date().toISOString(),
+      }
+    })
+    setShowTemplateModal(false)
+    setHasUnsavedChanges(true)
+  }, [])
 
   const addBlankRow = useCallback((category: string) => {
     if (!estimate) return
@@ -1571,6 +1710,13 @@ export default function EstimateBuilderPage() {
           >
             <Plus className="w-3 h-3" /> Blank Row
           </button>
+          <button
+            onClick={() => setShowTemplateModal(true)}
+            title="Add whole categories of scope from a saved template"
+            className="flex items-center gap-2 px-3 py-1.5 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading transition-colors"
+          >
+            <Plus className="w-3 h-3" /> From Template
+          </button>
           {categories.length > 0 && (
             <button
               onClick={() => persistCollapsed(collapsedCats.size < categories.length ? new Set(categories) : new Set())}
@@ -2055,6 +2201,14 @@ export default function EstimateBuilderPage() {
           onAddMany={addManyFromLibrary}
           onClose={() => { setShowPicker(false); setPickerCategory(null) }}
           defaultCategory={pickerCategory}
+        />
+      )}
+
+      {showTemplateModal && (
+        <TemplatePickerModal
+          existingCategories={Array.from(new Set(estimate.lineItems.map(i => (i.category || '').trim()).filter(Boolean)))}
+          onAdd={addTemplateCategories}
+          onClose={() => setShowTemplateModal(false)}
         />
       )}
 

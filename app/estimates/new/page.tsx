@@ -9,7 +9,7 @@ import { upsertEstimate, getEstimateTemplates, deleteEstimateTemplateAsync } fro
 import { generateId } from '@/lib/utils'
 import type { Project, Estimate, EstimateLineItem, EstimateTemplate } from '@/types'
 import { Suspense } from 'react'
-import { FolderOpen } from 'lucide-react'
+import { FolderOpen, Check } from 'lucide-react'
 
 function parseBuildxactRows(rows: Record<string, unknown>[]): Omit<EstimateLineItem, 'id' | 'estimateId'>[] {
   const items: Omit<EstimateLineItem, 'id' | 'estimateId'>[] = []
@@ -146,14 +146,29 @@ function NewEstimateForm() {
   }, [])
   const selectedTemplate = templates.find(t => t.id === templateId) || null
 
+  // Which of the template's categories to include - the scope tick-list. Categories in
+  // first-appearance order; all ticked by default when a template is picked.
+  const [includedCats, setIncludedCats] = useState<Set<string>>(new Set())
+  const templateCats = selectedTemplate
+    ? Array.from(new Set(selectedTemplate.lineItems.map(li => (li.category || '').trim()).filter(Boolean)))
+    : []
+  const catCount = (cat: string) => selectedTemplate
+    ? selectedTemplate.lineItems.filter(li => (li.category || '').trim() === cat).length : 0
+
   const pickTemplate = (id: string) => {
     setTemplateId(id)
     const t = templates.find(x => x.id === id)
-    if (!t) return
+    if (!t) { setIncludedCats(new Set()); return }
     // Pre-fill the estimate settings the template carries; the user can still change them.
     setForm(f => ({ ...f, defaultMarkupFormation: t.defaultMarkupFormation, defaultMarkupSubcontractor: t.defaultMarkupSubcontractor }))
     if (t.projectType) { setProjectType(t.projectType); setProjectTypeError(false) }
+    setIncludedCats(new Set(t.lineItems.map(li => (li.category || '').trim()).filter(Boolean)))
   }
+  const toggleCat = (cat: string) => setIncludedCats(prev => {
+    const next = new Set(prev)
+    if (next.has(cat)) next.delete(cat); else next.add(cat)
+    return next
+  })
 
   const removeTemplate = (id: string) => {
     const t = templates.find(x => x.id === id)
@@ -202,14 +217,22 @@ function NewEstimateForm() {
 
     const estimateId = generateId()
 
-    // Line items: a Buildxact import wins if present; otherwise the selected template's set
-    // (fresh ids so the template rows stay independent of this estimate).
-    const sourceItems = importedItems.length > 0 ? importedItems : (selectedTemplate?.lineItems ?? [])
+    // Line items: a Buildxact import wins if present; otherwise the selected template's set,
+    // limited to the ticked categories (fresh ids so the template rows stay independent).
+    const templateItems = selectedTemplate
+      ? selectedTemplate.lineItems.filter(li => includedCats.has((li.category || '').trim()))
+      : []
+    const sourceItems = importedItems.length > 0 ? importedItems : templateItems
     const lineItems: EstimateLineItem[] = sourceItems.map(item => ({
       ...item,
       id: generateId(),
       estimateId,
     }))
+    // Only carry template notes + OPC scopes for the categories that were actually included.
+    const pickByCat = <T,>(rec: Record<string, T> | undefined) =>
+      rec ? Object.fromEntries(Object.entries(rec).filter(([cat]) => includedCats.has(cat))) : undefined
+    const inclNotes = importedItems.length === 0 ? pickByCat(selectedTemplate?.categoryNotes) : undefined
+    const inclScopes = importedItems.length === 0 ? pickByCat(selectedTemplate?.opcScopes) : undefined
 
     const estimate: Estimate = {
       id: estimateId,
@@ -232,9 +255,9 @@ function NewEstimateForm() {
             { id: generateId(), description: 'Contingency', percent: 5 },
             { id: generateId(), description: 'Overhead', percent: 6 },
           ]),
-      ...(importedItems.length === 0 && selectedTemplate?.categoryNotes ? { categoryNotes: selectedTemplate.categoryNotes } : {}),
+      ...(inclNotes && Object.keys(inclNotes).length > 0 ? { categoryNotes: inclNotes } : {}),
       // The template's OPC scope prose seeds the Opinion of Probable Cost page for this estimate.
-      ...(importedItems.length === 0 && selectedTemplate?.opcScopes ? { opc: { scopes: selectedTemplate.opcScopes } } : {}),
+      ...(inclScopes && Object.keys(inclScopes).length > 0 ? { opc: { scopes: inclScopes } } : {}),
       notes: form.notes,
       ...(fromProposalId ? { proposalId: fromProposalId } : {}),
       ...(projectType ? { projectType: projectType as 'landscape_only' | 'landscape_and_pool' | 'pool_only' } : {}),
@@ -294,11 +317,42 @@ function NewEstimateForm() {
                   </button>
                 )}
               </div>
-              {selectedTemplate && (
-                <p className="mt-2 text-xs font-light text-green-600">
-                  {selectedTemplate.lineItems.length} line items, markups and project type will pre-fill.
-                  {importedItems.length > 0 && ' A Buildxact import below overrides the template items.'}
-                </p>
+              {selectedTemplate && templateCats.length > 0 && importedItems.length === 0 && (
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">
+                      Scope to include ({includedCats.size}/{templateCats.length})
+                    </p>
+                    <div className="flex gap-3 text-2xs">
+                      <button onClick={() => setIncludedCats(new Set(templateCats))} className="text-fg-muted hover:text-fg-heading transition-colors">All</button>
+                      <button onClick={() => setIncludedCats(new Set())} className="text-fg-muted hover:text-fg-heading transition-colors">None</button>
+                    </div>
+                  </div>
+                  <div className="border border-fg-border divide-y divide-fg-border/50 max-h-64 overflow-y-auto">
+                    {templateCats.map(cat => {
+                      const on = includedCats.has(cat)
+                      return (
+                        <button
+                          key={cat}
+                          onClick={() => toggleCat(cat)}
+                          className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${on ? 'bg-fg-card/40' : 'hover:bg-fg-card/20'}`}
+                        >
+                          <span className={`flex items-center justify-center w-4 h-4 border shrink-0 ${on ? 'bg-fg-heading border-fg-heading text-white' : 'border-fg-border'}`}>
+                            {on && <Check className="w-3 h-3" />}
+                          </span>
+                          <span className="flex-1 text-xs font-light text-fg-heading">{cat}</span>
+                          <span className="text-2xs text-fg-muted">{catCount(cat)} item{catCount(cat) === 1 ? '' : 's'}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="mt-2 text-2xs font-light text-fg-muted">
+                    Tick the scope for this job - you can add more from the template later inside the estimate.
+                  </p>
+                </div>
+              )}
+              {selectedTemplate && importedItems.length > 0 && (
+                <p className="mt-2 text-xs font-light text-amber-600">A Buildxact import below overrides the template.</p>
               )}
             </div>
           )}
