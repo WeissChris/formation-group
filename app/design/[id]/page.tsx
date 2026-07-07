@@ -699,21 +699,19 @@ export default function ProposalDetailPage() {
             </div>
           )}
 
-          {/* Potential Build Value */}
+          {/* Potential Build Value + expected construction — INTERNAL (never shown to the client);
+              feed the office design list and the Master Programme's design-pipeline tier. */}
           <div className="border-t border-fg-border pt-5">
-            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-2">Potential Build Value</p>
+            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-2">
+              Potential Build Value <span className="normal-case text-fg-muted/50">(internal)</span>
+            </p>
             {editing ? (
               <input
                 type="number"
                 min="0"
                 step="1000"
                 defaultValue={proposal.potentialBuildValue ?? ''}
-                onBlur={(e) => {
-                  const val = e.target.value ? parseFloat(e.target.value) : undefined
-                  const updated: DesignProposal = { ...proposal, potentialBuildValue: val, updatedAt: new Date().toISOString() }
-                  saveProposal(updated)
-                  setProposal(updated)
-                }}
+                onBlur={(e) => saveProposalField({ potentialBuildValue: e.target.value ? parseFloat(e.target.value) : undefined })}
                 className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading"
                 placeholder="e.g. 450000"
               />
@@ -724,6 +722,25 @@ export default function ProposalDetailPage() {
                   : <span className="text-fg-muted/40 italic">Not set</span>}
               </p>
             )}
+
+            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mt-4 mb-2">
+              Expected Construction <span className="normal-case text-fg-muted/50">(rough, internal)</span>
+            </p>
+            {editing ? (
+              <input
+                type="date"
+                defaultValue={proposal.expectedConstruction ?? ''}
+                onBlur={(e) => saveProposalField({ expectedConstruction: e.target.value || undefined })}
+                className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading"
+              />
+            ) : (
+              <p className="text-sm font-light text-fg-heading">
+                {proposal.expectedConstruction
+                  ? new Date(proposal.expectedConstruction).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })
+                  : <span className="text-fg-muted/40 italic">Not set</span>}
+              </p>
+            )}
+            <p className="text-2xs text-fg-muted/60 mt-1.5">Places this job on the Programme&apos;s design-pipeline row. Not visible to the client.</p>
           </div>
         </div>
       )}

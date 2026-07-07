@@ -262,6 +262,8 @@ export async function upsertProposal(proposal: DesignProposal): Promise<void> {
       accepted_at: fresh.acceptedAt,
       accepted_by_name: fresh.acceptedByName,
       content_blocks: fresh.contentBlocks || [],
+      potential_build_value: fresh.potentialBuildValue ?? null,
+      expected_construction: fresh.expectedConstruction ?? null,
       updated_at: fresh.updatedAt ?? new Date().toISOString(),
     })
   }
@@ -989,6 +991,8 @@ function mapProposal(row: Record<string, unknown>): DesignProposal {
     acceptedByName: row.accepted_by_name as string | undefined,
     firstViewedAt: row.first_viewed_at as string | undefined,
     contentBlocks: (row.content_blocks as DesignProposal['contentBlocks']) || [],
+    potentialBuildValue: row.potential_build_value != null ? Number(row.potential_build_value) : undefined,
+    expectedConstruction: (row.expected_construction as string | null) || undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string | undefined,
   }

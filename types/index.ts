@@ -357,7 +357,8 @@ export interface DesignProposal {
   updatedAt?: string
   nextStep?: string           // "Follow up Thursday", "Waiting on client feedback"
   lastContactDate?: string    // ISO date string
-  potentialBuildValue?: number // Estimated construction value
+  potentialBuildValue?: number // Estimated construction value (internal; not shown to the client)
+  expectedConstruction?: string // rough expected construction start (ISO date; internal) - feeds the Programme pipeline
   contentBlocks?: ProposalContentBlock[]
   includeAboutSection?: boolean    // default true
   includeExclusions?: boolean      // default true

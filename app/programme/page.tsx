@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { loadProjects, loadGanttEntries, loadSupervisors } from '@/lib/storage'
-import { getAllGanttMilestones, getSupervisors } from '@/lib/storageAsync'
+import { loadProjects, loadGanttEntries, loadSupervisors, loadProposals } from '@/lib/storage'
+import { getAllGanttMilestones, getSupervisors, getProposals } from '@/lib/storageAsync'
 import { formatCurrency, SHORT_MONTH_NAMES, generateId, toISODate } from '@/lib/utils'
 import { entrySegments } from '@/lib/ganttForecast'
 import { supervisorColourByName, UNASSIGNED_COLOUR } from '@/lib/supervisors'
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
-import type { Project, GanttEntry, Supervisor } from '@/types'
+import type { Project, GanttEntry, Supervisor, DesignProposal } from '@/types'
 import EntityBadge from '@/components/EntityBadge'
 import { scheduleStatus, healthColour, healthBg, getForecastCompletion } from '@/lib/projectHealth'
 import { isLiveProject } from '@/lib/stageConfig'
@@ -59,12 +59,17 @@ export default function ProgrammePage() {
   const [supervisors, setSupervisors] = useState<Supervisor[]>([])
   const [colourBy, setColourBy] = useState<'entity' | 'supervisor'>('entity')
   const [showTbc, setShowTbc] = useState(true)
+  const [proposals, setProposals] = useState<DesignProposal[]>([])
+  const [showPipeline, setShowPipeline] = useState(true)
 
   useEffect(() => {
     let cancelled = false
     const all = loadProjects()
     setProjects(all)
     setSupervisors(loadSupervisors())
+    setProposals(loadProposals())
+    // Cross-device: pull proposals so build value + expected construction reflect the latest edits.
+    getProposals().then(remote => { if (!cancelled && remote.length) setProposals(remote) }).catch(() => { /* keep local */ })
     const gantt: Record<string, GanttEntry[]> = {}
     const miles: Record<string, ReturnType<typeof loadMilestones>> = {}
     all.forEach(p => {
@@ -131,6 +136,15 @@ export default function ProgrammePage() {
   const tbcProjects = filtered.filter(isTbc)
   const scheduledProjects = filtered.filter(p => !isTbc(p))
 
+  // Design pipeline: live proposals (draft/sent/pending, not archived) carrying a potential build
+  // value - what could flow into construction. Respects the entity filter (design only when set).
+  const pipelineProposals = proposals
+    .filter(pr => !pr.archived
+      && ['draft', 'sent', 'pending'].includes(pr.status)
+      && (pr.potentialBuildValue ?? 0) > 0
+      && (filterEntity === 'all' || filterEntity === 'design'))
+    .sort((a, b) => (a.expectedConstruction || '9999').localeCompare(b.expectedConstruction || '9999'))
+
   const totalWidth = LABEL_W + CELL_W * WEEKS
 
   return (
@@ -194,6 +208,13 @@ export default function ProgrammePage() {
           TBC{tbcProjects.length > 0 ? ` (${tbcProjects.length})` : ''}
         </button>
 
+        {/* Show design pipeline (proposals with a build value) */}
+        <button onClick={() => setShowPipeline(v => !v)}
+          title="Show the design pipeline - proposals with a potential build value"
+          className={`px-3 py-1.5 border text-[10px] font-light tracking-wide uppercase transition-colors ${showPipeline ? 'bg-fg-dark text-white/80 border-fg-dark' : 'border-fg-border text-fg-muted hover:text-fg-heading'}`}>
+          Pipeline{pipelineProposals.length > 0 ? ` (${pipelineProposals.length})` : ''}
+        </button>
+
         <span className="text-2xs text-fg-muted ml-auto">{filtered.length} project{filtered.length !== 1 ? 's' : ''}</span>
       </div>
 
@@ -230,9 +251,15 @@ export default function ProgrammePage() {
             border: '1px dashed rgba(138,133,128,0.55)' }} />
           <span className="text-[10px] font-light text-fg-muted uppercase tracking-wide">Contracted (TBC)</span>
         </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-6 h-2.5 rounded-sm" style={{
+            background: 'repeating-linear-gradient(45deg, rgba(200,168,112,0.32), rgba(200,168,112,0.32) 4px, rgba(200,168,112,0.10) 4px, rgba(200,168,112,0.10) 8px)',
+            border: '1px dashed rgba(200,168,112,0.6)' }} />
+          <span className="text-[10px] font-light text-fg-muted uppercase tracking-wide">Design pipeline</span>
+        </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {filtered.length === 0 && !(showPipeline && pipelineProposals.length > 0) ? (
         <div className="border border-fg-border py-20 text-center">
           <p className="text-sm font-light text-fg-muted">No projects match filters.</p>
         </div>
@@ -477,6 +504,75 @@ export default function ProgrammePage() {
                                 border: '1px dashed rgba(138,133,128,0.55)' }}
                               title={`${p.name} — target ${start ? formatDate(start) : ''}${end ? ` to ${formatDate(end)}` : ''} (not yet scheduled)`}>
                               <span className="text-[8px] font-medium text-fg-muted tracking-wide">TBC</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
+            )}
+
+            {/* ── Design pipeline (proposals with a potential build value) ── */}
+            {showPipeline && pipelineProposals.length > 0 && (
+              <>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-fg-card/25 border-b border-fg-border/40 border-t border-t-fg-border">
+                  <span className="text-[10px] font-medium tracking-wide uppercase text-fg-muted">Design pipeline</span>
+                  <span className="text-[9px] text-fg-muted/60">{pipelineProposals.length}</span>
+                  <span className="text-[9px] text-fg-muted/50 ml-1">
+                    {formatCurrency(pipelineProposals.reduce((s, pr) => s + (pr.potentialBuildValue ?? 0), 0))} potential build
+                  </span>
+                </div>
+                {pipelineProposals.map(pr => {
+                  const when = pr.expectedConstruction
+                  const startIdx = when ? fridays.findIndex(f => toISODate(f) >= when) : -1
+                  const hasWindow = startIdx >= 0
+                  const effEnd = Math.min(startIdx + 3, fridays.length - 1)   // ~4-week ghost placeholder
+                  const left = hasWindow ? startIdx * CELL_W : 0
+                  const width = hasWindow ? Math.max(CELL_W, (effEnd - startIdx + 1) * CELL_W) - 4 : 0
+                  return (
+                    <div key={pr.id} className="border-b border-fg-border/40 hover:bg-fg-card/10 transition-colors">
+                      <div className="flex" style={{ minHeight: 42 }}>
+                        <div className="flex-shrink-0 flex flex-col justify-center px-3 py-2 border-r border-fg-border" style={{ width: LABEL_W }}>
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <EntityBadge entity="design" short />
+                            <Link href={`/design/${pr.id}`}
+                              className="text-xs font-light text-fg-heading hover:text-fg-dark transition-colors truncate max-w-[110px]">
+                              {pr.clientName}
+                            </Link>
+                            <span className="text-[8px] font-semibold tracking-wide uppercase text-fg-muted border border-fg-border/70 px-1 leading-tight rounded-sm">
+                              {pr.status === 'draft' ? 'DRAFT' : 'PIPELINE'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[9px] text-fg-muted/70 tabular-nums">{formatCurrency(pr.potentialBuildValue ?? 0)}</span>
+                            {when
+                              ? <span className="text-[9px] text-fg-muted/60">~{formatDate(when)}</span>
+                              : <span className="text-[9px] text-amber-600/80">Date TBC</span>}
+                          </div>
+                        </div>
+                        <div className="relative flex flex-1" style={{ height: 42 }}>
+                          {fridays.map((fri, i) => {
+                            const iso = toISODate(fri)
+                            const isToday = iso === currentWeekIso
+                            const isMonth1 = i > 0 && fri.getMonth() !== fridays[i-1].getMonth()
+                            return (
+                              <div key={i} style={{ width: CELL_W, minWidth: CELL_W, height: '100%',
+                                borderLeft: isMonth1 ? '2px solid rgba(255,255,255,0.08)' : undefined, position: 'relative' }}
+                                className={`border-r border-fg-border/20 ${isToday ? 'bg-fg-card/30' : ''}`}>
+                                {isToday && <div className="absolute inset-y-0 left-0 w-0.5 bg-red-500/50 z-10 pointer-events-none" />}
+                              </div>
+                            )
+                          })}
+                          {/* Gold-hatched pipeline ghost at the expected construction window */}
+                          {hasWindow && (
+                            <div className="absolute top-3 rounded-sm flex items-center justify-center pointer-events-none"
+                              style={{ left, width, height: 18,
+                                background: 'repeating-linear-gradient(45deg, rgba(200,168,112,0.32), rgba(200,168,112,0.32) 5px, rgba(200,168,112,0.10) 5px, rgba(200,168,112,0.10) 10px)',
+                                border: '1px dashed rgba(200,168,112,0.6)' }}
+                              title={`${pr.clientName} — ${formatCurrency(pr.potentialBuildValue ?? 0)} potential build, expected ~${when ? formatDate(when) : 'TBC'}`}>
+                              <span className="text-[8px] font-medium tracking-wide" style={{ color: '#9C7B3A' }}>DESIGN</span>
                             </div>
                           )}
                         </div>
