@@ -90,12 +90,22 @@ function ProseField({ value, onChange, placeholder, className = '' }: {
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [focused, setFocused] = useState(false)
+  // Track what WE last emitted: a value prop that differs is an EXTERNAL change (spell-check
+  // replace, snippet insert) and must sync into the editor even mid-focus - otherwise the stale
+  // DOM content wins on the next blur and silently reverts the fix.
+  const lastEmitted = useRef<string | null>(null)
   const html = toHtml(value)
   useEffect(() => {
-    if (ref.current && !focused && ref.current.innerHTML !== html) ref.current.innerHTML = html
-  }, [html, focused])
+    if (!ref.current) return
+    if (html === lastEmitted.current) return   // our own edit echoing back through state
+    if (ref.current.innerHTML !== html) ref.current.innerHTML = html
+  }, [html])
 
-  const emit = () => onChange(ref.current?.innerHTML ?? '')
+  const emit = () => {
+    const h = ref.current?.innerHTML ?? ''
+    lastEmitted.current = h
+    onChange(h)
+  }
   const exec = (command: string) => {
     document.execCommand(command)
     emit()
