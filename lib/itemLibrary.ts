@@ -84,7 +84,9 @@ export function saveCustomLibraryItem(item: LibraryItem): LibraryItem {
   const idx = custom.findIndex(i => i.id === stamped.id)
   if (idx >= 0) custom[idx] = stamped
   else custom.push(stamped)
-  localStorage.setItem('fg_library', JSON.stringify(custom))
+  // Quota-safe: a throw must not abort the caller's Supabase write (upsertLibraryItem pushes after).
+  try { localStorage.setItem('fg_library', JSON.stringify(custom)) }
+  catch (e) { console.warn('saveCustomLibraryItem: local persist failed (quota?) — cloud still saves', e) }
   notify({ key: 'library' })
   return stamped
 }

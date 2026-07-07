@@ -77,6 +77,17 @@ export default function LoginGate({ children }: { children: ReactNode }) {
     return () => clearTimeout(t)
   }, [authed])
 
+  // Heal library-style datasets that only push on explicit save (estimate templates, OPC snippets,
+  // item library): push any local-only / locally-newer rows to the cloud. Recovers a template whose
+  // save reached localStorage but not Supabase. Newest-wins, so it can't clobber a fresher cloud row.
+  useEffect(() => {
+    if (!authed) return
+    const t = setTimeout(() => {
+      void import('@/lib/storageAsync').then(m => m.pushLocalLibraryDataToCloud())
+    }, 6000)
+    return () => clearTimeout(t)
+  }, [authed])
+
   // Public routes skip auth entirely — still wrapped so a render crash on /proposal/[token]
   // (e.g. malformed proposal data) shows the recoverable fallback rather than a blank page
   // to the actual client.

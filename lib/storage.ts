@@ -744,7 +744,10 @@ export function saveEstimateTemplate(template: EstimateTemplate): EstimateTempla
   const idx = all.findIndex(t => t.id === stamped.id)
   if (idx >= 0) all[idx] = stamped
   else all.push(stamped)
-  localStorage.setItem('fg_estimate_templates', JSON.stringify(all))
+  // Quota-safe: a throw here must NOT abort the caller's Supabase write (upsertEstimateTemplate
+  // saves locally then pushes to the cloud - a full store once stranded a template local-only).
+  try { localStorage.setItem('fg_estimate_templates', JSON.stringify(all)) }
+  catch (e) { console.warn('saveEstimateTemplate: local persist failed (quota?) — cloud + IndexedDB still save', e) }
   backupToIndexedDB('fg_estimate_templates', all)
   notify({ key: 'estimate_templates' })
   return stamped
@@ -770,7 +773,8 @@ export function saveOpcSnippet(snippet: OpcSnippet): OpcSnippet {
   const idx = all.findIndex(s => s.id === stamped.id)
   if (idx >= 0) all[idx] = stamped
   else all.push(stamped)
-  localStorage.setItem('fg_opc_snippets', JSON.stringify(all))
+  try { localStorage.setItem('fg_opc_snippets', JSON.stringify(all)) }
+  catch (e) { console.warn('saveOpcSnippet: local persist failed (quota?) — cloud + IndexedDB still save', e) }
   backupToIndexedDB('fg_opc_snippets', all)
   notify({ key: 'opc_snippets' })
   return stamped

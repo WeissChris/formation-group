@@ -673,6 +673,37 @@ export async function deleteLibraryItemAsync(id: string): Promise<void> {
   }
 }
 
+/**
+ * Push any local-only (or locally-newer) estimate templates, OPC snippets and item-library rows
+ * up to Supabase. These datasets only ever pushed on an explicit save, so a save whose cloud write
+ * was skipped (a full localStorage once threw before the push ran) stranded the row local-only with
+ * no path back. Runs once on an authenticated load to heal that; newest-wins so it can't clobber a
+ * fresher cloud copy. Pull-side sync (liveSync) already brings remote rows down.
+ */
+export async function pushLocalLibraryDataToCloud(): Promise<void> {
+  if (!isSupabaseConfigured() || !supabase) return
+  const db = supabase
+  const jobs: Array<{ table: string; local: { id: string; updatedAt?: string }[]; push: (row: never) => Promise<void> }> = [
+    { table: 'fg_estimate_templates', local: loadEstimateTemplates(), push: upsertEstimateTemplate as (r: never) => Promise<void> },
+    { table: 'fg_opc_snippets', local: loadOpcSnippets(), push: upsertOpcSnippet as (r: never) => Promise<void> },
+    { table: 'fg_library_items', local: loadCustomLibrary(), push: upsertLibraryItem as (r: never) => Promise<void> },
+  ]
+  for (const { table, local, push } of jobs) {
+    if (local.length === 0) continue
+    try {
+      const { data } = await db.from(table).select('id, updated_at')
+      const remote = new Map((data ?? []).map(r => [r.id as string, r.updated_at as string]))
+      for (const row of local) {
+        const rt = Date.parse(remote.get(row.id) || '') || 0
+        const lt = Date.parse(row.updatedAt || '') || 0
+        if (!remote.has(row.id) || lt > rt) await push(row as never)
+      }
+    } catch (e) {
+      console.warn('[reconcile] push local-only failed for', table, e)
+    }
+  }
+}
+
 export async function getOpcSnippets(): Promise<OpcSnippet[]> {
   if (isSupabaseConfigured() && supabase) {
     const { data } = await supabase.from('fg_opc_snippets').select('*')
