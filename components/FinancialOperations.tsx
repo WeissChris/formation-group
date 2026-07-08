@@ -774,8 +774,15 @@ function InvoicesSubTab({
 
   const refreshClaims = () => setClaims(loadProgressClaims(projectId))
 
+  // Sending an invoice is the natural heartbeat for a progress snapshot - it captures where timeline
+  // and budget stand at that moment, building the creep trend without anyone collecting it by hand.
+  const fireProgressSnapshot = () => {
+    fetch(`/api/projects/${projectId}/snapshot?trigger=invoice`, { method: 'POST' }).catch(() => {})
+  }
+
   const handleSave = (claim: ProgressClaim) => {
     void upsertProgressClaim(claim)   // localStorage (immediate) + Supabase (background)
+    if (claim.status === 'sent') fireProgressSnapshot()
     refreshClaims()
     setShowBuilder(false)
     setEditingClaim(null)
@@ -849,6 +856,7 @@ function InvoicesSubTab({
       return
     }
     void upsertProgressClaim({ ...claim, xeroInvoiceId: res.invoiceId ?? undefined, xeroInvoiceNumber: res.invoiceNumber ?? undefined })   // localStorage (immediate) + Supabase (background)
+    fireProgressSnapshot()   // an invoice going out is a snapshot heartbeat
     refreshClaims()
     alert(`Draft invoice created in Xero${res.invoiceNumber ? ` (${res.invoiceNumber})` : ''}. Review and approve it in Xero.`)
   }

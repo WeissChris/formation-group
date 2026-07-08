@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { runFullSync } from '@/lib/xeroCostSync'
 import { runHoursSync } from '@/lib/xeroHoursSync'
 import { runSafetyChase } from '@/lib/safetyChase'
+import { runProgressSnapshots } from '@/lib/runProgressSnapshots'
 
 export const runtime = 'nodejs'
 // Vercel function timeout — initial 24-month backfill can take ~60-90s. Allow margin.
@@ -44,8 +45,14 @@ export async function POST(request: NextRequest) {
       ok: false as const, checked: 0, contractor_emails: 0, office_alerts: 0, dry_run: true,
       error: e instanceof Error ? e.message : 'safety_chase_failed',
     }))
-    return NextResponse.json({ ok: hours.ok && safetyChase.ok, hours, safetyChase },
-      { status: hours.ok && safetyChase.ok ? 200 : 502 })
+    // Safety-net progress snapshots for live jobs overdue a capture (invoice sends capture on their own).
+    const snapshots = await runProgressSnapshots().catch(e => ({
+      ok: false as const, checked: 0, captured: 0,
+      error: e instanceof Error ? e.message : 'progress_snapshots_failed',
+    }))
+    const extrasOk = hours.ok && safetyChase.ok && snapshots.ok
+    return NextResponse.json({ ok: extrasOk, hours, safetyChase, snapshots },
+      { status: extrasOk ? 200 : 502 })
   }
 
   const result = await runFullSync('cron_hourly')

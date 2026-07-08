@@ -71,6 +71,14 @@ export async function GET(request: NextRequest) {
         : Promise.resolve({ count: 0 } as { count: number | null }),
     ])
 
+    // Progress-snapshot creep series (forecast-finish drift vs the frozen original), for the chart.
+    const { data: snapRow } = await supabaseAdmin.from('fg_progress_snapshots').select('snapshots').eq('project_id', pid).maybeSingle()
+    const creepSnaps = (Array.isArray(snapRow?.snapshots) ? snapRow!.snapshots : []) as { capturedAt: string; creepDays: number; originalEnd: string }[]
+    const creep = creepSnaps
+      .filter(sn => sn.originalEnd)
+      .sort((a, b) => a.capturedAt.localeCompare(b.capturedAt))
+      .map(sn => ({ date: sn.capturedAt, days: sn.creepDays }))
+
     const gantt = (ganttRes.data ?? []).map(liteGantt)
     const allEst = (estRes.data ?? []) as Record<string, unknown>[]
     const bases = allEst.filter(e => !e.parent_estimate_id)
@@ -209,7 +217,7 @@ export async function GET(request: NextRequest) {
       forecastEnd, plannedEnd, slipDays,
       hoursLastMonth,
       doneLines, upcoming, slips, baselineSet: !!latestBase?.entries?.length,
-      levers,
+      levers, creep,
       toolboxCount: tbRes.count ?? 0,
       incidentCount: incRes.count ?? 0,
       inductionCount: indRes.count ?? 0,

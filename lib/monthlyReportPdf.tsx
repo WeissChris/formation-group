@@ -24,6 +24,7 @@ export interface ProjectReport {
   scoreLabel: string
   scheduleNote: string           // timeline vs the ORIGINAL baseline (creep penalty breakdown)
   levers: ReportLever[]          // usage-vs-budget bars (labour hours, materials $, subbies $)
+  creep: { date: string; days: number }[]   // forecast-finish drift vs the frozen original, per snapshot
   forecastEnd: string
   plannedEnd: string
   slipDays: number | null        // + = behind
@@ -92,6 +93,42 @@ function Bar({ lever }: { lever: ReportLever }) {
   )
 }
 
+// Timeline-creep chart: one bar per snapshot showing how many days the forecast finish sits past the
+// frozen original plan at that point in time. A lengthening run of bars = the finish date walking away
+// from the plan. Green on/ahead of plan, amber a little late, red badly late.
+function CreepChart({ creep }: { creep: { date: string; days: number }[] }) {
+  const maxDays = Math.max(5, ...creep.map(c => Math.abs(c.days)))
+  const last = creep[creep.length - 1]
+  const first = creep[0]
+  const driven = last.days - first.days
+  return (
+    <View wrap={false}>
+      {creep.map((c, i) => {
+        const color = c.days <= 0 ? GREEN : c.days <= 5 ? AMBER : RED
+        const w = Math.max(2, (Math.abs(c.days) / maxDays) * 100)
+        return (
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+            <Text style={{ width: 46, fontSize: 7.5, color: GREY }}>{fmtD(c.date)}</Text>
+            <View style={{ flex: 1, height: 9, backgroundColor: '#EEEAE5', borderRadius: 2 }}>
+              <View style={{ height: 9, width: `${w}%`, backgroundColor: color, borderRadius: 2 }} />
+            </View>
+            <Text style={{ width: 60, fontSize: 8, textAlign: 'right', color }}>
+              {c.days > 0 ? `${c.days}d late` : c.days < 0 ? `${-c.days}d ahead` : 'on plan'}
+            </Text>
+          </View>
+        )
+      })}
+      <Text style={[s.note, { marginTop: 5 }]}>
+        {creep.length < 2
+          ? 'First snapshot captured - the drift trend builds as more invoices go out.'
+          : driven > 0 ? `Forecast finish has slipped ${driven} more day${driven === 1 ? '' : 's'} across these ${creep.length} snapshots.`
+          : driven < 0 ? `Forecast finish pulled back ${-driven} day${driven === -1 ? '' : 's'} across these ${creep.length} snapshots.`
+          : 'Forecast finish has held steady across these snapshots.'}
+      </Text>
+    </View>
+  )
+}
+
 function Footer({ left }: { left: string }) {
   return (
     <View style={{ position: 'absolute', bottom: 20, left: 36, right: 36, flexDirection: 'row', justifyContent: 'space-between' }} fixed>
@@ -150,6 +187,14 @@ export function MonthlyReportPdf({ report }: { report: MonthlyReport }) {
           ) : (
             <Text style={s.note}>No labour or cost budget on this job yet - add an accepted estimate to track usage.</Text>
           )}
+          {/* Timeline creep vs the frozen original plan, from the progress snapshots */}
+          <Text style={[s.note, { marginTop: 10, fontFamily: 'Helvetica-Bold', color: BLACK, fontSize: 9 }]}>Timeline creep vs original plan</Text>
+          {p.creep.length > 0 ? (
+            <CreepChart creep={p.creep} />
+          ) : (
+            <Text style={s.note}>No baseline captured yet - creep tracking begins once the original baseline is set (captured automatically when the job goes Active).</Text>
+          )}
+
           {p.slips.length > 0 ? (
             <>
               <Text style={[s.note, { marginTop: 6, fontFamily: 'Helvetica-Bold', color: BLACK }]}>Categories running late vs baseline:</Text>

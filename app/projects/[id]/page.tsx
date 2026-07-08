@@ -11,7 +11,7 @@ import {
   loadProgressPaymentStages, saveProject,
   loadSubcontractors,
 } from '@/lib/storage'
-import { getProjects, reconcileVariations, upsertProject, deleteProjectAsync, upsertSubcontractor, deleteSubcontractorAsync } from '@/lib/storageAsync'
+import { getProjects, reconcileVariations, upsertProject, deleteProjectAsync, upsertSubcontractor, deleteSubcontractorAsync, upsertGanttBaselinesRemote } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { uploadAttachment, openAttachment, safeFileName } from '@/lib/attachments'
 import { getEstimateTotals, variationContractValue, estimateLabourHours, activeLineItems, STD_LABOUR_RATE, costBreakdown } from '@/lib/estimateCalculations'
@@ -1171,6 +1171,22 @@ export default function ProjectDetailPage() {
           plannedCompletion: project.plannedCompletion || '',
         }
       }
+    }
+
+    // Freeze the ORIGINAL baseline the moment a job goes Active, if one hasn't been set. This is the
+    // immovable reference the creep tracking measures against - captured automatically so it never
+    // relies on someone remembering to click "Set baseline". Later snapshots are appended, never
+    // overwriting this first one.
+    if (newStage === 'active' && ganttEntries.length > 0) {
+      try {
+        const key = `fg_gantt_baselines_${project.id}`
+        const existing = JSON.parse(localStorage.getItem(key) || '[]')
+        if (!Array.isArray(existing) || existing.length === 0) {
+          const list = [{ id: generateId(), capturedAt: new Date().toISOString(), entries: ganttEntries }]
+          try { localStorage.setItem(key, JSON.stringify(list)) } catch { /* ignore */ }
+          void upsertGanttBaselinesRemote(project.id, list)
+        }
+      } catch { /* ignore */ }
     }
 
     const newChecklist = buildChecklist(newStage)
