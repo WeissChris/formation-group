@@ -12,6 +12,12 @@ describe('isAllowedXccAccount', () => {
     expect(isAllowedXccAccount('Paving  -  Materials')).toBe(true)   // collapsed inner spaces
   })
 
+  it('treats "&" and "and" as the same (Xero spelling vs the sheet)', () => {
+    expect(isAllowedXccAccount('Wages and Salaries')).toBe(true)     // list has "Wages & Salaries"
+    expect(isAllowedXccAccount('Materials and Supplies')).toBe(true)
+    expect(isAllowedXccAccount('Fences & Gates')).toBe(true)         // list has "Fences and Gates"
+  })
+
   it('rejects accounts not on the list', () => {
     expect(isAllowedXccAccount('Bank Fees')).toBe(false)
     expect(isAllowedXccAccount('Office Rent')).toBe(false)

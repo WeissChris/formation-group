@@ -34,7 +34,13 @@ export const XCC_ALLOWED_ACCOUNTS: string[] = [
   'Workcover (Workers Compensation) - Production',
 ]
 
-const norm = (s: string) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ')
+// Normalise for matching: case-insensitive, whitespace-collapsed, and treat "&" and the word "and" as
+// the same (Xero's "Wages and Salaries" must match the sheet's "Wages & Salaries", etc).
+const norm = (s: string) => (s || '')
+  .toLowerCase()
+  .replace(/&/g, ' and ')
+  .replace(/\s+/g, ' ')
+  .trim()
 const ALLOWED = new Set(XCC_ALLOWED_ACCOUNTS.map(norm))
 
 /** True if a Xero account name is one of the curated project cost buckets. */
