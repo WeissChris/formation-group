@@ -95,3 +95,13 @@ export function isLiveProject(p: Pick<Project, 'stage' | 'status'>): boolean {
   if (p.stage) return LIVE_STAGES.includes(p.stage)
   return p.status === 'active'   // legacy projects with no stage set
 }
+
+// Stages where the crew is physically on site (or wrapping up) - these map to the coarse status
+// 'active'. Contracted/pre_start are committed but not yet started, so they stay 'planning'. Keeps
+// the STATUS pill in step with the stage stepper (a job on the Active stage read 'Planning' before).
+const ON_SITE_STAGES: ProjectStage[] = ['active', 'completion', 'handover']
+
+/** The coarse status a stage implies. Closed jobs (complete/invoiced) are handled by the caller. */
+export function statusForStage(stage: ProjectStage): Project['status'] {
+  return ON_SITE_STAGES.includes(stage) ? 'active' : 'planning'
+}

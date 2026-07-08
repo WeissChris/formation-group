@@ -16,7 +16,7 @@ import { formatCurrency, generateId } from '@/lib/utils'
 import { uploadAttachment, openAttachment, safeFileName } from '@/lib/attachments'
 import { getEstimateTotals, variationContractValue, estimateLabourHours, activeLineItems, STD_LABOUR_RATE, costBreakdown } from '@/lib/estimateCalculations'
 import type { Project, Estimate, WeeklyRevenue, GanttEntry, WeeklyActual, ProgressClaim, ProgressPaymentStage, SubcontractorPackage, SubcontractorClaim } from '@/types'
-import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, PROGRESSION_WARNINGS, buildChecklist, defaultStageForStatus } from '@/lib/stageConfig'
+import { STAGE_LABELS, STAGE_COLOURS, STAGE_ORDER, PROGRESSION_WARNINGS, buildChecklist, defaultStageForStatus, statusForStage } from '@/lib/stageConfig'
 import type { ProjectScope } from '@/types'
 import type { ProjectStage } from '@/types'
 import { calcProjectHealth, scheduleStatus, healthColour, healthBg, healthBorder, getForecastCompletion, getForecastStart } from '@/lib/projectHealth'
@@ -1065,9 +1065,19 @@ export default function ProjectDetailPage() {
         // Checklist is stale if: missing, empty, or its IDs don't start with the current stage prefix
         const checklistIsStale = existingChecklist.length === 0 ||
           !existingChecklist[0]?.id?.startsWith(currentStage)
-        if (checklistIsStale) {
-          const fixed = { ...loaded, stage: currentStage, stageChecklist: buildChecklist(currentStage) }
-          saveProject(fixed)
+        // Status is stale if it lags the stage (e.g. on the Active stage but still 'planning'). Never
+        // reopen a closed (complete/invoiced) job just because an earlier stage is selected.
+        const loadedStatus = (loaded.status || 'planning') as Project['status']
+        const impliedStatus = statusForStage(currentStage)
+        const statusIsStale = loadedStatus !== 'complete' && loadedStatus !== 'invoiced' && loadedStatus !== impliedStatus
+        if (checklistIsStale || statusIsStale) {
+          const fixed = {
+            ...loaded, stage: currentStage,
+            status: statusIsStale ? impliedStatus : loadedStatus,
+            stageChecklist: checklistIsStale ? buildChecklist(currentStage) : existingChecklist,
+          }
+          // Sync the correction to Supabase too (a stale status also drives the cockpit + reports).
+          void upsertProject(fixed)
           setProject(fixed)
         } else {
           setProject({ ...loaded, stage: currentStage })
@@ -1164,7 +1174,11 @@ export default function ProjectDetailPage() {
     }
 
     const newChecklist = buildChecklist(newStage)
-    const updated = { ...project, stage: newStage, stageChecklist: newChecklist, ...programmeBaselineUpdate }
+    // Keep the coarse status in step with the stage so the STATUS pill / list chips don't lag
+    // (a job on the Active stage used to still read 'Planning'). Don't reopen a closed job.
+    const keepClosed = project.status === 'complete' || project.status === 'invoiced'
+    const newStatus = keepClosed ? project.status : statusForStage(newStage)
+    const updated = { ...project, stage: newStage, status: newStatus, stageChecklist: newChecklist, ...programmeBaselineUpdate }
     void upsertProject(updated) // localStorage + Supabase
     setProject(updated)
   }
