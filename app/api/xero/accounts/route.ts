@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getValidTokens } from '@/lib/serverXero'
+import { isAllowedXccAccount } from '@/lib/xccAccounts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -39,8 +40,11 @@ export async function GET(request: NextRequest) {
     })
     if (!resp.ok) return NextResponse.json({ items: [] }, { status: resp.status })
     const data = await resp.json()
+    // Active expense accounts, then reduced to the curated project cost buckets (XCC_ALLOWED_ACCOUNTS)
+    // so the picker only shows what belongs on a job, not the whole chart of accounts.
     const items = (data.Accounts || [])
-      .filter((a: { Class?: string; Status?: string; Code?: string }) => a.Class === 'EXPENSE' && a.Status === 'ACTIVE' && !!a.Code)
+      .filter((a: { Class?: string; Status?: string; Code?: string; Name?: string }) =>
+        a.Class === 'EXPENSE' && a.Status === 'ACTIVE' && !!a.Code && isAllowedXccAccount(a.Name || ''))
       .map((a: { Code: string; Name: string; Type: string }) => ({ code: a.Code, name: a.Name, type: a.Type }))
       .sort((x: { name: string }, y: { name: string }) => x.name.localeCompare(y.name))
     return NextResponse.json(
