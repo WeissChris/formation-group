@@ -47,3 +47,10 @@ const ALLOWED = new Set(XCC_ALLOWED_ACCOUNTS.map(norm))
 export function isAllowedXccAccount(name: string): boolean {
   return ALLOWED.has(norm(name))
 }
+
+/** The curated buckets that are NOT present in `present` (matched Xero account names). Used to fill
+ *  the picker so every bucket in the list is always selectable, even if Xero has no account for it. */
+export function missingAllowedAccounts(present: string[]): string[] {
+  const have = new Set(present.map(norm))
+  return XCC_ALLOWED_ACCOUNTS.filter(n => !have.has(norm(n)))
+}
