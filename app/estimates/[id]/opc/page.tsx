@@ -100,7 +100,12 @@ function sanitizeProse(html: string): string {
 /** Plain text -> HTML fragment (idempotent), sanitised so stored/pasted junk never wins. */
 function toHtml(value: string): string {
   if (!value) return ''
-  const html = /<[a-z]/i.test(value) ? value : escapeHtml(value).replace(/\n/g, '<br>')
+  // The value is ALREADY HTML if it carries a tag OR an HTML entity (a trailing space becomes
+  // &nbsp;); only genuine plain-text seeds (estimate defaults, snippet library) need escaping.
+  // Testing for tags alone re-escaped an entity-only fragment every round-trip: &nbsp; -> &amp;nbsp;
+  // -> &amp;amp;nbsp;, which surfaced as the literal "All&amp;nbsp;" in the editor.
+  const looksHtml = /<[a-z/!]/i.test(value) || /&(#\d+|#x[0-9a-f]+|[a-z][a-z0-9]*);/i.test(value)
+  const html = looksHtml ? value : escapeHtml(value).replace(/\n/g, '<br>')
   return sanitizeProse(html)
 }
 
