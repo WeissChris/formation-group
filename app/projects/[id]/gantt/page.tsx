@@ -764,6 +764,13 @@ export default function GanttPage() {
   })
   const [loadedBaselineId, setLoadedBaselineId] = useState<string | null>(null)
   const [baselineMenuOpen, setBaselineMenuOpen] = useState(false)
+  // Heal: baselines were localStorage-only until the remote write path was unblocked (the table's RLS
+  // policy was missing), so projects baselined before the fix have no remote row and the foreman
+  // report can't see them. Mirror the local list up once on mount; the helper no-ops in site mode.
+  useEffect(() => {
+    if (baselines.length) void upsertGanttBaselinesRemote(id, baselines)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
   // The baseline used for slip comparison + the ghost overlay: the loaded one, else the most recent.
   const activeBaseline = (loadedBaselineId ? baselines.find(b => b.id === loadedBaselineId) : null) ?? baselines[baselines.length - 1] ?? null
   // Supervisor view — hides revenue / GP / margin so a site supervisor sees budget + cost only. A view
