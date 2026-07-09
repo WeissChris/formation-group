@@ -12,10 +12,12 @@ import {
   getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours, getSiteMilestones, getSiteSafety, postSiteSafety,
   getSiteBaseline, getSiteVariations, createSiteVariation, getSiteBookings, saveSiteBooking,
   getSiteHandover, saveSiteHandover, getSiteIntroPack, getSiteMaterials, saveSiteMaterials,
+  getSiteIrrigation, saveSiteIrrigation, uploadSiteIrrigationPlan, deleteSiteIrrigation,
   type SiteProject, type SitePlan, type SiteMilestone, type SiteSafety, type SiteBaseline, type SiteVariation,
-  type SubbieBooking, type HandoverChecklist, type SiteMaterial,
+  type SubbieBooking, type HandoverChecklist, type SiteMaterial, type IrrigationPlan,
 } from '@/lib/siteData'
 import { unconfirmedMaterials, materialRowsFromLines } from '@/lib/projectMaterials'
+import { nextZoneColor, zoneCentroid, type IrrigationZone } from '@/lib/irrigationPlan'
 import { HANDOVER_SECTIONS, handoverProgress, blueTapeOf, openBlueTapeCount, type HandoverData, type HandoverRow, type BlueTapeEntry } from '@/lib/handoverChecklist'
 import { openAttachment } from '@/lib/attachments'
 import { generateId } from '@/lib/utils'
@@ -141,7 +143,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
         {tab === 'plans' && <Plans projectId={project.id} />}
         {tab === 'safety' && <Safety projectId={project.id} safety={safety} refresh={refreshSafety} />}
         {tab === 'handover' && (
-          <Handover projectId={project.id} supervisor={project.foreman} checklist={handover} refresh={refreshHandover} />
+          <HandoverTab projectId={project.id} supervisor={project.foreman} checklist={handover} refresh={refreshHandover} />
         )}
         {tab === 'client' && <ClientAndSite project={project} />}
       </div>
@@ -1631,6 +1633,210 @@ function IncidentForm({ projectId, onDone }: { projectId: string; onDone: () => 
 // The foreman works through it item by item as the job nears completion: tick = passed
 // (auto date-stamped), the note field records "Blue Tape" issues to rectify. Edits
 // debounce-save the whole blob; sign-off stamps name + date server-side.
+
+// The Handover tab now holds two things: the pre-handover checklist (the Zero-Defect audit) and the
+// irrigation-plan markup. A sub-nav switches between them; the client booklet (Phase 2) will join here.
+function HandoverTab(props: { projectId: string; supervisor: string; checklist: HandoverChecklist | null; refresh: () => void }) {
+  const [section, setSection] = useState<'checklist' | 'irrigation'>('checklist')
+  const SECTIONS: { key: 'checklist' | 'irrigation'; label: string }[] = [
+    { key: 'checklist', label: 'Pre-handover checklist' },
+    { key: 'irrigation', label: 'Irrigation plan' },
+  ]
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 bg-fg-card/40 rounded-full p-0.5 w-fit">
+        {SECTIONS.map(s => (
+          <button key={s.key} onClick={() => setSection(s.key)}
+            className={`text-xs px-3 py-1.5 rounded-full transition-colors ${section === s.key ? 'bg-fg-heading text-white' : 'text-fg-heading'}`}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {section === 'checklist'
+        ? <Handover {...props} />
+        : <IrrigationMarkup projectId={props.projectId} />}
+    </div>
+  )
+}
+
+// Rasterise a plan file (PDF first page or image) to a PNG blob capped at ~2000px wide, for markup.
+async function rasterisePlan(file: File): Promise<{ blob: Blob; width: number; height: number }> {
+  const toBlob = (c: HTMLCanvasElement) => new Promise<Blob>((res, rej) =>
+    c.toBlob(b => b ? res(b) : rej(new Error('blob_failed')), 'image/png'))
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+  if (isPdf) {
+    const CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155'
+    const pdfjs: any = await import(/* webpackIgnore: true */ `${CDN}/pdf.min.mjs`)
+    pdfjs.GlobalWorkerOptions.workerSrc = `${CDN}/pdf.worker.min.mjs`
+    const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise
+    const page = await pdf.getPage(1)
+    const base = page.getViewport({ scale: 1 })
+    const vp = page.getViewport({ scale: Math.min(3, 2000 / base.width) })
+    const canvas = document.createElement('canvas')
+    canvas.width = vp.width; canvas.height = vp.height
+    await page.render({ canvasContext: canvas.getContext('2d')!, viewport: vp }).promise
+    return { blob: await toBlob(canvas), width: canvas.width, height: canvas.height }
+  }
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('img_failed')); i.src = url
+    })
+    const scale = Math.min(1, 2000 / img.naturalWidth)
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(img.naturalWidth * scale); canvas.height = Math.round(img.naturalHeight * scale)
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+    return { blob: await toBlob(canvas), width: canvas.width, height: canvas.height }
+  } finally { URL.revokeObjectURL(url) }
+}
+
+// Irrigation plan markup: upload the plan, then tap to draw colour-coded zones over it (each a
+// polygon + label), building a legend. Zones save automatically. Feeds the client handover booklet.
+function IrrigationMarkup({ projectId }: { projectId: string }) {
+  const [plan, setPlan] = useState<IrrigationPlan | null>(null)
+  const [zones, setZones] = useState<IrrigationZone[]>([])
+  const [draft, setDraft] = useState<{ x: number; y: number }[]>([])
+  const [zoom, setZoom] = useState(1)
+  const [busy, setBusy] = useState<'' | 'uploading' | 'saving'>('')
+  const svgRef = useRef<SVGSVGElement>(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const load = () => getSiteIrrigation(projectId).then(p => { setPlan(p); setZones(p.zones) })
+  useEffect(() => { load() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [projectId])
+
+  const persist = (next: IrrigationZone[]) => {
+    setZones(next)
+    setBusy('saving')
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => { await saveSiteIrrigation(projectId, { zones: next }); setBusy('') }, 600)
+  }
+
+  const onUpload = async (file: File) => {
+    setBusy('uploading')
+    try {
+      const { blob, width, height } = await rasterisePlan(file)
+      const ok = await uploadSiteIrrigationPlan(projectId, blob, width, height)
+      if (ok) await load()
+      else alert('Could not upload the plan. Try again.')
+    } catch { alert('Could not read that file. Use a PDF or an image (PNG/JPG).') }
+    finally { setBusy('') }
+  }
+
+  const addPoint = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
+    setDraft(d => [...d, { x, y }])
+  }
+  const finishZone = () => {
+    if (draft.length < 3) return
+    persist([...zones, { id: generateId(), label: `Zone ${zones.length + 1}`, color: nextZoneColor(zones), points: draft }])
+    setDraft([])
+  }
+  const setLabel = (id: string, label: string) => persist(zones.map(z => z.id === id ? { ...z, label } : z))
+  const removeZone = (id: string) => persist(zones.filter(z => z.id !== id))
+
+  if (!plan) return <p className="text-sm text-fg-muted">Loading...</p>
+
+  if (!plan.planUrl) {
+    return (
+      <div className="rounded-xl border border-dashed border-fg-border p-6 text-center space-y-3">
+        <p className="text-sm text-fg-heading">Upload the irrigation plan</p>
+        <p className="text-xs text-fg-muted">A PDF or image. You&apos;ll then mark up each zone in colour.</p>
+        <label className="inline-block rounded-lg bg-fg-heading text-white px-4 py-2 text-sm cursor-pointer">
+          {busy === 'uploading' ? 'Uploading...' : 'Choose plan'}
+          <input type="file" accept="application/pdf,image/*" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) onUpload(f) }} disabled={busy === 'uploading'} />
+        </label>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-sm font-medium">Irrigation plan</p>
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-fg-muted">{busy === 'saving' ? 'Saving...' : busy === 'uploading' ? 'Uploading...' : 'Saved'}</span>
+          <button onClick={() => setZoom(z => Math.max(1, z - 0.5))} className="w-6 h-6 rounded border border-fg-border">-</button>
+          <span className="tabular-nums w-8 text-center">{zoom}x</span>
+          <button onClick={() => setZoom(z => Math.min(4, z + 0.5))} className="w-6 h-6 rounded border border-fg-border">+</button>
+        </div>
+      </div>
+
+      <p className="text-xs text-fg-muted">
+        Tap to drop points around a zone, then <span className="text-fg-heading">Finish zone</span>. Each zone gets its own colour and a label you can edit below.
+      </p>
+
+      <div className="overflow-auto border border-fg-border rounded-xl bg-fg-card/10" style={{ maxHeight: '65vh' }}>
+        <div className="relative" style={{ width: `${zoom * 100}%` }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={plan.planUrl} alt="Irrigation plan" className="block w-full select-none" draggable={false} />
+          <svg ref={svgRef} className="absolute inset-0 w-full h-full" viewBox="0 0 1 1" preserveAspectRatio="none"
+            onClick={addPoint} style={{ cursor: 'crosshair' }}>
+            {zones.map(z => (
+              <polygon key={z.id} points={z.points.map(p => `${p.x},${p.y}`).join(' ')}
+                fill={`${z.color}44`} stroke={z.color} strokeWidth={0.003} strokeLinejoin="round" />
+            ))}
+            {draft.length > 0 && (
+              <polyline points={draft.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#111" strokeWidth={0.003} strokeDasharray="0.008,0.006" />
+            )}
+            {draft.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={0.005} fill="#111" />)}
+          </svg>
+          {/* Zone labels as crisp HTML at each centroid */}
+          {zones.map(z => {
+            const c = zoneCentroid(z)
+            return (
+              <span key={z.id} style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%`, backgroundColor: z.color }}
+                className="absolute -translate-x-1/2 -translate-y-1/2 text-white text-[10px] font-medium px-1.5 py-0.5 rounded pointer-events-none whitespace-nowrap">
+                {z.label}
+              </span>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        {draft.length > 0 ? (
+          <>
+            <button onClick={finishZone} disabled={draft.length < 3}
+              className="flex-1 rounded-lg bg-fg-heading text-white py-2 text-sm disabled:opacity-40">Finish zone</button>
+            <button onClick={() => setDraft(d => d.slice(0, -1))} className="rounded-lg border border-fg-border px-3 py-2 text-sm">Undo point</button>
+            <button onClick={() => setDraft([])} className="rounded-lg border border-fg-border px-3 py-2 text-sm text-fg-muted">Cancel</button>
+          </>
+        ) : (
+          <p className="text-xs text-fg-muted py-2">Tap on the plan to start a zone.</p>
+        )}
+      </div>
+
+      {zones.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs uppercase tracking-wide text-fg-muted">Zones</p>
+          {zones.map(z => (
+            <div key={z.id} className="flex items-center gap-2">
+              <span className="w-4 h-4 rounded shrink-0" style={{ backgroundColor: z.color }} />
+              <input value={z.label} onChange={e => setLabel(z.id, e.target.value)}
+                className="flex-1 text-sm bg-transparent border-b border-fg-border/60 focus:border-fg-heading outline-none py-1" />
+              <button onClick={() => removeZone(z.id)} className="text-fg-muted/50 hover:text-red-500 text-xs px-1">&#10005;</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="pt-1">
+        <label className="text-xs underline text-fg-muted cursor-pointer">
+          Replace plan
+          <input type="file" accept="application/pdf,image/*" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) onUpload(f) }} />
+        </label>
+        <span className="text-fg-muted/40 mx-2">|</span>
+        <button onClick={async () => { if (confirm('Remove the irrigation plan and all zones?')) { await deleteSiteIrrigation(projectId); setDraft([]); load() } }}
+          className="text-xs underline text-fg-muted">Remove plan</button>
+      </div>
+    </div>
+  )
+}
 
 function Handover({ projectId, supervisor, checklist, refresh }: {
   projectId: string; supervisor: string; checklist: HandoverChecklist | null; refresh: () => void

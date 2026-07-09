@@ -250,6 +250,40 @@ export async function saveSiteHandover(id: string, payload: { data?: HandoverDat
   return res.ok
 }
 
+// ── Handover: irrigation plan markup ──────────────────────────────────────────
+import type { IrrigationZone, IrrigationPlan } from '@/lib/irrigationPlan'
+export type { IrrigationZone, IrrigationPlan }
+
+export async function getSiteIrrigation(id: string): Promise<IrrigationPlan> {
+  const d = await getJson<{ ok: boolean } & IrrigationPlan>(`/api/site/projects/${id}/irrigation`)
+  return d?.ok ? { planUrl: d.planUrl, planW: d.planW, planH: d.planH, zones: d.zones } : { planUrl: '', planW: 0, planH: 0, zones: [] }
+}
+
+export async function saveSiteIrrigation(id: string, payload: { zones: IrrigationZone[]; planW?: number; planH?: number }): Promise<boolean> {
+  const res = await fetch(`/api/site/projects/${id}/irrigation`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  })
+  return res.ok
+}
+
+/** Upload the rasterised plan image (PNG blob) via a signed upload URL, then save its dimensions. */
+export async function uploadSiteIrrigationPlan(id: string, blob: Blob, planW: number, planH: number): Promise<boolean> {
+  if (!supabase) return false
+  const res = await fetch(`/api/site/projects/${id}/irrigation`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'uploadUrl' }),
+  })
+  if (!res.ok) return false
+  const { path, token } = await res.json() as { path: string; token: string }
+  const up = await supabase.storage.from('project-plans').uploadToSignedUrl(path, token, blob, { contentType: 'image/png', upsert: true })
+  if (up.error) return false
+  return saveSiteIrrigation(id, { zones: [], planW, planH })
+}
+
+export async function deleteSiteIrrigation(id: string): Promise<boolean> {
+  const res = await fetch(`/api/site/projects/${id}/irrigation`, { method: 'DELETE' })
+  return res.ok
+}
+
 // ── Materials selection ───────────────────────────────────────────────────────
 import type { SiteMaterial } from '@/lib/projectMaterials'
 export type { SiteMaterial }
