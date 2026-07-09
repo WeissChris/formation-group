@@ -284,6 +284,21 @@ export async function deleteSiteIrrigation(id: string): Promise<boolean> {
   return res.ok
 }
 
+// ── Handover: client booklet ──────────────────────────────────────────────────
+import type { HandoverBookletData } from '@/lib/handoverBooklet'
+export type { HandoverBookletData }
+
+export async function getSiteBooklet(id: string): Promise<HandoverBookletData> {
+  const d = await getJson<{ ok: boolean; data: HandoverBookletData }>(`/api/site/projects/${id}/booklet`)
+  return d?.ok ? d.data : {}
+}
+export async function saveSiteBooklet(id: string, data: HandoverBookletData): Promise<boolean> {
+  const res = await fetch(`/api/site/projects/${id}/booklet`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }),
+  })
+  return res.ok
+}
+
 // ── Materials selection ───────────────────────────────────────────────────────
 import type { SiteMaterial } from '@/lib/projectMaterials'
 export type { SiteMaterial }

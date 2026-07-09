@@ -1644,13 +1644,20 @@ function HandoverTab(props: { projectId: string; supervisor: string; checklist: 
   ]
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 bg-fg-card/40 rounded-full p-0.5 w-fit">
-        {SECTIONS.map(s => (
-          <button key={s.key} onClick={() => setSection(s.key)}
-            className={`text-xs px-3 py-1.5 rounded-full transition-colors ${section === s.key ? 'bg-fg-heading text-white' : 'text-fg-heading'}`}>
-            {s.label}
-          </button>
-        ))}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex gap-1 bg-fg-card/40 rounded-full p-0.5 w-fit">
+          {SECTIONS.map(s => (
+            <button key={s.key} onClick={() => setSection(s.key)}
+              className={`text-xs px-3 py-1.5 rounded-full transition-colors ${section === s.key ? 'bg-fg-heading text-white' : 'text-fg-heading'}`}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+        {/* The client handover booklet (marked-up plan + care guides + warranty + suppliers). */}
+        <Link href={`/site/${props.projectId}/handover-booklet`}
+          className="text-xs px-3 py-1.5 rounded-full bg-fg-heading text-white whitespace-nowrap">
+          Client booklet
+        </Link>
       </div>
       {section === 'checklist'
         ? <Handover {...props} />
