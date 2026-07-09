@@ -11,7 +11,7 @@ import {
   siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, getSiteBoq,
   getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours, getSiteMilestones, getSiteSafety, postSiteSafety,
   getSiteBaseline, getSiteVariations, createSiteVariation, getSiteBookings, saveSiteBooking,
-  getSiteHandover, saveSiteHandover, getSiteIntroPack, getSiteMaterials, saveSiteMaterials,
+  getSiteHandover, saveSiteHandover, getSiteIntroPack, getSiteMaterials, saveSiteMaterials, getSiteBooklet,
   getSiteIrrigation, saveSiteIrrigation, uploadSiteIrrigationPlan, deleteSiteIrrigation,
   type SiteProject, type SitePlan, type SiteMilestone, type SiteSafety, type SiteBaseline, type SiteVariation,
   type SubbieBooking, type HandoverChecklist, type SiteMaterial, type IrrigationPlan,
@@ -60,6 +60,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
   const [bookings, setBookings] = useState<SubbieBooking[]>([])
   const [handover, setHandover] = useState<HandoverChecklist | null>(null)
   const [introSentAt, setIntroSentAt] = useState<string | null | undefined>(undefined)
+  const [bookletSentAt, setBookletSentAt] = useState<string | null | undefined>(undefined)
   const [materials, setMaterials] = useState<SiteMaterial[]>([])
 
   const refreshSafety = () => getSiteSafety(params.id).then(setSafety)
@@ -88,6 +89,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
       getSiteBookings(params.id).then(setBookings)
       getSiteHandover(params.id).then(setHandover)
       getSiteIntroPack(params.id).then(p => setIntroSentAt(p.sentAt ?? null))
+      getSiteBooklet(params.id).then(b => setBookletSentAt(b.sentAt ?? null))
       getSiteMaterials(params.id).then(setMaterials)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -134,7 +136,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
             safety={safety} plans={plans} baseline={baseline} hoursWeeks={hoursWeeks}
             variations={variations} refreshVariations={refreshVariations}
             bookings={bookings} refreshBookings={refreshBookings} handover={handover} introSentAt={introSentAt}
-            materials={materials} />
+            materials={materials} bookletSentAt={bookletSentAt} />
         )}
         {tab === 'schedule' && <Schedule gantt={gantt} projectId={project.id} />}
         {tab === 'boq' && <Boq projectId={project.id} projectName={project.name} address={project.address} />}
@@ -526,7 +528,7 @@ function ThisWeekStrip({ gantt, offset = 0, title = 'This week' }: { gantt: Gant
 }
 
 // ── Dashboard (default landing — the at-a-glance cockpit view) ─────────────────────
-function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, baseline, hoursWeeks, variations, refreshVariations, bookings, refreshBookings, handover, introSentAt, materials }: {
+function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, baseline, hoursWeeks, variations, refreshVariations, bookings, refreshBookings, handover, introSentAt, materials, bookletSentAt }: {
   project: SiteProject; gantt: GanttEntry[]; card: ReturnType<typeof computeScorecard>
   milestones: SiteMilestone[]; openTab: (t: Tab) => void
   safety: SiteSafety | null; plans: SitePlan[]; baseline: SiteBaseline | null
@@ -536,6 +538,7 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
   handover: HandoverChecklist | null
   introSentAt: string | null | undefined   // undefined = still loading; null = not sent
   materials: SiteMaterial[]
+  bookletSentAt: string | null | undefined
 }) {
   const todayIso = toISO(new Date())
   const [scoreOpen, setScoreOpen] = useState(false)
@@ -716,8 +719,14 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
       out.push({ text: `${unconfirmed} material${unconfirmed === 1 ? '' : 's'} not yet confirmed`, level: 'amber', tab: 'materials' })
     }
 
+    // Client handover booklet: once the job is essentially done (checklist signed off, or 95%+ elapsed)
+    // and it hasn't been marked delivered yet. bookletSentAt: undefined = still loading.
+    if ((handover?.signedOffAt || card.progressPct >= 0.95) && bookletSentAt === null) {
+      out.push({ text: 'Produce and deliver the client handover booklet', level: 'amber', href: `/site/${project.id}/handover-booklet` })
+    }
+
     return out
-  }, [safety, plans, subbieScopes, card.progressPct, handover, forecastEnd, introSentAt, materials, project.id])
+  }, [safety, plans, subbieScopes, card.progressPct, handover, forecastEnd, introSentAt, materials, bookletSentAt, project.id])
 
   const overall = STATUS_UI[card.status]
 

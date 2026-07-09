@@ -13,11 +13,35 @@ export interface HandoverBookletData {
   materials?: string                 // materials used - product names / specs (free text)
   zoneSchedule?: ZoneScheduleRow[]    // seeded from the irrigation zones
   controllerGuide?: string
-  careGuides?: CareGuide[]            // seeded from DEFAULT_CARE_GUIDES; foreman prunes to this job
+  excludedCareIds?: string[]          // care-guide library ids pruned from THIS job's booklet
   warranty?: string
   suppliers?: SupplierRow[]           // seeded from the project subbies
   sentAt?: string
   sentBy?: string
+}
+
+// The company-wide care-guide library (edit once, applies to every booklet), mirroring the intro
+// roster. Per-job pruning lives on the booklet (excludedCareIds); wording edits live here.
+export interface CareGuideLibrary { guides: CareGuide[]; updatedAt?: string }
+
+/** A material line, minimal - for summarising the BOQ's materials into the booklet's "materials used". */
+export interface BookletMaterialLine { description?: string; category?: string; type?: string; crewType?: string; enabled?: boolean }
+
+/** Group the estimate's Material lines by category into a readable "Category: item, item" summary. */
+export function materialsSummaryFromLines(lines: BookletMaterialLine[]): string {
+  const byCat = new Map<string, string[]>()
+  const order: string[] = []
+  for (const li of lines) {
+    if (li.enabled === false) continue
+    if (li.type !== 'Material' && li.crewType !== 'Material') continue
+    const desc = (li.description || '').trim()
+    if (!desc) continue
+    const cat = (li.category || 'General').trim()
+    if (!byCat.has(cat)) { byCat.set(cat, []); order.push(cat) }
+    const arr = byCat.get(cat)!
+    if (!arr.includes(desc)) arr.push(desc)
+  }
+  return order.map(cat => `${cat}: ${byCat.get(cat)!.join(', ')}`).join('\n')
 }
 
 export const DEFAULT_WELCOME_BODY =
@@ -51,9 +75,8 @@ export const DEFAULT_CARE_GUIDES: Omit<CareGuide, 'id'>[] = [
   { element: 'Lighting', body: 'Wipe fittings occasionally to keep lenses clear. LED globes are long-life but replace like-for-like when needed. If a run of lights fails, check the transformer and timer first. Keep plants trimmed back so they do not block or overheat fittings.' },
 ]
 
-/** Build the seeded care guides with ids (used when a booklet has none yet). */
-export function seedCareGuides(genId: () => string): CareGuide[] {
-  return DEFAULT_CARE_GUIDES.map(g => ({ id: genId(), ...g }))
-}
+// The default care-guide library, with STABLE ids so a booklet's per-job pruning (excludedCareIds)
+// keeps referring to the same guide across sessions and library edits.
+export const DEFAULT_CARE_LIBRARY: CareGuide[] = DEFAULT_CARE_GUIDES.map((g, i) => ({ id: `care-${i}`, ...g }))
 
 export const BOOKLET_TAGLINE = 'Inspired design, grounded in service.'

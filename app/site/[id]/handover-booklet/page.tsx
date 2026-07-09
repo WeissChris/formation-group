@@ -5,17 +5,18 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Printer, Plus } from 'lucide-react'
 import {
-  siteMe, getSiteProject, getSiteSubbies, getSiteIrrigation, getSiteBooklet, saveSiteBooklet,
-  type SiteProject, type IrrigationPlan, type HandoverBookletData,
+  siteMe, getSiteProject, getSiteSubbies, getSiteIrrigation, getSiteBoq, getSiteBooklet, saveSiteBooklet,
+  getCareGuideLibrary, saveCareGuideLibrary,
+  type SiteProject, type IrrigationPlan, type HandoverBookletData, type CareGuideLibrary,
 } from '@/lib/siteData'
 import { generateId } from '@/lib/utils'
 import { zoneCentroid } from '@/lib/irrigationPlan'
 import { COMPANY } from '@/lib/introPack'
 import {
-  DEFAULT_WELCOME_BODY, DEFAULT_CONTROLLER_GUIDE, DEFAULT_WARRANTY, seedCareGuides, BOOKLET_TAGLINE,
-  type CareGuide, type ZoneScheduleRow, type SupplierRow,
+  DEFAULT_WELCOME_BODY, DEFAULT_CONTROLLER_GUIDE, DEFAULT_WARRANTY, DEFAULT_CARE_LIBRARY, BOOKLET_TAGLINE,
+  materialsSummaryFromLines, type CareGuide, type ZoneScheduleRow, type SupplierRow,
 } from '@/lib/handoverBooklet'
-import type { SubcontractorPackage } from '@/types'
+import type { SubcontractorPackage, Estimate } from '@/types'
 
 const GREEN = '#3D5A3A'
 const HEADING = '#1a1a1a'
@@ -54,7 +55,10 @@ export default function HandoverBookletPage() {
   const [project, setProject] = useState<SiteProject | null>(null)
   const [irrigation, setIrrigation] = useState<IrrigationPlan | null>(null)
   const [subbies, setSubbies] = useState<SubcontractorPackage[]>([])
+  const [estimate, setEstimate] = useState<Estimate | null>(null)
   const [data, setData] = useState<HandoverBookletData | null>(null)
+  const [careLib, setCareLib] = useState<CareGuideLibrary>({ guides: DEFAULT_CARE_LIBRARY })
+  const [editLibrary, setEditLibrary] = useState(false)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [meName, setMeName] = useState('')
 
@@ -65,7 +69,9 @@ export default function HandoverBookletPage() {
       getSiteProject(id).then(p => { if (!p) { router.replace('/site'); return } setProject(p) })
       getSiteIrrigation(id).then(setIrrigation)
       getSiteSubbies(id).then(s => setSubbies(s || []))
+      getSiteBoq(id).then(setEstimate)
       getSiteBooklet(id).then(setData)
+      getCareGuideLibrary().then(l => { if (l && l.guides.length) setCareLib(l) })
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
@@ -88,21 +94,37 @@ export default function HandoverBookletPage() {
     return () => { window.removeEventListener('beforeunload', flush); window.removeEventListener('pagehide', flush); flush() }
   }, [id])
 
+  // Care-guide library autosave (shared company record - wording edits flow to every booklet).
+  const libTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mutateLibrary = (next: CareGuideLibrary) => {
+    setCareLib(next)
+    if (libTimer.current) clearTimeout(libTimer.current)
+    libTimer.current = setTimeout(() => { void saveCareGuideLibrary(next) }, 800)
+  }
+
   if (!project || !data || !irrigation) return <div className="max-w-2xl mx-auto px-6 py-12"><p className="text-sm text-gray-400">Loading...</p></div>
 
   // Effective values: stored, else seeded from the plan / subbies / defaults.
   const greeting = data.welcomeGreeting ?? (project.clientName ? `${project.clientName},` : '')
   const welcomeBody = data.welcomeBody ?? DEFAULT_WELCOME_BODY
-  const materials = data.materials ?? ''
+  const materials = data.materials ?? materialsSummaryFromLines(estimate?.lineItems ?? [])
   const controllerGuide = data.controllerGuide ?? DEFAULT_CONTROLLER_GUIDE
   const warranty = data.warranty ?? DEFAULT_WARRANTY
-  const careGuides: CareGuide[] = data.careGuides ?? seedCareGuides(generateId)
   const zoneSchedule: ZoneScheduleRow[] = data.zoneSchedule
     ?? irrigation.zones.map(z => ({ id: z.id, zone: z.label, waters: '', runtime: '' }))
   const suppliers: SupplierRow[] = data.suppliers
     ?? subbies.map(s => ({ id: s.id, trade: s.trade || '', name: s.name || '', phone: '' }))
 
-  const setCare = (rows: CareGuide[]) => mutate({ careGuides: rows })
+  // Care guides come from the shared library; each job prunes to what applies (excludedCareIds).
+  const excluded = data.excludedCareIds ?? []
+  const shownCare = careLib.guides.filter(g => !excluded.includes(g.id))
+  const prunedCare = careLib.guides.filter(g => excluded.includes(g.id))
+  const setLibraryGuide = (gid: string, patch: Partial<CareGuide>) =>
+    mutateLibrary({ ...careLib, guides: careLib.guides.map(g => g.id === gid ? { ...g, ...patch } : g) })
+  const addLibraryGuide = () => mutateLibrary({ ...careLib, guides: [...careLib.guides, { id: generateId(), element: '', body: '' }] })
+  const excludeFromJob = (gid: string) => mutate({ excludedCareIds: [...excluded, gid] })
+  const restoreToJob = (gid: string) => mutate({ excludedCareIds: excluded.filter(x => x !== gid) })
+
   const setZones = (rows: ZoneScheduleRow[]) => mutate({ zoneSchedule: rows })
   const setSuppliers = (rows: SupplierRow[]) => mutate({ suppliers: rows })
 
@@ -123,6 +145,22 @@ export default function HandoverBookletPage() {
         </Link>
         <div className="flex items-center gap-3">
           <span className="text-2xs text-white/40 w-12">{saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? 'Saved' : ''}</span>
+          <button onClick={() => setEditLibrary(v => !v)}
+            title="Edit the care guides shared across every job's booklet"
+            className={`px-3 py-1.5 text-xs font-light tracking-architectural uppercase transition-colors ${editLibrary ? 'bg-white/25 text-white' : 'bg-white/10 text-white/80 hover:bg-white/20'}`}>
+            {editLibrary ? 'Done editing guides' : 'Edit care guides'}
+          </button>
+          {data.sentAt ? (
+            <button onClick={() => { if (window.confirm('Mark this booklet as NOT delivered? It will reappear in the foreman heads-up.')) mutate({ sentAt: undefined, sentBy: undefined }) }}
+              className="px-3 py-1.5 text-xs font-light tracking-architectural uppercase bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition-colors">
+              Delivered {new Date(data.sentAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+            </button>
+          ) : (
+            <button onClick={() => mutate({ sentAt: new Date().toISOString(), sentBy: meName })}
+              className="px-3 py-1.5 text-xs font-light tracking-architectural uppercase bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
+              Mark as delivered
+            </button>
+          )}
           <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-1.5 bg-white/10 text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-white/20 transition-colors">
             <Printer className="w-3.5 h-3.5" /> Print / PDF
           </button>
@@ -157,7 +195,13 @@ export default function HandoverBookletPage() {
 
         {/* 02 Materials used */}
         <div className="hb-page mb-14">
-          <SectionTitle n="02">Materials used</SectionTitle>
+          <div className="flex items-center justify-between">
+            <SectionTitle n="02">Materials used</SectionTitle>
+            {estimate && materialsSummaryFromLines(estimate.lineItems).length > 0 && (
+              <button onClick={() => mutate({ materials: materialsSummaryFromLines(estimate.lineItems) })}
+                className="print:hidden text-xs mb-3" style={{ color: GREEN }}>Pull from BOQ</button>
+            )}
+          </div>
           <p className="text-xs mb-2" style={{ color: MUTED }}>The key materials and products in your landscape, so you know exactly what you have.</p>
           <EditableText value={materials} onChange={v => mutate({ materials: v })}
             placeholder="Paving & tiling: ...&#10;Concrete: ...&#10;Timber & decking: ...&#10;Lighting: ..."
@@ -249,28 +293,53 @@ export default function HandoverBookletPage() {
             className="text-sm leading-relaxed font-light" />
         </div>
 
-        {/* 05 Care & maintenance */}
+        {/* 05 Care & maintenance - from the shared library; this job keeps the ones that apply */}
         <div className="hb-page mb-14">
           <SectionTitle n="05">Care & maintenance</SectionTitle>
-          <p className="text-xs mb-4" style={{ color: MUTED }}>How to look after each part of your landscape. Remove any that don&apos;t apply to your job.</p>
+          <p className="text-xs mb-4" style={{ color: MUTED }}>
+            {editLibrary
+              ? 'Editing the SHARED guides - changes here apply to every job’s booklet.'
+              : 'How to look after each part of your landscape. Remove any that don’t apply to this job.'}
+          </p>
           <div className="space-y-5">
-            {careGuides.map((g, i) => (
+            {shownCare.map(g => (
               <div key={g.id} className="hb-avoid">
                 <div className="flex items-center gap-2">
-                  <input value={g.element} onChange={e => setCare(careGuides.map((x, j) => j === i ? { ...x, element: e.target.value } : x))}
-                    className="text-sm font-medium bg-transparent outline-none print:hidden flex-1" style={{ color: HEADING }} placeholder="Element" />
-                  <span className="hidden print:block text-sm font-medium" style={{ color: HEADING }}>{g.element}</span>
-                  <button onClick={() => setCare(careGuides.filter((_, j) => j !== i))} className="print:hidden text-gray-300 hover:text-red-500 text-xs">&#10005;</button>
+                  {editLibrary ? (
+                    <input value={g.element} onChange={e => setLibraryGuide(g.id, { element: e.target.value })}
+                      className="text-sm font-medium bg-transparent outline-none flex-1 border-b border-gray-200 focus:border-gray-400" style={{ color: HEADING }} placeholder="Element" />
+                  ) : (
+                    <span className="text-sm font-medium flex-1" style={{ color: HEADING }}>{g.element}</span>
+                  )}
+                  <button onClick={() => editLibrary ? mutateLibrary({ ...careLib, guides: careLib.guides.filter(x => x.id !== g.id) }) : excludeFromJob(g.id)}
+                    title={editLibrary ? 'Delete from every booklet' : 'Remove from this job’s booklet'}
+                    className="print:hidden text-gray-300 hover:text-red-500 text-xs">&#10005;</button>
                 </div>
-                <EditableText value={g.body} onChange={v => setCare(careGuides.map((x, j) => j === i ? { ...x, body: v } : x))}
-                  placeholder="Care instructions..." className="text-sm leading-relaxed font-light mt-0.5" />
+                {editLibrary ? (
+                  <EditableText value={g.body} onChange={v => setLibraryGuide(g.id, { body: v })}
+                    placeholder="Care instructions..." className="text-sm leading-relaxed font-light mt-0.5" />
+                ) : (
+                  <p className="text-sm leading-relaxed font-light mt-0.5">{g.body}</p>
+                )}
               </div>
             ))}
           </div>
-          <button onClick={() => setCare([...careGuides, { id: generateId(), element: '', body: '' }])}
-            className="print:hidden flex items-center gap-1 text-xs mt-4" style={{ color: GREEN }}>
-            <Plus className="w-3 h-3" /> Add element
-          </button>
+          {editLibrary && (
+            <button onClick={addLibraryGuide} className="print:hidden flex items-center gap-1 text-xs mt-4" style={{ color: GREEN }}>
+              <Plus className="w-3 h-3" /> Add element (all jobs)
+            </button>
+          )}
+          {!editLibrary && prunedCare.length > 0 && (
+            <div className="print:hidden mt-4 text-xs" style={{ color: MUTED }}>
+              Removed from this job:{' '}
+              {prunedCare.map((g, i) => (
+                <span key={g.id}>
+                  {i > 0 && ', '}
+                  <button onClick={() => restoreToJob(g.id)} className="underline" style={{ color: GREEN }}>{g.element || 'untitled'}</button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* 06 Warranty */}

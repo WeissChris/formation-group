@@ -285,8 +285,8 @@ export async function deleteSiteIrrigation(id: string): Promise<boolean> {
 }
 
 // ── Handover: client booklet ──────────────────────────────────────────────────
-import type { HandoverBookletData } from '@/lib/handoverBooklet'
-export type { HandoverBookletData }
+import type { HandoverBookletData, CareGuideLibrary } from '@/lib/handoverBooklet'
+export type { HandoverBookletData, CareGuideLibrary }
 
 export async function getSiteBooklet(id: string): Promise<HandoverBookletData> {
   const d = await getJson<{ ok: boolean; data: HandoverBookletData }>(`/api/site/projects/${id}/booklet`)
@@ -295,6 +295,18 @@ export async function getSiteBooklet(id: string): Promise<HandoverBookletData> {
 export async function saveSiteBooklet(id: string, data: HandoverBookletData): Promise<boolean> {
   const res = await fetch(`/api/site/projects/${id}/booklet`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }),
+  })
+  return res.ok
+}
+
+// Company-wide care-guide library (shared across every booklet).
+export async function getCareGuideLibrary(): Promise<CareGuideLibrary | null> {
+  const d = await getJson<{ ok: boolean; library: CareGuideLibrary }>(`/api/site/care-guides`)
+  return d?.ok ? d.library : null
+}
+export async function saveCareGuideLibrary(library: CareGuideLibrary): Promise<boolean> {
+  const res = await fetch(`/api/site/care-guides`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ library }),
   })
   return res.ok
 }
