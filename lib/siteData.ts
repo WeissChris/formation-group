@@ -250,6 +250,21 @@ export async function saveSiteHandover(id: string, payload: { data?: HandoverDat
   return res.ok
 }
 
+// ── Materials selection ───────────────────────────────────────────────────────
+import type { SiteMaterial } from '@/lib/projectMaterials'
+export type { SiteMaterial }
+
+export async function getSiteMaterials(id: string): Promise<SiteMaterial[]> {
+  const d = await getJson<{ ok: boolean; materials: SiteMaterial[] }>(`/api/site/projects/${id}/materials`)
+  return d?.ok ? d.materials : []
+}
+export async function saveSiteMaterials(id: string, materials: SiteMaterial[]): Promise<boolean> {
+  const res = await fetch(`/api/site/projects/${id}/materials`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ materials }),
+  })
+  return res.ok
+}
+
 // ── Client introduction pack ──────────────────────────────────────────────────
 import type { IntroPackData, IntroRoster } from '@/lib/introPack'
 export type { IntroPackData, IntroRoster }

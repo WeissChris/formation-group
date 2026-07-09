@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { entrySegments, entryClaimSegments, segmentWeekShare } from '@/lib/ganttForecast'
@@ -11,10 +11,11 @@ import {
   siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, getSiteBoq,
   getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours, getSiteMilestones, getSiteSafety, postSiteSafety,
   getSiteBaseline, getSiteVariations, createSiteVariation, getSiteBookings, saveSiteBooking,
-  getSiteHandover, saveSiteHandover, getSiteIntroPack,
+  getSiteHandover, saveSiteHandover, getSiteIntroPack, getSiteMaterials, saveSiteMaterials,
   type SiteProject, type SitePlan, type SiteMilestone, type SiteSafety, type SiteBaseline, type SiteVariation,
-  type SubbieBooking, type HandoverChecklist,
+  type SubbieBooking, type HandoverChecklist, type SiteMaterial,
 } from '@/lib/siteData'
+import { unconfirmedMaterials } from '@/lib/projectMaterials'
 import { HANDOVER_SECTIONS, handoverProgress, blueTapeOf, openBlueTapeCount, type HandoverData, type HandoverRow, type BlueTapeEntry } from '@/lib/handoverChecklist'
 import { openAttachment } from '@/lib/attachments'
 import { generateId } from '@/lib/utils'
@@ -22,11 +23,12 @@ import { SEVERITY_LABEL } from '@/lib/safetyDocs'
 import type { GanttEntry, WeeklyActual, SubcontractorPackage, Estimate } from '@/types'
 
 // The Scorecard has no tab of its own - the dashboard strip (tap to expand) covers it.
-type Tab = 'dashboard' | 'schedule' | 'boq' | 'plans' | 'subbies' | 'safety' | 'handover' | 'client'
+type Tab = 'dashboard' | 'schedule' | 'boq' | 'materials' | 'plans' | 'subbies' | 'safety' | 'handover' | 'client'
 const TABS: { key: Tab; label: string }[] = [
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'schedule', label: 'Schedule' },
   { key: 'boq', label: 'BOQ' },
+  { key: 'materials', label: 'Materials' },
   { key: 'subbies', label: 'Subbies' },
   { key: 'plans', label: 'Plans' },
   { key: 'safety', label: 'Safety' },
@@ -56,9 +58,11 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
   const [bookings, setBookings] = useState<SubbieBooking[]>([])
   const [handover, setHandover] = useState<HandoverChecklist | null>(null)
   const [introSentAt, setIntroSentAt] = useState<string | null | undefined>(undefined)
+  const [materials, setMaterials] = useState<SiteMaterial[]>([])
 
   const refreshSafety = () => getSiteSafety(params.id).then(setSafety)
   const refreshHandover = () => getSiteHandover(params.id).then(setHandover)
+  const refreshMaterials = () => getSiteMaterials(params.id).then(setMaterials)
   const refreshVariations = () => getSiteVariations(params.id).then(setVariations)
   const refreshBookings = () => getSiteBookings(params.id).then(setBookings)
 
@@ -82,6 +86,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
       getSiteBookings(params.id).then(setBookings)
       getSiteHandover(params.id).then(setHandover)
       getSiteIntroPack(params.id).then(p => setIntroSentAt(p.sentAt ?? null))
+      getSiteMaterials(params.id).then(setMaterials)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id, router])
@@ -126,10 +131,12 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
           <Dashboard project={project} gantt={gantt} card={card} milestones={milestones} openTab={setTab}
             safety={safety} plans={plans} baseline={baseline} hoursWeeks={hoursWeeks}
             variations={variations} refreshVariations={refreshVariations}
-            bookings={bookings} refreshBookings={refreshBookings} handover={handover} introSentAt={introSentAt} />
+            bookings={bookings} refreshBookings={refreshBookings} handover={handover} introSentAt={introSentAt}
+            materials={materials} />
         )}
         {tab === 'schedule' && <Schedule gantt={gantt} projectId={project.id} />}
         {tab === 'boq' && <Boq projectId={project.id} projectName={project.name} address={project.address} />}
+        {tab === 'materials' && <Materials projectId={project.id} materials={materials} refresh={refreshMaterials} />}
         {tab === 'subbies' && <Subbies projectId={project.id} />}
         {tab === 'plans' && <Plans projectId={project.id} />}
         {tab === 'safety' && <Safety projectId={project.id} safety={safety} refresh={refreshSafety} />}
@@ -517,7 +524,7 @@ function ThisWeekStrip({ gantt, offset = 0, title = 'This week' }: { gantt: Gant
 }
 
 // ── Dashboard (default landing — the at-a-glance cockpit view) ─────────────────────
-function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, baseline, hoursWeeks, variations, refreshVariations, bookings, refreshBookings, handover, introSentAt }: {
+function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, baseline, hoursWeeks, variations, refreshVariations, bookings, refreshBookings, handover, introSentAt, materials }: {
   project: SiteProject; gantt: GanttEntry[]; card: ReturnType<typeof computeScorecard>
   milestones: SiteMilestone[]; openTab: (t: Tab) => void
   safety: SiteSafety | null; plans: SitePlan[]; baseline: SiteBaseline | null
@@ -526,6 +533,7 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
   bookings: SubbieBooking[]; refreshBookings: () => void
   handover: HandoverChecklist | null
   introSentAt: string | null | undefined   // undefined = still loading; null = not sent
+  materials: SiteMaterial[]
 }) {
   const todayIso = toISO(new Date())
   const [scoreOpen, setScoreOpen] = useState(false)
@@ -700,8 +708,14 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
       out.push({ text: 'Send the client introduction pack', level: 'red', href: `/site/${project.id}/intro-pack` })
     }
 
+    // Materials not yet confirmed (ordered / price locked in).
+    const unconfirmed = unconfirmedMaterials(materials).length
+    if (unconfirmed > 0) {
+      out.push({ text: `${unconfirmed} material${unconfirmed === 1 ? '' : 's'} not yet confirmed`, level: 'amber', tab: 'materials' })
+    }
+
     return out
-  }, [safety, plans, subbieScopes, card.progressPct, handover, forecastEnd, introSentAt, project.id])
+  }, [safety, plans, subbieScopes, card.progressPct, handover, forecastEnd, introSentAt, materials, project.id])
 
   const overall = STATUS_UI[card.status]
 
@@ -1091,6 +1105,95 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
 }
 
 // ── Subbies ────────────────────────────────────────────────────────────────────────
+// Materials selection: the foreman lists what materials the job needs, where each is sourced, the
+// allowance, and ticks Confirmed once it's ordered / price locked in. Unconfirmed rows are flagged in
+// the dashboard Heads Up box. Edits autosave (debounced), then refresh the workspace so the flag updates.
+function Materials({ projectId, materials, refresh }: { projectId: string; materials: SiteMaterial[]; refresh: () => void }) {
+  const [rows, setRows] = useState<SiteMaterial[]>(materials)
+  const dirty = useRef(false)
+  // Adopt server data whenever it lands, unless we have unsaved local edits in flight.
+  useEffect(() => { if (!dirty.current) setRows(materials) }, [materials])
+
+  // Debounced autosave after any local edit, then refresh so the Heads Up flag recomputes.
+  useEffect(() => {
+    if (!dirty.current) return
+    const h = setTimeout(async () => {
+      await saveSiteMaterials(projectId, rows)
+      dirty.current = false
+      refresh()
+    }, 700)
+    return () => clearTimeout(h)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, projectId])
+
+  const edit = (next: SiteMaterial[]) => { dirty.current = true; setRows(next) }
+  const update = (id: string, patch: Partial<SiteMaterial>) => edit(rows.map(r => r.id === id ? { ...r, ...patch } : r))
+  const addRow = () => edit([...rows, { id: generateId(), type: '', source: '', allowance: 0, confirmed: false }])
+  const removeRow = (id: string) => edit(rows.filter(r => r.id !== id))
+
+  const unconfirmed = rows.filter(r => (r.type.trim() || r.source.trim() || r.allowance > 0) && !r.confirmed).length
+  const totalAllowance = rows.reduce((s, r) => s + (r.allowance || 0), 0)
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-fg-heading font-medium">Materials</p>
+        {unconfirmed > 0 && (
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{unconfirmed} unconfirmed</span>
+        )}
+      </div>
+      <p className="text-xs text-fg-muted">
+        What we need, where it comes from, and what we&apos;ve allowed. Tick Confirmed once it&apos;s ordered or the price is locked in - anything left unconfirmed shows in Heads up.
+      </p>
+
+      {rows.length === 0 ? (
+        <p className="text-sm text-fg-muted py-6 text-center">No materials listed yet.</p>
+      ) : (
+        <ul className="space-y-2">
+          {rows.map(r => (
+            <li key={r.id} className={`rounded-xl border p-3 ${r.confirmed ? 'border-fg-border bg-fg-card/20' : 'border-amber-300/60 bg-amber-50/30'}`}>
+              <div className="flex items-start gap-2">
+                <div className="flex-1 space-y-2">
+                  <input value={r.type} onChange={e => update(r.id, { type: e.target.value })}
+                    placeholder="Material (e.g. Bluestone paving 400x400)"
+                    className="w-full text-sm bg-transparent border-b border-fg-border/60 focus:border-fg-heading outline-none py-1" />
+                  <input value={r.source} onChange={e => update(r.id, { source: e.target.value })}
+                    placeholder="Source / supplier"
+                    className="w-full text-xs text-fg-muted bg-transparent border-b border-fg-border/60 focus:border-fg-heading outline-none py-1" />
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <label className="text-xs text-fg-muted flex items-center gap-1">
+                      Allowance $
+                      <input type="number" inputMode="decimal" value={r.allowance || ''}
+                        onChange={e => update(r.id, { allowance: Number(e.target.value) || 0 })}
+                        className="w-24 text-sm bg-transparent border-b border-fg-border/60 focus:border-fg-heading outline-none py-0.5 tabular-nums" />
+                    </label>
+                    <label className="text-xs flex items-center gap-1.5 ml-auto cursor-pointer">
+                      <input type="checkbox" checked={r.confirmed} onChange={e => update(r.id, { confirmed: e.target.checked })}
+                        className="w-4 h-4 accent-fg-heading" />
+                      <span className={r.confirmed ? 'text-fg-heading' : 'text-amber-700'}>{r.confirmed ? 'Confirmed' : 'Confirm'}</span>
+                    </label>
+                  </div>
+                </div>
+                <button onClick={() => removeRow(r.id)} title="Remove"
+                  className="text-fg-muted/50 hover:text-red-500 text-xs px-1 leading-none pt-1">&#10005;</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <button onClick={addRow}
+        className="w-full rounded-xl border border-dashed border-fg-border py-2.5 text-sm text-fg-muted active:bg-fg-card/30 transition-colors">
+        + Add material
+      </button>
+
+      {rows.length > 0 && (
+        <p className="text-xs text-fg-muted text-right">Total allowance: <span className="tabular-nums text-fg-heading">${totalAllowance.toLocaleString('en-AU')}</span></p>
+      )}
+    </div>
+  )
+}
+
 function Subbies({ projectId }: { projectId: string }) {
   const [subbies, setSubbies] = useState<SubcontractorPackage[] | null>(null)
   useEffect(() => { getSiteSubbies(projectId).then(setSubbies) }, [projectId])
