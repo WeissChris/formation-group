@@ -178,6 +178,7 @@ export interface Estimate {
   projectAddress?: string      // site address — for standalone estimates not linked to a project/proposal
   name?: string
   version: number
+  versionGroupId?: string      // ties v1/v2/v3 of the same quote together (works before a project exists)
   status: 'draft' | 'sent' | 'accepted' | 'variation' | 'declined'
   defaultMarkupFormation: number
   defaultMarkupSubcontractor: number

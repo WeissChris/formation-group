@@ -116,9 +116,10 @@ export default function EstimatesPage() {
     return matchesSearch(e)
   })
 
-  // Group by project
+  // Group by project when linked, else by version family (so v1/v2/v3 of a pre-project quote sit
+  // together instead of as loose duplicates), else the estimate stands alone.
   const grouped = filtered.reduce<Record<string, Estimate[]>>((acc, est) => {
-    const key = est.projectId
+    const key = est.projectId || est.versionGroupId || est.id
     if (!acc[key]) acc[key] = []
     acc[key].push(est)
     return acc
@@ -234,13 +235,12 @@ export default function EstimatesPage() {
         </div>
       ) : (
         <div className="space-y-10">
-          {Object.entries(grouped).map(([, projectEstimates]) => {
-            const first = projectEstimates[0]
+          {Object.entries(grouped).map(([groupKey, projectEstimates]) => {
             // Separate base estimates from variations
             const baseEstimates = projectEstimates.filter(e => !e.parentEstimateId)
             const allVariations = projectEstimates.filter(e => !!e.parentEstimateId)
             return (
-              <div key={first.projectId}>
+              <div key={groupKey}>
                 
                 <div className="divide-y divide-fg-border border-t border-b border-fg-border">
                   {baseEstimates

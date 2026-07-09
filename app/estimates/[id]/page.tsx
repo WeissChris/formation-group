@@ -14,6 +14,7 @@ import { getAllLibraryItems, getCategories, defaultMarkupForType, TARGET_MARGINS
 import { upsertLibraryItem, deleteLibraryItemAsync, upsertEstimateTemplate, getEstimateTemplates } from '@/lib/storageAsync'
 import { getXeroAccounts, loadCachedXeroAccounts, type XeroAccountOption } from '@/lib/xero'
 import { loadXccDefaults, recordXccDefault, resolveXccDefault } from '@/lib/xcc'
+import { versionFamily, versionGroupIdOf, buildNextVersion } from '@/lib/estimateVersion'
 import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData, EstimateTemplate } from '@/types'
 import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, ChevronRight, GitBranch, Copy, Eye, EyeOff, Check, Star, GripVertical } from 'lucide-react'
 import TakeoffTab from '@/components/TakeoffTab'
@@ -1291,6 +1292,26 @@ export default function EstimateBuilderPage() {
     window.alert(`Template "${name.trim()}" saved - pick it under New Estimate > Start from template.`)
   }
 
+  // Clone this estimate into a fresh draft version (v2, v3, ...) under the same version family, so a
+  // client can be shown alternative pricing without duplicating the whole quote. Only the version that
+  // ends up 'accepted' feeds tracking, so extra draft versions never distort metrics.
+  const handleCreateVersion = async () => {
+    if (!estimate) return
+    const all = loadEstimates()
+    const groupId = versionGroupIdOf(estimate)
+    // Backfill the group id onto the source so this and future versions link (esp. pre-project quotes).
+    if (!estimate.versionGroupId) {
+      const patched = { ...estimate, versionGroupId: groupId }
+      saveEstimate(patched)
+      void upsertEstimate(patched)
+    }
+    const newId = generateId()
+    const next = buildNextVersion({ ...estimate, versionGroupId: groupId }, all, newId, generateId, new Date().toISOString())
+    saveEstimate(next)
+    await upsertEstimate(next)
+    router.push(`/estimates/${newId}`)
+  }
+
   const handleConvertToProject = async () => {
     if (!estimate) return
     // Re-entry guard: a fast double-click would otherwise run this twice and create two projects.
@@ -1614,6 +1635,8 @@ export default function EstimateBuilderPage() {
   const allSubcategories = Array.from(
     new Set([...estimate.lineItems.map(i => (i.subcategory || '').trim()).filter(Boolean), ...parentSubcategories]),
   ).sort()
+  // Sibling versions of this quote (newest first) for the version switcher.
+  const versionSiblings = versionFamily(loadEstimates(), estimate).sort((a, b) => b.version - a.version)
 
   return (
     <div className="max-w-[1680px] mx-auto px-4 lg:px-8 py-12">
@@ -1814,6 +1837,33 @@ export default function EstimateBuilderPage() {
 
         </div>
         <div className="flex items-center gap-3">
+          {/* Version family: switch between v1/v2/v3, and clone a new draft version. Base estimates
+              only (a variation lives under its parent, not in a version chain). */}
+          {!estimate.parentEstimateId && (
+            <>
+              {versionSiblings.length > 1 && (
+                <select
+                  value={estimate.id}
+                  onChange={e => { if (e.target.value !== estimate.id) router.push(`/estimates/${e.target.value}`) }}
+                  title="Switch between versions of this quote"
+                  className="px-2 py-1.5 bg-fg-bg border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading transition-colors appearance-none"
+                >
+                  {versionSiblings.map(v => (
+                    <option key={v.id} value={v.id}>
+                      v{v.version}{v.status === 'accepted' ? ' - accepted' : v.status === 'declined' ? ' - declined' : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                onClick={handleCreateVersion}
+                title="Clone this estimate into a new draft version (v2, v3, ...) to price an alternative"
+                className="flex items-center gap-2 px-3 py-1.5 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading transition-colors"
+              >
+                <GitBranch className="w-3 h-3" /> New Version
+              </button>
+            </>
+          )}
           <select
             value={estimate.status}
             onChange={e => updateEstimate({ status: e.target.value as Estimate['status'] })}
