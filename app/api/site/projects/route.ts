@@ -13,11 +13,13 @@ export async function GET(request: NextRequest) {
   if (!session) return NextResponse.json({ ok: false }, { status: 401 })
   if (!supabaseAdmin) return NextResponse.json({ ok: true, projects: [] })
 
-  const { data } = await supabaseAdmin
+  // Office/admin sees every live job; a supervisor sees only their own (foreman name match).
+  let query = supabaseAdmin
     .from('fg_projects')
     .select('id, name, address, client_name, status, start_date, planned_completion, stage')
-    .eq('foreman', session.name)
     .in('status', ['planning', 'active'])
+  if (!session.office) query = query.eq('foreman', session.name)
+  const { data } = await query
 
   const projects = (data || []).map(r => ({
     id: r.id as string,

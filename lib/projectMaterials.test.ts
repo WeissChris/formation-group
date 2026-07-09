@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { isMaterialFilled, unconfirmedMaterials, sanitizeMaterials, type SiteMaterial } from './projectMaterials'
+import { isMaterialFilled, unconfirmedMaterials, sanitizeMaterials, materialRowsFromLines, type SiteMaterial } from './projectMaterials'
+
+let seq = 0
+const gid = () => `g${++seq}`
 
 const m = (over: Partial<SiteMaterial> = {}): SiteMaterial => ({
   id: 'm1', type: 'Bluestone', source: 'ABC Stone', allowance: 1200, confirmed: false, ...over,
@@ -42,5 +45,28 @@ describe('sanitizeMaterials', () => {
   it('returns [] for non-arrays', () => {
     expect(sanitizeMaterials(null)).toEqual([])
     expect(sanitizeMaterials({})).toEqual([])
+  })
+})
+
+describe('materialRowsFromLines', () => {
+  it('makes one row per material description, summing allowances', () => {
+    seq = 0
+    const lines = [
+      { description: 'Bluestone', type: 'Material', total: 100 },
+      { description: 'Bluestone', type: 'Material', total: 50 },     // summed with the above
+      { description: 'Labour', type: 'Labour', total: 999 },          // not a material
+      { description: 'Cement', crewType: 'Material', total: 30 },     // crewType counts too
+    ]
+    const out = materialRowsFromLines(lines, [], gid)
+    expect(out.map(r => [r.type, r.allowance])).toEqual([['Bluestone', 150], ['Cement', 30]])
+    expect(out.every(r => !r.confirmed && r.source === '')).toBe(true)
+  })
+  it('skips materials already listed (case-insensitive) and disabled lines', () => {
+    const out = materialRowsFromLines(
+      [{ description: 'Sand', type: 'Material', total: 20 }, { description: 'Gravel', type: 'Material', total: 40, enabled: false }],
+      [{ id: 'x', type: 'SAND', source: '', allowance: 0, confirmed: false }],
+      gid,
+    )
+    expect(out).toEqual([])
   })
 })

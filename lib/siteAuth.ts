@@ -50,6 +50,7 @@ export interface SiteSessionPayload {
   sub: string     // supervisor id
   name: string    // supervisor name (used for project ownership matching: project.foreman === name)
   exp: number     // expiry, unix seconds
+  office?: boolean // true = this is an office/admin user (not a supervisor); may open ANY project
 }
 
 /** Sign a payload into `<base64url-payload>.<base64url-sig>`. Forgery needs SESSION_SECRET. */

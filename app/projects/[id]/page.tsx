@@ -1300,6 +1300,15 @@ export default function ProjectDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Jump into the foreman's cockpit for this job (office uses its admin session - no passcode). */}
+            <a
+              href={`/site/${id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-light tracking-wide uppercase border border-green-500/40 text-green-600 rounded-sm hover:bg-green-500/10 transition-colors"
+            >
+              Site cockpit
+            </a>
             <Link
               href={`/projects/${id}/report`}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-light tracking-wide uppercase border border-fg-border text-fg-muted rounded-sm hover:text-fg-heading hover:border-fg-heading/40 transition-colors"

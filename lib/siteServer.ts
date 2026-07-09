@@ -7,10 +7,19 @@
 import type { NextRequest } from 'next/server'
 import { supabaseAdmin } from './supabaseAdmin'
 import { verifySiteSession, SITE_SESSION_COOKIE, type SiteSessionPayload } from './siteAuth'
+import { verifySession, SESSION_COOKIE } from './serverAuth'
 
-/** Resolve the supervisor session from a request, or null if missing/invalid/expired. */
+/**
+ * Resolve who is asking. A supervisor's own signed session wins; failing that, a valid office/admin
+ * session (the same server-signed cookie the office app uses) is accepted as an "office" identity
+ * that may open ANY project. Returns null if neither is present/valid.
+ */
 export function siteSessionFrom(request: NextRequest): SiteSessionPayload | null {
-  return verifySiteSession(request.cookies.get(SITE_SESSION_COOKIE)?.value)
+  const site = verifySiteSession(request.cookies.get(SITE_SESSION_COOKIE)?.value)
+  if (site) return site
+  const admin = verifySession(request.cookies.get(SESSION_COOKIE)?.value)
+  if (admin) return { v: 1, sub: 'office', name: 'Office', exp: admin.exp, office: true }
+  return null
 }
 
 /**
@@ -25,6 +34,7 @@ export async function loadOwnedProjectRow(
   if (!supabaseAdmin) return null
   const { data } = await supabaseAdmin.from('fg_projects').select('*').eq('id', projectId).maybeSingle()
   if (!data) return null
-  if (((data.foreman as string) || '') !== session.name) return null
+  // Office/admin users may open any project; supervisors only their own (foreman name match).
+  if (!session.office && ((data.foreman as string) || '') !== session.name) return null
   return data as Record<string, unknown>
 }

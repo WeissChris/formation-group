@@ -15,7 +15,7 @@ import {
   type SiteProject, type SitePlan, type SiteMilestone, type SiteSafety, type SiteBaseline, type SiteVariation,
   type SubbieBooking, type HandoverChecklist, type SiteMaterial,
 } from '@/lib/siteData'
-import { unconfirmedMaterials } from '@/lib/projectMaterials'
+import { unconfirmedMaterials, materialRowsFromLines } from '@/lib/projectMaterials'
 import { HANDOVER_SECTIONS, handoverProgress, blueTapeOf, openBlueTapeCount, type HandoverData, type HandoverRow, type BlueTapeEntry } from '@/lib/handoverChecklist'
 import { openAttachment } from '@/lib/attachments'
 import { generateId } from '@/lib/utils'
@@ -136,7 +136,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
         )}
         {tab === 'schedule' && <Schedule gantt={gantt} projectId={project.id} />}
         {tab === 'boq' && <Boq projectId={project.id} projectName={project.name} address={project.address} />}
-        {tab === 'materials' && <Materials projectId={project.id} materials={materials} refresh={refreshMaterials} />}
+        {tab === 'materials' && <Materials projectId={project.id} materials={materials} refresh={refreshMaterials} estimate={estimate} />}
         {tab === 'subbies' && <Subbies projectId={project.id} />}
         {tab === 'plans' && <Plans projectId={project.id} />}
         {tab === 'safety' && <Safety projectId={project.id} safety={safety} refresh={refreshSafety} />}
@@ -1108,7 +1108,7 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
 // Materials selection: the foreman lists what materials the job needs, where each is sourced, the
 // allowance, and ticks Confirmed once it's ordered / price locked in. Unconfirmed rows are flagged in
 // the dashboard Heads Up box. Edits autosave (debounced), then refresh the workspace so the flag updates.
-function Materials({ projectId, materials, refresh }: { projectId: string; materials: SiteMaterial[]; refresh: () => void }) {
+function Materials({ projectId, materials, refresh, estimate }: { projectId: string; materials: SiteMaterial[]; refresh: () => void; estimate: Estimate | null }) {
   const [rows, setRows] = useState<SiteMaterial[]>(materials)
   const dirty = useRef(false)
   // Adopt server data whenever it lands, unless we have unsaved local edits in flight.
@@ -1130,6 +1130,11 @@ function Materials({ projectId, materials, refresh }: { projectId: string; mater
   const update = (id: string, patch: Partial<SiteMaterial>) => edit(rows.map(r => r.id === id ? { ...r, ...patch } : r))
   const addRow = () => edit([...rows, { id: generateId(), type: '', source: '', allowance: 0, confirmed: false }])
   const removeRow = (id: string) => edit(rows.filter(r => r.id !== id))
+
+  // Seed rows from the BOQ's Material lines (allowance pre-filled from the budget), skipping any
+  // already listed. Only offered when the estimate actually has material lines not yet pulled.
+  const boqRows = estimate ? materialRowsFromLines(estimate.lineItems, rows, generateId) : []
+  const pullFromBoq = () => { if (boqRows.length) edit([...rows, ...boqRows]) }
 
   const unconfirmed = rows.filter(r => (r.type.trim() || r.source.trim() || r.allowance > 0) && !r.confirmed).length
   const totalAllowance = rows.reduce((s, r) => s + (r.allowance || 0), 0)
@@ -1182,10 +1187,19 @@ function Materials({ projectId, materials, refresh }: { projectId: string; mater
         </ul>
       )}
 
-      <button onClick={addRow}
-        className="w-full rounded-xl border border-dashed border-fg-border py-2.5 text-sm text-fg-muted active:bg-fg-card/30 transition-colors">
-        + Add material
-      </button>
+      <div className="flex gap-2">
+        <button onClick={addRow}
+          className="flex-1 rounded-xl border border-dashed border-fg-border py-2.5 text-sm text-fg-muted active:bg-fg-card/30 transition-colors">
+          + Add material
+        </button>
+        {boqRows.length > 0 && (
+          <button onClick={pullFromBoq}
+            title="Add the material lines from this job's BOQ, with the allowance pre-filled"
+            className="rounded-xl border border-fg-border py-2.5 px-4 text-sm text-fg-heading active:bg-fg-card/30 transition-colors whitespace-nowrap">
+            Pull {boqRows.length} from BOQ
+          </button>
+        )}
+      </div>
 
       {rows.length > 0 && (
         <p className="text-xs text-fg-muted text-right">Total allowance: <span className="tabular-nums text-fg-heading">${totalAllowance.toLocaleString('en-AU')}</span></p>

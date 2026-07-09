@@ -20,6 +20,37 @@ export function unconfirmedMaterials(materials: SiteMaterial[]): SiteMaterial[] 
   return materials.filter(m => isMaterialFilled(m) && !m.confirmed)
 }
 
+/** A minimal view of an estimate line item - just what seeding materials needs. */
+export interface MaterialSourceLine {
+  description?: string
+  total?: number          // budgeted cost = the allowance
+  type?: string
+  crewType?: string
+  enabled?: boolean
+}
+
+/**
+ * Build new material rows from the estimate's Material lines: one row per distinct description with
+ * its allowances summed, skipping any material already listed (case-insensitive on type). Returns
+ * only the rows to APPEND, so pulling again is safe and won't duplicate.
+ */
+export function materialRowsFromLines(
+  lines: MaterialSourceLine[], existing: SiteMaterial[], genId: () => string,
+): SiteMaterial[] {
+  const have = new Set(existing.map(m => m.type.trim().toLowerCase()).filter(Boolean))
+  const agg = new Map<string, number>()   // description -> summed cost
+  const order: string[] = []
+  for (const li of lines) {
+    if (li.enabled === false) continue
+    if (li.type !== 'Material' && li.crewType !== 'Material') continue
+    const desc = (li.description || '').trim()
+    if (!desc || have.has(desc.toLowerCase())) continue
+    if (!agg.has(desc)) order.push(desc)
+    agg.set(desc, (agg.get(desc) || 0) + (Number(li.total) || 0))
+  }
+  return order.map(desc => ({ id: genId(), type: desc, source: '', allowance: agg.get(desc) || 0, confirmed: false }))
+}
+
 /** Coerce arbitrary JSON into a clean SiteMaterial list: drops empty rows, caps length. */
 export function sanitizeMaterials(raw: unknown): SiteMaterial[] {
   if (!Array.isArray(raw)) return []
