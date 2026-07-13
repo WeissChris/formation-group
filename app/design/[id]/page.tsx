@@ -776,6 +776,8 @@ export default function ProposalDetailPage() {
             validUntil={proposal.validUntil}
             welcomeVideoUrl={proposal.welcomeVideoUrl}
             processVideoUrl={proposal.processVideoUrl}
+            editable
+            onPhaseChange={(i, patch) => { setPhaseField(i, patch); syncPhasesRemote() }}
           />
           <div className="mt-4">
             <button

@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { formatCurrency, clientDisplayName, clientGreetingNames } from '@/lib/utils'
 import type { ProposalPhase } from '@/types'
 import { defaultPhaseDescription, defaultPhaseOutcome, phasesTotal, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
@@ -12,6 +13,29 @@ interface Props {
   validUntil: string
   welcomeVideoUrl?: string
   processVideoUrl?: string
+  // When set (internal editor only), the phase title / description / outcome / deliverables become
+  // inline-editable in place. The public client view never passes this, so it stays read-only.
+  editable?: boolean
+  onPhaseChange?: (index: number, patch: Partial<ProposalPhase>) => void
+}
+
+// Inline-editable text: plain text when read-only; a click-to-edit region when `editable`. Commits on
+// blur (only if changed) so the caret never fights a re-render mid-typing.
+function Editable({ text, editable, onCommit, className, style }: {
+  text: string; editable?: boolean; onCommit?: (t: string) => void; className?: string; style?: CSSProperties
+}) {
+  if (!editable || !onCommit) return <>{text}</>
+  return (
+    <span
+      contentEditable suppressContentEditableWarning
+      className={`outline-none rounded-sm px-0.5 -mx-0.5 cursor-text hover:bg-black/[0.035] focus:bg-black/[0.05] focus:ring-1 focus:ring-black/10 transition-colors ${className ?? ''}`}
+      style={style}
+      onBlur={e => {
+        const t = e.currentTarget.innerText.replace(/ /g, ' ').replace(/\n{3,}/g, '\n\n').replace(/[ \t]+$/gm, '').trim()
+        if (t !== text) onCommit(t)
+      }}
+    >{text}</span>
+  )
 }
 
 // ── Video helpers ────────────────────────────────────────────────────────────
@@ -92,18 +116,45 @@ function ChevronBadge({ number }: { number: number }) {
 }
 
 // ── Deliverables Box ─────────────────────────────────────────────────────────
-function DeliverablesBox({ items }: { items: string[] }) {
+// Read-only unless `editable`: then each line is inline-editable, with add / remove. Edits emit the
+// full item list back so the parent can rebuild the phase scope (one deliverable per line).
+function DeliverablesBox({ items, editable, onChange }: {
+  items: string[]; editable?: boolean; onChange?: (items: string[]) => void
+}) {
+  const rows = editable && items.length === 0 ? [''] : items   // show one editable line to start
   return (
     <div className="rounded-lg p-5" style={{ backgroundColor: GREEN }}>
       <h4 className="text-white text-sm font-light mb-3">Deliverables</h4>
-      <ul className="space-y-1.5">
-        {items.map((item, i) => (
-          <li key={i} className="flex items-start gap-2">
-            <span className="text-white/60 mt-1 text-[5px]">●</span>
-            <span className="text-white/90 text-xs font-light leading-relaxed">{item}</span>
-          </li>
-        ))}
-      </ul>
+      {!editable && items.length === 0 ? (
+        <p className="text-white/70 text-xs font-light">Scope to be confirmed.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {rows.map((item, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <span className="text-white/60 mt-1 text-[5px]">●</span>
+              {editable && onChange ? (
+                <span className="flex-1 flex items-start gap-1">
+                  <span
+                    contentEditable suppressContentEditableWarning
+                    className="flex-1 text-white/90 text-xs font-light leading-relaxed outline-none rounded-sm px-0.5 -mx-0.5 cursor-text hover:bg-white/10 focus:bg-white/15 transition-colors"
+                    onBlur={e => {
+                      const t = e.currentTarget.innerText.replace(/\n+/g, ' ').trim()
+                      if (t !== item) onChange(rows.map((r, j) => j === i ? t : r))
+                    }}
+                  >{item}</span>
+                  <button onClick={() => onChange(rows.filter((_, j) => j !== i))}
+                    className="text-white/40 hover:text-white text-xs leading-none mt-0.5" title="Remove">&#10005;</button>
+                </span>
+              ) : (
+                <span className="text-white/90 text-xs font-light leading-relaxed">{item}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {editable && onChange && (
+        <button onClick={() => onChange([...rows, ''])} className="text-white/70 hover:text-white text-xs mt-2">+ Add deliverable</button>
+      )}
     </div>
   )
 }
@@ -114,6 +165,8 @@ export default function ProposalPreview({
   validUntil,
   welcomeVideoUrl,
   processVideoUrl,
+  editable,
+  onPhaseChange,
 }: Props) {
   const total = phasesTotal(phases)
 
@@ -250,33 +303,30 @@ export default function ProposalPreview({
         return (
           <div key={phase.id} className="border-t p-8" style={{ borderColor: BORDER }}>
             <h3 className="font-light mb-3" style={{ fontSize: 20, color: HEADING }}>
-              Phase {i + 1} – {phase.title}
+              Phase {i + 1} – <Editable text={phase.title} editable={editable} onCommit={t => onPhaseChange?.(i, { title: t })} />
             </h3>
 
-            {description && (
+            {(description || editable) && (
               <p className="text-xs font-light leading-relaxed mb-6" style={{ color: BODY }}>
-                {description}
+                <Editable text={description} editable={editable} onCommit={t => onPhaseChange?.(i, { description: t })} />
               </p>
             )}
 
             <div className="grid grid-cols-2 gap-6">
-              {/* Left: Deliverables */}
+              {/* Left: Deliverables. In edit mode use raw scope lines so blank/new bullets survive
+                  a re-render (the client view still gets the blank-filtered list). */}
               <div>
-                {deliverables.length > 0 ? (
-                  <DeliverablesBox items={deliverables} />
-                ) : (
-                  <div className="rounded-lg p-5" style={{ backgroundColor: GREEN }}>
-                    <h4 className="text-white text-sm font-light mb-2">Deliverables</h4>
-                    <p className="text-white/70 text-xs font-light">Scope to be confirmed.</p>
-                  </div>
-                )}
+                <DeliverablesBox
+                  items={editable ? (phase.scope ? phase.scope.split('\n') : []) : deliverables}
+                  editable={editable}
+                  onChange={next => onPhaseChange?.(i, { scope: next.join('\n') })} />
               </div>
               {/* Right: Outcome */}
-              {outcome && (
+              {(outcome || editable) && (
                 <div className="flex flex-col justify-start pt-1">
                   <h4 className="text-sm font-light mb-3" style={{ color: HEADING }}>Outcome</h4>
                   <p className="text-xs font-light leading-relaxed" style={{ color: BODY }}>
-                    {outcome}
+                    <Editable text={outcome} editable={editable} onCommit={t => onPhaseChange?.(i, { outcome: t })} />
                   </p>
                 </div>
               )}
