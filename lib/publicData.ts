@@ -190,6 +190,7 @@ function mapProposalRow(row: Record<string, unknown>): DesignProposal {
     id: row.id as string,
     clientName: row.client_name as string,
     clientName2: (row.client_name2 as string | null) || undefined,
+    careOf: (row.care_of as string | null) || undefined,
     clientEmail: row.client_email as string | undefined,
     clientPhone: row.client_phone as string | undefined,
     projectAddress: (row.project_address as string) || '',

@@ -424,6 +424,11 @@ export default function ProposalAcceptancePage() {
           <p className="text-white/90 font-light mb-2" style={{ fontSize: 'clamp(18px, 2.5vw, 26px)' }}>
             {displayName}
           </p>
+          {proposal.careOf && (
+            <p className="text-white/70 font-light" style={{ fontSize: 'clamp(14px, 1.5vw, 18px)' }}>
+              C/o {proposal.careOf}
+            </p>
+          )}
           {proposal.projectAddress && (
             <p className="text-white/70 font-light" style={{ fontSize: 'clamp(14px, 1.5vw, 18px)' }}>
               {proposal.projectAddress}

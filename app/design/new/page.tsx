@@ -43,6 +43,7 @@ The following outlines our proposed design process and associated fees.`
   const [form, setForm] = useState({
     clientName: '',
     clientName2: '',
+    careOf: '',
     clientEmail: '',
     clientPhone: '',
     ccEmails: '',
@@ -86,6 +87,7 @@ The following outlines our proposed design process and associated fees.`
       id: generateId(),
       clientName: form.clientName,
       clientName2: form.clientName2 || undefined,
+      careOf: form.careOf.trim() || undefined,
       clientEmail: form.clientEmail || undefined,
       clientPhone: form.clientPhone || undefined,
       ccEmails: form.ccEmails || undefined,
@@ -147,6 +149,7 @@ The following outlines our proposed design process and associated fees.`
           <ProposalPreview
             clientName={form.clientName}
             clientName2={form.clientName2}
+            careOf={form.careOf}
             projectAddress={form.projectAddress}
             introText={form.introText}
             phases={phases}
@@ -179,6 +182,7 @@ The following outlines our proposed design process and associated fees.`
               <Field label="Client Name" value={form.clientName} onChange={v => set('clientName', v)} error={errors.clientName} placeholder="e.g. John Smith" />
               <Field label="Second Client (optional)" value={form.clientName2} onChange={v => set('clientName2', v)} placeholder="e.g. Jane Smith" />
             </div>
+            <Field label="C/o (optional - architect / agent acting for the client)" value={form.careOf} onChange={v => set('careOf', v)} placeholder="e.g. Jane Doe, Doe Architects" />
             <div className="grid grid-cols-2 gap-4">
               <Field label="Client Email" value={form.clientEmail} onChange={v => set('clientEmail', v)} error={errors.clientEmail} placeholder="client@example.com" type="email" />
               <Field label="Client Phone" value={form.clientPhone} onChange={v => set('clientPhone', v)} placeholder="0400 000 000" />

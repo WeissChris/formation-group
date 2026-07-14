@@ -341,6 +341,15 @@ export default function ProposalDetailPage() {
                       className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors"
                     />
                   </div>
+                  <div className="md:col-span-2">
+                    <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">C/o (optional - architect / agent acting for the client)</label>
+                    <input
+                      defaultValue={proposal.careOf ?? ''}
+                      onBlur={e => saveProposalField({ careOf: e.target.value.trim() || undefined })}
+                      placeholder="e.g. Jane Doe, Doe Architects"
+                      className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Client email</label>
@@ -769,6 +778,7 @@ export default function ProposalDetailPage() {
           <ProposalPreview
             clientName={proposal.clientName}
             clientName2={proposal.clientName2}
+            careOf={proposal.careOf}
             programText={proposal.programText}
             projectAddress={proposal.projectAddress}
             introText={proposal.introText}

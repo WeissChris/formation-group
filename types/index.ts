@@ -327,6 +327,7 @@ export interface DesignProposal {
   id: string
   clientName: string
   clientName2?: string         // optional second client (e.g. partner) — addressed alongside clientName
+  careOf?: string              // "C/o" line - the architect / agent acting on the client's behalf
   clientEmail?: string
   clientPhone?: string
   ccEmails?: string            // extra recipients CC'd on the proposal email (comma-separated)

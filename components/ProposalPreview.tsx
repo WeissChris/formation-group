@@ -6,6 +6,7 @@ import { defaultPhaseDescription, defaultPhaseOutcome, phasesTotal, DEFAULT_PROG
 interface Props {
   clientName: string
   clientName2?: string
+  careOf?: string
   programText?: string
   projectAddress: string
   introText?: string
@@ -160,7 +161,7 @@ function DeliverablesBox({ items, editable, onChange }: {
 }
 
 export default function ProposalPreview({
-  clientName, clientName2, programText, projectAddress, introText,
+  clientName, clientName2, careOf, programText, projectAddress, introText,
   phases,
   validUntil,
   welcomeVideoUrl,
@@ -197,6 +198,9 @@ export default function ProposalPreview({
             Landscape Design Proposal
           </h1>
           <p className="text-white/90 font-light text-lg">{displayName || 'Client Name'}</p>
+          {careOf && (
+            <p className="text-white/70 font-light text-sm mt-0.5">C/o {careOf}</p>
+          )}
           {projectAddress && (
             <p className="text-white/70 font-light text-sm mt-0.5">{projectAddress}</p>
           )}
