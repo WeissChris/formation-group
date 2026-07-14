@@ -328,6 +328,8 @@ export interface DesignProposal {
   clientName: string
   clientName2?: string         // optional second client (e.g. partner) — addressed alongside clientName
   careOf?: string              // "C/o" line - the architect / agent acting on the client's behalf
+  revisionsIncluded?: number   // rounds of design revisions included in the fee (shown as a callout)
+  revisionsNote?: string       // editable note - what happens beyond the included revisions
   clientEmail?: string
   clientPhone?: string
   ccEmails?: string            // extra recipients CC'd on the proposal email (comma-separated)

@@ -1,12 +1,14 @@
 import type { CSSProperties } from 'react'
 import { formatCurrency, clientDisplayName, clientGreetingNames } from '@/lib/utils'
 import type { ProposalPhase } from '@/types'
-import { defaultPhaseDescription, defaultPhaseOutcome, phasesTotal, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
+import { defaultPhaseDescription, defaultPhaseOutcome, phasesTotal, revisionsSummary, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 
 interface Props {
   clientName: string
   clientName2?: string
   careOf?: string
+  revisionsIncluded?: number
+  revisionsNote?: string
   programText?: string
   projectAddress: string
   introText?: string
@@ -161,7 +163,7 @@ function DeliverablesBox({ items, editable, onChange }: {
 }
 
 export default function ProposalPreview({
-  clientName, clientName2, careOf, programText, projectAddress, introText,
+  clientName, clientName2, careOf, revisionsIncluded, revisionsNote, programText, projectAddress, introText,
   phases,
   validUntil,
   welcomeVideoUrl,
@@ -338,6 +340,19 @@ export default function ProposalPreview({
           </div>
         )
       })}
+
+      {/* ── DESIGN REVISIONS ── */}
+      {revisionsIncluded != null && (
+        <div className="border-t p-8" style={{ borderColor: BORDER }}>
+          <div className="rounded-lg p-5" style={{ backgroundColor: GREEN }}>
+            <h4 className="text-white text-sm font-light mb-2">Design revisions</h4>
+            <p className="text-white text-xs font-light leading-relaxed">{revisionsSummary(revisionsIncluded)}</p>
+            {revisionsNote && (
+              <p className="text-white/80 text-xs font-light leading-relaxed mt-2">{revisionsNote}</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── DESIGN FEES + PAYMENT TERMS ── */}
       <div className="border-t p-8" style={{ borderColor: BORDER }}>

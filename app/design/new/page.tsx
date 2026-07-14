@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { upsertProposal } from '@/lib/storageAsync'
-import { syncLegacyPhaseFields, phasesTotal, makeBlankPhase, DEFAULT_PHASE_TITLES, defaultPhaseDescription, defaultPhaseOutcome } from '@/lib/proposalPhases'
+import { syncLegacyPhaseFields, phasesTotal, makeBlankPhase, DEFAULT_PHASE_TITLES, defaultPhaseDescription, defaultPhaseOutcome, DEFAULT_REVISIONS_INCLUDED, DEFAULT_REVISIONS_NOTE } from '@/lib/proposalPhases'
 import { requestSendProposal, sendErrorMessage } from '@/lib/emailClient'
 import { formatCurrency, generateId } from '@/lib/utils'
 import type { DesignProposal, ProposalContentBlock, ProposalPhase } from '@/types'
@@ -44,6 +44,8 @@ The following outlines our proposed design process and associated fees.`
     clientName: '',
     clientName2: '',
     careOf: '',
+    revisionsIncluded: String(DEFAULT_REVISIONS_INCLUDED),
+    revisionsNote: DEFAULT_REVISIONS_NOTE,
     clientEmail: '',
     clientPhone: '',
     ccEmails: '',
@@ -88,6 +90,8 @@ The following outlines our proposed design process and associated fees.`
       clientName: form.clientName,
       clientName2: form.clientName2 || undefined,
       careOf: form.careOf.trim() || undefined,
+      revisionsIncluded: form.revisionsIncluded.trim() === '' ? undefined : Math.max(0, parseInt(form.revisionsIncluded, 10) || 0),
+      revisionsNote: form.revisionsNote.trim() || undefined,
       clientEmail: form.clientEmail || undefined,
       clientPhone: form.clientPhone || undefined,
       ccEmails: form.ccEmails || undefined,
@@ -150,6 +154,8 @@ The following outlines our proposed design process and associated fees.`
             clientName={form.clientName}
             clientName2={form.clientName2}
             careOf={form.careOf}
+            revisionsIncluded={form.revisionsIncluded.trim() === '' ? undefined : parseInt(form.revisionsIncluded, 10)}
+            revisionsNote={form.revisionsNote}
             projectAddress={form.projectAddress}
             introText={form.introText}
             phases={phases}
@@ -189,6 +195,34 @@ The following outlines our proposed design process and associated fees.`
             </div>
             <Field label="Project Address" value={form.projectAddress} onChange={v => set('projectAddress', v)} placeholder="123 Example St" />
             <Field label="CC on email (optional)" value={form.ccEmails} onChange={v => set('ccEmails', v)} placeholder="partner@example.com, architect@example.com" />
+          </div>
+
+          <div className="h-px bg-fg-border" />
+
+          {/* Design revisions allowance — shown as a callout on the proposal */}
+          <div className="space-y-4">
+            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Design revisions</p>
+            <p className="text-xs font-light text-fg-muted/60 -mt-2">How many rounds of design revisions are included in the fee. Leave the number blank to hide this from the proposal.</p>
+            <div className="grid grid-cols-[130px_1fr] gap-4 items-start">
+              <div>
+                <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Rounds included</label>
+                <input
+                  value={form.revisionsIncluded}
+                  onChange={e => set('revisionsIncluded', e.target.value.replace(/[^0-9]/g, ''))}
+                  inputMode="numeric" placeholder="2"
+                  className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light tabular-nums rounded-none outline-none focus:border-fg-heading transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Note (on the proposal)</label>
+                <textarea
+                  value={form.revisionsNote}
+                  onChange={e => set('revisionsNote', e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-none leading-relaxed"
+                />
+              </div>
+            </div>
           </div>
 
           <div className="h-px bg-fg-border" />

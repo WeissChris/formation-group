@@ -6,7 +6,7 @@ import { generateRevenueFromProposal, saveDesignProject, loadDesignProjectByProp
 import { getProposalByToken, acceptProposalByToken } from '@/lib/publicData'
 import { notifyProposalAccepted, recordProposalView } from '@/lib/emailClient'
 import { formatCurrency, generateId, clientDisplayName, clientGreetingNames } from '@/lib/utils'
-import { getProposalPhases, phasesTotal, defaultPhaseDescription, defaultPhaseOutcome, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
+import { getProposalPhases, phasesTotal, defaultPhaseDescription, defaultPhaseOutcome, revisionsSummary, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 import type { DesignProposal, ProposalContentBlock, DesignProject } from '@/types'
 import { ChevronDown, Check, Play } from 'lucide-react'
 
@@ -668,6 +668,21 @@ export default function ProposalAcceptancePage() {
             </section>
           )
         })}
+
+        {/* ── DESIGN REVISIONS ── */}
+        {proposal.revisionsIncluded != null && (
+          <section className="bg-white border-t" style={{ borderColor: BORDER }}>
+            <div className="max-w-[1200px] mx-auto px-8 py-12">
+              <div className="rounded-lg p-6" style={{ backgroundColor: GREEN }}>
+                <h4 className="text-white text-lg font-light mb-2">Design revisions</h4>
+                <p className="text-white font-light" style={{ fontSize: 'clamp(14px, 1.5vw, 17px)' }}>{revisionsSummary(proposal.revisionsIncluded)}</p>
+                {proposal.revisionsNote && (
+                  <p className="text-white/80 font-light mt-3" style={{ fontSize: 'clamp(13px, 1.3vw, 15px)' }}>{proposal.revisionsNote}</p>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* ── PAGE 9: DESIGN FEES + PAYMENT TERMS ── */}
         <section className="bg-white border-t" style={{ borderColor: BORDER }}>

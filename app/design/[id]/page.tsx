@@ -389,6 +389,27 @@ export default function ProposalDetailPage() {
                   />
                   <p className="text-2xs font-light text-fg-muted/60 mt-1">Comma-separated. CC&apos;d recipients are visible to the client.</p>
                 </div>
+                {/* Design revisions included in the fee - shown as a callout on the proposal. */}
+                <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
+                  <div>
+                    <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Revisions incl.</label>
+                    <input
+                      defaultValue={proposal.revisionsIncluded ?? ''}
+                      inputMode="numeric" placeholder="2"
+                      onBlur={e => { const v = e.target.value.replace(/[^0-9]/g, ''); saveProposalField({ revisionsIncluded: v === '' ? undefined : Math.max(0, parseInt(v, 10) || 0) }) }}
+                      className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light tabular-nums outline-none focus:border-fg-heading transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Revisions note (on the proposal)</label>
+                    <textarea
+                      defaultValue={proposal.revisionsNote ?? ''}
+                      rows={2}
+                      onBlur={e => saveProposalField({ revisionsNote: e.target.value.trim() || undefined })}
+                      className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors resize-none leading-relaxed"
+                    />
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="space-y-1 text-sm font-light">
@@ -397,6 +418,7 @@ export default function ProposalDetailPage() {
                 {proposal.clientPhone && <p className="text-fg-muted">{proposal.clientPhone}</p>}
                 {proposal.projectAddress && <p className="text-fg-muted">{proposal.projectAddress}</p>}
                 {proposal.ccEmails && <p className="text-fg-muted/80 text-2xs">CC: {proposal.ccEmails}</p>}
+                {proposal.revisionsIncluded != null && <p className="text-fg-muted/80 text-2xs">Revisions included: {proposal.revisionsIncluded}</p>}
               </div>
             )}
           </div>
@@ -779,6 +801,8 @@ export default function ProposalDetailPage() {
             clientName={proposal.clientName}
             clientName2={proposal.clientName2}
             careOf={proposal.careOf}
+            revisionsIncluded={proposal.revisionsIncluded}
+            revisionsNote={proposal.revisionsNote}
             programText={proposal.programText}
             projectAddress={proposal.projectAddress}
             introText={proposal.introText}

@@ -8,6 +8,19 @@
 
 import type { DesignProposal, ProposalPhase } from '@/types'
 
+// Default design-revision allowance for a new proposal, and the note that sits under it. Editable
+// per proposal. "Revisions" here = rounds of client-requested changes to the design within a phase.
+export const DEFAULT_REVISIONS_INCLUDED = 2
+export const DEFAULT_REVISIONS_NOTE =
+  'Each design phase includes the number of revision rounds shown above, allowing us to refine the ' +
+  'design in response to your feedback. Additional revisions beyond these are charged at our standard ' +
+  'hourly design rate, always quoted and agreed with you before any further work is undertaken.'
+
+/** Client-facing one-liner for the revision allowance, e.g. "2 rounds of design revisions are included". */
+export function revisionsSummary(n: number): string {
+  return `${n} round${n === 1 ? '' : 's'} of design revisions ${n === 1 ? 'is' : 'are'} included in the design fees.`
+}
+
 // Default copy for the "Program" box near the end of the proposal — how long each phase takes.
 // Editable per proposal via proposal.programText; this renders when that's blank.
 export const DEFAULT_PROGRAM_TEXT = `Upon acceptance of this proposal and receipt of the engagement fee, we will schedule your project to commence.
