@@ -639,28 +639,33 @@ export default function ProposalAcceptancePage() {
                   </p>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                  {/* Left: Deliverables box */}
-                  <div>
-                    {deliverables.length > 0 ? (
-                      <DeliverablesBox items={deliverables} />
-                    ) : (
-                      <div className="rounded-lg p-6" style={{ backgroundColor: GREEN }}>
-                        <h4 className="text-white text-lg font-light mb-3">Deliverables</h4>
-                        <p className="text-white/70 text-sm font-light">Scope to be confirmed.</p>
-                      </div>
-                    )}
-                  </div>
-                  {/* Right: Outcome */}
-                  {outcome && (
+                {(() => {
+                  // A long deliverables list goes full-width with the Outcome stacked on top, so a
+                  // short Outcome no longer leaves a tall empty column beside a big Deliverables box.
+                  const wide = deliverables.length >= 9
+                  const box = deliverables.length > 0 ? (
+                    <DeliverablesBox items={deliverables} />
+                  ) : (
+                    <div className="rounded-lg p-6" style={{ backgroundColor: GREEN }}>
+                      <h4 className="text-white text-lg font-light mb-3">Deliverables</h4>
+                      <p className="text-white/70 text-sm font-light">Scope to be confirmed.</p>
+                    </div>
+                  )
+                  const outcomeBlock = outcome ? (
                     <div className="flex flex-col justify-start pt-2">
                       <h4 className="text-lg font-light mb-4" style={{ color: HEADING }}>Outcome</h4>
-                      <p className="text-base font-light leading-relaxed" style={{ color: BODY }}>
-                        {outcome}
-                      </p>
+                      <p className="text-base font-light leading-relaxed" style={{ color: BODY }}>{outcome}</p>
                     </div>
-                  )}
-                </div>
+                  ) : null
+                  return wide ? (
+                    <div className="space-y-8">{outcomeBlock}{box}</div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                      <div>{box}</div>
+                      {outcomeBlock}
+                    </div>
+                  )
+                })()}
 
                 {i === 0 && <BlocksAtPosition blocks={blocks} position="between_phase1_2" />}
                 {i === 1 && phases.length > 2 && <BlocksAtPosition blocks={blocks} position="between_phase2_3" />}

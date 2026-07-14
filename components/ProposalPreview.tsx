@@ -128,31 +128,36 @@ function DeliverablesBox({ items, editable, onChange }: {
   return (
     <div className="rounded-lg p-5" style={{ backgroundColor: GREEN }}>
       <h4 className="text-white text-sm font-light mb-3">Deliverables</h4>
-      {!editable && items.length === 0 ? (
+      {!editable && rows.every(r => !r.trim()) ? (
         <p className="text-white/70 text-xs font-light">Scope to be confirmed.</p>
       ) : (
         <ul className="space-y-1.5">
-          {rows.map((item, i) => (
-            <li key={i} className="flex items-start gap-2">
-              <span className="text-white/60 mt-1 text-[5px]">●</span>
-              {editable && onChange ? (
-                <span className="flex-1 flex items-start gap-1">
-                  <span
-                    contentEditable suppressContentEditableWarning
-                    className="flex-1 text-white/90 text-xs font-light leading-relaxed outline-none rounded-sm px-0.5 -mx-0.5 cursor-text hover:bg-white/10 focus:bg-white/15 transition-colors"
-                    onBlur={e => {
-                      const t = e.currentTarget.innerText.replace(/\n+/g, ' ').trim()
-                      if (t !== item) onChange(rows.map((r, j) => j === i ? t : r))
-                    }}
-                  >{item}</span>
-                  <button onClick={() => onChange(rows.filter((_, j) => j !== i))}
-                    className="text-white/40 hover:text-white text-xs leading-none mt-0.5" title="Remove">&#10005;</button>
-                </span>
-              ) : (
-                <span className="text-white/90 text-xs font-light leading-relaxed">{item}</span>
-              )}
-            </li>
-          ))}
+          {rows.map((item, i) => {
+            const blank = item.trim() === ''
+            // Client view: a blank scope line is a small spacer between groups, not an empty bullet.
+            if (blank && !(editable && onChange)) return <li key={i} aria-hidden style={{ height: 5 }} />
+            return (
+              <li key={i} className="flex items-start gap-2">
+                {!blank && <span className="text-white/60 mt-1 text-[5px]">●</span>}
+                {editable && onChange ? (
+                  <span className={`flex-1 flex items-start gap-1 ${blank ? 'pl-[13px]' : ''}`}>
+                    <span
+                      contentEditable suppressContentEditableWarning
+                      className="flex-1 min-h-[1.1em] text-white/90 text-xs font-light leading-relaxed outline-none rounded-sm px-0.5 -mx-0.5 cursor-text hover:bg-white/10 focus:bg-white/15 transition-colors"
+                      onBlur={e => {
+                        const t = e.currentTarget.innerText.replace(/\n+/g, ' ').trim()
+                        if (t !== item) onChange(rows.map((r, j) => j === i ? t : r))
+                      }}
+                    >{item}</span>
+                    <button onClick={() => onChange(rows.filter((_, j) => j !== i))}
+                      className="text-white/40 hover:text-white text-xs leading-none mt-0.5" title="Remove">&#10005;</button>
+                  </span>
+                ) : (
+                  <span className="text-white/90 text-xs font-light leading-relaxed">{item}</span>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
       {editable && onChange && (
@@ -303,9 +308,24 @@ export default function ProposalPreview({
 
       {/* ── PHASE DETAIL PAGES ── */}
       {phases.map((phase, i) => {
-        const deliverables = scopeToPoints(phase.scope)
         const description = phase.description ?? defaultPhaseDescription(i)
         const outcome = phase.outcome ?? defaultPhaseOutcome(i)
+        // Edit mode keeps raw scope lines (so blank/new bullets survive a re-render); the client view
+        // gets the blank-filtered list. A long list goes full-width with the Outcome stacked on top,
+        // so a short Outcome no longer leaves a tall empty column beside a big Deliverables box.
+        const items = editable ? (phase.scope ? phase.scope.split('\n') : []) : scopeToPoints(phase.scope)
+        const wide = items.filter(s => s.trim()).length >= 9
+        const deliverablesBox = (
+          <DeliverablesBox items={items} editable={editable} onChange={next => onPhaseChange?.(i, { scope: next.join('\n') })} />
+        )
+        const outcomeBlock = (outcome || editable) ? (
+          <div className="flex flex-col justify-start pt-1">
+            <h4 className="text-sm font-light mb-2" style={{ color: HEADING }}>Outcome</h4>
+            <p className="text-xs font-light leading-relaxed" style={{ color: BODY }}>
+              <Editable text={outcome} editable={editable} onCommit={t => onPhaseChange?.(i, { outcome: t })} />
+            </p>
+          </div>
+        ) : null
         return (
           <div key={phase.id} className="border-t p-8" style={{ borderColor: BORDER }}>
             <h3 className="font-light mb-3" style={{ fontSize: 20, color: HEADING }}>
@@ -318,25 +338,17 @@ export default function ProposalPreview({
               </p>
             )}
 
-            <div className="grid grid-cols-2 gap-6">
-              {/* Left: Deliverables. In edit mode use raw scope lines so blank/new bullets survive
-                  a re-render (the client view still gets the blank-filtered list). */}
-              <div>
-                <DeliverablesBox
-                  items={editable ? (phase.scope ? phase.scope.split('\n') : []) : deliverables}
-                  editable={editable}
-                  onChange={next => onPhaseChange?.(i, { scope: next.join('\n') })} />
+            {wide ? (
+              <div className="space-y-6">
+                {outcomeBlock}
+                {deliverablesBox}
               </div>
-              {/* Right: Outcome */}
-              {(outcome || editable) && (
-                <div className="flex flex-col justify-start pt-1">
-                  <h4 className="text-sm font-light mb-3" style={{ color: HEADING }}>Outcome</h4>
-                  <p className="text-xs font-light leading-relaxed" style={{ color: BODY }}>
-                    <Editable text={outcome} editable={editable} onCommit={t => onPhaseChange?.(i, { outcome: t })} />
-                  </p>
-                </div>
-              )}
-            </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-6">
+                <div>{deliverablesBox}</div>
+                {outcomeBlock}
+              </div>
+            )}
           </div>
         )
       })}
