@@ -2084,6 +2084,9 @@ export default function EstimateBuilderPage() {
                           rows={1}
                           className="w-full bg-transparent text-xs font-light text-fg-muted placeholder-[#8A8580] border border-transparent hover:border-fg-border/50 focus:border-fg-border px-2 py-1 resize-none outline-none transition-colors rounded-none"
                           style={{ minHeight: '28px' }}
+                          // Grow to fit the content on render (not just while typing, which left an
+                          // existing note squashed to one line with a scrollbar).
+                          ref={el => { if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px` } }}
                           onInput={e => {
                             const target = e.target as HTMLTextAreaElement
                             target.style.height = 'auto'
