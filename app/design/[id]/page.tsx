@@ -585,7 +585,7 @@ export default function ProposalDetailPage() {
           {/* Email message (shown in the delivery EMAIL — separate from the proposal intro) */}
           <div className="border-t border-fg-border pt-5">
             <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-2">Email message</p>
-            <p className="text-2xs font-light text-fg-muted/60 mb-2">The note in the email that delivers the proposal — separate from the opening paragraph above</p>
+            <p className="text-2xs font-light text-fg-muted/60 mb-2">The note in the email that delivers the proposal, separate from the opening paragraph above. The greeting (&quot;Hi [client],&quot;) is added automatically, so start with your message.</p>
             {editing ? (
               <textarea
                 defaultValue={proposal.emailMessage ?? ''}

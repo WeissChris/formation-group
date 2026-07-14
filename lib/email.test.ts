@@ -163,3 +163,21 @@ describe('acceptance emails', () => {
     expect((await sendAcceptanceNotifyEmail(accept)).error).toBe('email_not_configured')
   })
 })
+
+describe('greeting de-duplication', () => {
+  const base = { to: 'ben@example.com', clientName: 'Ben', proposalUrl: 'https://x/p', projectAddress: '' }
+  it('drops a greeting the sender typed as the first line (no double Hi)', () => {
+    const txt = buildProposalEmailText({ ...base, message: 'Hi Ben,\n\nI hope you are well.\n\nThe proposal is ready.' })
+    expect(txt.match(/Hi Ben,/g)?.length).toBe(1)   // only the auto greeting
+    expect(txt).toContain('I hope you are well.')
+  })
+  it('keeps the message when it does not start with a greeting', () => {
+    const txt = buildProposalEmailText({ ...base, message: 'Thanks for meeting on site.\n\nProposal attached.' })
+    expect(txt).toContain('Thanks for meeting on site.')
+    expect(txt.match(/Hi Ben,/g)?.length).toBe(1)
+  })
+  it('does not strip a sentence that merely starts with Hi', () => {
+    const txt = buildProposalEmailText({ ...base, message: 'Hi there and thanks for the opportunity to meet.' })
+    expect(txt).toContain('thanks for the opportunity')
+  })
+})

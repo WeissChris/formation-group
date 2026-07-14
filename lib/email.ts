@@ -67,11 +67,17 @@ export function proposalEmailSubject(): string {
   return 'Your landscape design proposal — Formation Landscapes'
 }
 
-/** The email body, split into paragraphs (blank-line separated). Falls back to a sensible default. */
+/** The email body, split into paragraphs (blank-line separated). Falls back to a sensible default.
+ *  The email already opens with "Hi <name>," so a greeting the sender typed as the first line is
+ *  dropped to avoid a double greeting. */
 function messageParagraphs(message?: string): string[] {
   const trimmed = (message || '').trim()
   const source = trimmed || DEFAULT_EMAIL_MESSAGE
-  return source.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)
+  const paras = source.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)
+  if (paras.length > 1 && /^(hi|hello|hey|dear)\b[^.!?]{0,40},?$/i.test(paras[0].replace(/\s+/g, ' ').trim())) {
+    paras.shift()
+  }
+  return paras
 }
 
 /** Plain-text body (improves deliverability and covers text-only clients). */

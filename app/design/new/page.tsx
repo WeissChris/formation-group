@@ -247,7 +247,7 @@ The following outlines our proposed design process and associated fees.`
           {/* Email message — shown in the delivery email, separate from the opening paragraph */}
           <div className="space-y-4">
             <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Email message</p>
-            <p className="text-xs font-light text-fg-muted/60 -mt-2">The note in the email that delivers the proposal (leave blank for the default)</p>
+            <p className="text-xs font-light text-fg-muted/60 -mt-2">The note in the email that delivers the proposal. The greeting (&quot;Hi [client],&quot;) is added automatically, so start with your message. Leave blank for the default.</p>
             <div>
               <textarea
                 value={form.emailMessage}
