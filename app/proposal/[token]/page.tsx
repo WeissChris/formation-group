@@ -6,7 +6,7 @@ import { generateRevenueFromProposal, saveDesignProject, loadDesignProjectByProp
 import { getProposalByToken, acceptProposalByToken } from '@/lib/publicData'
 import { notifyProposalAccepted, recordProposalView } from '@/lib/emailClient'
 import { formatCurrency, generateId, clientDisplayName, clientGreetingNames } from '@/lib/utils'
-import { getProposalPhases, phasesTotal, defaultPhaseDescription, defaultPhaseOutcome, revisionsSummary, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
+import { getProposalPhases, phasesTotal, defaultPhaseDescription, defaultPhaseOutcome, revisionsSummary, scopeLines, scopeLineKind, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 import type { DesignProposal, ProposalContentBlock, DesignProject } from '@/types'
 import { ChevronDown, Check, Play } from 'lucide-react'
 
@@ -16,12 +16,6 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-function scopeToPoints(scope: string): string[] {
-  if (!scope) return []
-  const byNewline = scope.split('\n').map(s => s.trim()).filter(Boolean)
-  if (byNewline.length > 1) return byNewline
-  return scope.split('. ').map(s => s.trim()).filter(Boolean)
-}
 
 // ── Brand colours ────────────────────────────────────────────────────────────
 
@@ -176,13 +170,18 @@ function DeliverablesBox({ items }: { items: string[] }) {
   return (
     <div className="rounded-lg p-6" style={{ backgroundColor: GREEN }}>
       <h4 className="text-white text-lg font-light mb-4">Deliverables</h4>
-      <ul className="space-y-2.5">
-        {items.map((item, i) => (
-          <li key={i} className="flex items-start gap-3">
-            <span className="text-white/60 mt-1.5 text-[6px]">●</span>
-            <span className="text-white/90 text-sm font-light leading-relaxed">{item}</span>
-          </li>
-        ))}
+      <ul>
+        {items.map((item, i) => {
+          const kind = scopeLineKind(item)
+          if (kind === 'blank') return <li key={i} aria-hidden style={{ height: 9 }} />
+          if (kind === 'heading') return <li key={i} className="text-white text-sm font-medium tracking-wide mt-4 first:mt-0">{item}</li>
+          return (
+            <li key={i} className="flex items-start gap-3 mt-2.5">
+              <span className="text-white/60 mt-1.5 text-[6px]">●</span>
+              <span className="text-white/90 text-sm font-light leading-relaxed">{item}</span>
+            </li>
+          )
+        })}
       </ul>
     </div>
   )
@@ -619,7 +618,8 @@ export default function ProposalAcceptancePage() {
 
         {/* ── PAGES 6-8: PHASE DETAIL PAGES ── */}
         {phases.map((phase, i) => {
-          const deliverables = scopeToPoints(phase.scope)
+          const deliverables = scopeLines(phase.scope)
+          const hasDeliverables = deliverables.some(s => s.trim())
           const description = phase.description ?? defaultPhaseDescription(i)
           const outcome = phase.outcome ?? defaultPhaseOutcome(i)
           return (
@@ -642,8 +642,8 @@ export default function ProposalAcceptancePage() {
                 {(() => {
                   // A long deliverables list goes full-width with the Outcome stacked on top, so a
                   // short Outcome no longer leaves a tall empty column beside a big Deliverables box.
-                  const wide = deliverables.length >= 9
-                  const box = deliverables.length > 0 ? (
+                  const wide = deliverables.filter(s => s.trim()).length >= 9
+                  const box = hasDeliverables ? (
                     <DeliverablesBox items={deliverables} />
                   ) : (
                     <div className="rounded-lg p-6" style={{ backgroundColor: GREEN }}>

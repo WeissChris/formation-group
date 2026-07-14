@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getProposalPhases, syncLegacyPhaseFields, phasesTotal } from './proposalPhases'
+import { getProposalPhases, syncLegacyPhaseFields, phasesTotal, scopeLines, scopeLineKind } from './proposalPhases'
 import type { DesignProposal, ProposalPhase } from '@/types'
 
 function legacyProposal(o: Partial<DesignProposal> = {}): DesignProposal {
@@ -86,5 +86,34 @@ describe('phasesTotal', () => {
       { id: 'b', title: '', fee: 250, scope: '' },
     ])).toBe(350)
     expect(phasesTotal([])).toBe(0)
+  })
+})
+
+describe('scopeLineKind', () => {
+  it('flags short unpunctuated lines as headings', () => {
+    expect(scopeLineKind('Landscape Concept')).toBe('heading')
+    expect(scopeLineKind('Hard Landscape Concept')).toBe('heading')
+    expect(scopeLineKind('Photorealistic 3D Visualisations')).toBe('heading')
+    expect(scopeLineKind('Irrigation')).toBe('heading')
+  })
+  it('treats sentences as bullets', () => {
+    expect(scopeLineKind('Review the site, architectural plans and project constraints.')).toBe('bullet')
+    expect(scopeLineKind('Confirm the design brief, project objectives and budget.')).toBe('bullet')
+  })
+  it('treats empty lines as blanks', () => {
+    expect(scopeLineKind('')).toBe('blank')
+    expect(scopeLineKind('   ')).toBe('blank')
+  })
+})
+
+describe('scopeLines', () => {
+  it('keeps blank separators for newline scopes', () => {
+    expect(scopeLines('Heading\n\nBullet one.')).toEqual(['Heading', '', 'Bullet one.'])
+  })
+  it('sentence-splits a legacy single-line scope', () => {
+    expect(scopeLines('First thing. Second thing')).toEqual(['First thing', 'Second thing'])
+  })
+  it('returns [] for empty', () => {
+    expect(scopeLines('')).toEqual([])
   })
 })

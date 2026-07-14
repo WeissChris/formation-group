@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { formatCurrency, clientDisplayName, clientGreetingNames } from '@/lib/utils'
 import type { ProposalPhase } from '@/types'
-import { defaultPhaseDescription, defaultPhaseOutcome, phasesTotal, revisionsSummary, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
+import { defaultPhaseDescription, defaultPhaseOutcome, phasesTotal, revisionsSummary, scopeLines, scopeLineKind, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 
 interface Props {
   clientName: string
@@ -97,13 +97,6 @@ const INTRO_IMAGE = '/proposal-hero-7.jpg'
 const ABOUT_IMAGE = '/proposal-hero-6.jpg'
 const PROCESS_IMAGE = '/proposal-hero-9.jpg'
 
-function scopeToPoints(scope: string): string[] {
-  if (!scope) return []
-  const byNewline = scope.split('\n').map(s => s.trim()).filter(Boolean)
-  if (byNewline.length > 1) return byNewline
-  return scope.split('. ').map(s => s.trim()).filter(Boolean)
-}
-
 // ── Chevron Badge ────────────────────────────────────────────────────────────
 function ChevronBadge({ number }: { number: number }) {
   return (
@@ -119,49 +112,52 @@ function ChevronBadge({ number }: { number: number }) {
 }
 
 // ── Deliverables Box ─────────────────────────────────────────────────────────
-// Read-only unless `editable`: then each line is inline-editable, with add / remove. Edits emit the
-// full item list back so the parent can rebuild the phase scope (one deliverable per line).
+// Renders a scope as a structured list: short unpunctuated lines become bold sub-headings, blank
+// lines become spacers, everything else is a bullet. Read-only unless `editable`, in which case each
+// line is inline-editable with add / remove (emitting the full line list back to rebuild the scope).
 function DeliverablesBox({ items, editable, onChange }: {
   items: string[]; editable?: boolean; onChange?: (items: string[]) => void
 }) {
-  const rows = editable && items.length === 0 ? [''] : items   // show one editable line to start
+  const rows = editable && items.length === 0 ? [''] : items
+  const edit = editable && onChange
   return (
     <div className="rounded-lg p-5" style={{ backgroundColor: GREEN }}>
       <h4 className="text-white text-sm font-light mb-3">Deliverables</h4>
       {!editable && rows.every(r => !r.trim()) ? (
         <p className="text-white/70 text-xs font-light">Scope to be confirmed.</p>
       ) : (
-        <ul className="space-y-1.5">
+        <ul>
           {rows.map((item, i) => {
-            const blank = item.trim() === ''
-            // Client view: a blank scope line is a small spacer between groups, not an empty bullet.
-            if (blank && !(editable && onChange)) return <li key={i} aria-hidden style={{ height: 5 }} />
+            const kind = scopeLineKind(item)
+            // Client view: blank line = small spacer between groups.
+            if (kind === 'blank' && !edit) return <li key={i} aria-hidden style={{ height: 7 }} />
+            const heading = kind === 'heading'
             return (
-              <li key={i} className="flex items-start gap-2">
-                {!blank && <span className="text-white/60 mt-1 text-[5px]">●</span>}
-                {editable && onChange ? (
-                  <span className={`flex-1 flex items-start gap-1 ${blank ? 'pl-[13px]' : ''}`}>
+              <li key={i} className={`group flex items-start gap-2 ${heading ? 'mt-3 first:mt-0' : 'mt-1.5'}`}>
+                {kind === 'bullet' && <span className="text-white/60 mt-1 text-[5px]">●</span>}
+                {edit ? (
+                  <span className={`flex-1 flex items-start gap-1 ${kind !== 'bullet' ? 'pl-[13px]' : ''}`}>
                     <span
                       contentEditable suppressContentEditableWarning
-                      className="flex-1 min-h-[1.1em] text-white/90 text-xs font-light leading-relaxed outline-none rounded-sm px-0.5 -mx-0.5 cursor-text hover:bg-white/10 focus:bg-white/15 transition-colors"
+                      className={`flex-1 min-h-[1.1em] outline-none rounded-sm px-0.5 -mx-0.5 cursor-text hover:bg-white/10 focus:bg-white/15 transition-colors ${heading ? 'text-white text-xs font-medium tracking-wide' : 'text-white/90 text-xs font-light leading-relaxed'}`}
                       onBlur={e => {
                         const t = e.currentTarget.innerText.replace(/\n+/g, ' ').trim()
-                        if (t !== item) onChange(rows.map((r, j) => j === i ? t : r))
+                        if (t !== item) onChange!(rows.map((r, j) => j === i ? t : r))
                       }}
                     >{item}</span>
-                    <button onClick={() => onChange(rows.filter((_, j) => j !== i))}
-                      className="text-white/40 hover:text-white text-xs leading-none mt-0.5" title="Remove">&#10005;</button>
+                    <button onClick={() => onChange!(rows.filter((_, j) => j !== i))}
+                      className="text-white/25 group-hover:text-white/70 hover:!text-white text-xs leading-none mt-0.5 transition-colors" title="Remove">&#10005;</button>
                   </span>
                 ) : (
-                  <span className="text-white/90 text-xs font-light leading-relaxed">{item}</span>
+                  <span className={heading ? 'text-white text-xs font-medium tracking-wide' : 'text-white/90 text-xs font-light leading-relaxed'}>{item}</span>
                 )}
               </li>
             )
           })}
         </ul>
       )}
-      {editable && onChange && (
-        <button onClick={() => onChange([...rows, ''])} className="text-white/70 hover:text-white text-xs mt-2">+ Add deliverable</button>
+      {edit && (
+        <button onClick={() => onChange!([...rows, ''])} className="text-white/70 hover:text-white text-xs mt-3">+ Add deliverable</button>
       )}
     </div>
   )
@@ -313,7 +309,7 @@ export default function ProposalPreview({
         // Edit mode keeps raw scope lines (so blank/new bullets survive a re-render); the client view
         // gets the blank-filtered list. A long list goes full-width with the Outcome stacked on top,
         // so a short Outcome no longer leaves a tall empty column beside a big Deliverables box.
-        const items = editable ? (phase.scope ? phase.scope.split('\n') : []) : scopeToPoints(phase.scope)
+        const items = scopeLines(phase.scope)
         const wide = items.filter(s => s.trim()).length >= 9
         const deliverablesBox = (
           <DeliverablesBox items={items} editable={editable} onChange={next => onPhaseChange?.(i, { scope: next.join('\n') })} />

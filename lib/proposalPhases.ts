@@ -84,6 +84,25 @@ export function getProposalPhases(p: DesignProposal): ProposalPhase[] {
   return phases
 }
 
+/** Scope -> display lines, keeping blank separators. Legacy single-line scopes (". "-separated,
+ *  no newlines) fall back to a sentence split so old proposals still render as bullets. */
+export function scopeLines(scope: string): string[] {
+  if (!scope) return []
+  if (scope.includes('\n')) return scope.split('\n').map(s => s.replace(/\s+$/, ''))
+  return scope.split('. ').map(s => s.trim()).filter(Boolean)
+}
+
+/** Classify a scope line for rendering: a blank spacer, a group heading, or a bullet. A heading is a
+ *  short label with no sentence-ending punctuation (e.g. "Hard Landscape Concept"); everything else
+ *  that has content is a bullet. Lets a long deliverables list read as a structured scope. */
+export function scopeLineKind(line: string): 'blank' | 'heading' | 'bullet' {
+  const t = line.trim()
+  if (!t) return 'blank'
+  const words = t.split(/\s+/).length
+  if (!/[.:;,]$/.test(t) && (words <= 5 || t.length <= 42)) return 'heading'
+  return 'bullet'
+}
+
 /** Sum of phase fees (ex GST). */
 export function phasesTotal(phases: ProposalPhase[]): number {
   return phases.reduce((s, ph) => s + (ph.fee || 0), 0)
