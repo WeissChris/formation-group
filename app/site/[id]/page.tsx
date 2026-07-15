@@ -116,10 +116,6 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
         <h1 className="text-xl font-light leading-tight mt-1">{project.name}</h1>
         <p className="text-sm text-fg-muted truncate">{project.address}</p>
         <nav className="flex gap-1 overflow-x-auto mt-3 -mx-4 px-4 no-scrollbar">
-          <Link href={`/site/${project.id}/intro-pack`}
-            className="shrink-0 text-xs px-3 py-1.5 rounded-full whitespace-nowrap bg-fg-card/50 text-fg-heading transition-colors">
-            Intro pack
-          </Link>
           {TABS.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`shrink-0 text-xs px-3 py-1.5 rounded-full whitespace-nowrap transition-colors ${
@@ -147,7 +143,7 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
         {tab === 'handover' && (
           <HandoverTab projectId={project.id} supervisor={project.foreman} checklist={handover} refresh={refreshHandover} />
         )}
-        {tab === 'client' && <ClientAndSite project={project} />}
+        {tab === 'client' && <ClientAndSite project={project} introSentAt={introSentAt} />}
       </div>
     </div>
   )
@@ -2118,9 +2114,29 @@ function Handover({ projectId, supervisor, checklist, refresh }: {
 }
 
 // ── Client & site ────────────────────────────────────────────────────────────────
-function ClientAndSite({ project }: { project: SiteProject }) {
+// The client introduction pack lives here rather than in the tab bar - it's a client-facing document,
+// so it belongs with the client details. introSentAt: undefined = still loading; null = not sent.
+function ClientAndSite({ project, introSentAt }: { project: SiteProject; introSentAt: string | null | undefined }) {
   return (
     <section className="space-y-4">
+      <div>
+        <SectionLabel>Client introduction pack</SectionLabel>
+        <div className="rounded-xl border border-fg-border p-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Introduction pack</p>
+            <p className="text-xs text-fg-muted mt-0.5">
+              {introSentAt
+                ? `Sent ${new Date(introSentAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}`
+                : introSentAt === null ? 'Not sent yet - send it on planning day' : 'Checking...'}
+            </p>
+          </div>
+          <Link href={`/site/${project.id}/intro-pack`}
+            className="shrink-0 rounded-lg bg-fg-heading text-white px-3 py-2 text-xs font-medium">
+            {introSentAt ? 'Open' : 'Open & send'}
+          </Link>
+        </div>
+      </div>
+
       <Field label="Client">{project.clientName || '-'}</Field>
       {project.clientPhone && (
         <Field label="Phone"><a href={`tel:${project.clientPhone}`} className="underline">{project.clientPhone}</a></Field>
