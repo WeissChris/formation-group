@@ -157,6 +157,18 @@ function Centered({ children }: { children: React.ReactNode }) {
   return <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center">{children}</div>
 }
 
+// One consistent section header for the cockpit: a small tracked label above the section's card(s),
+// with optional right-hand detail. Every dashboard category starts with one, so they read as
+// distinct blocks instead of blending into a single run of identical cards.
+function SectionLabel({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 mb-1.5">
+      <h2 className="text-[10px] uppercase tracking-[0.18em] text-fg-muted">{children}</h2>
+      {right}
+    </div>
+  )
+}
+
 // ── date helpers ────────────────────────────────────────────────────────────────
 // LOCAL date, not toISOString (UTC): Melbourne is UTC+10, so the UTC conversion shifted every
 // date back a day - the week strip read "28 June - 2 July" for the 29 June - 3 July week, and
@@ -208,7 +220,7 @@ function SubbieBookingsCard({ projectId, scopes, refresh }: {
 
   return (
     <div>
-      <h2 className="text-sm font-medium mb-2">Subbie bookings</h2>
+      <SectionLabel>Subbie bookings</SectionLabel>
       <ul className="space-y-2">
         {scopes.map(s => {
           const dueTone = s.booked ? 'text-fg-muted'
@@ -309,12 +321,11 @@ function VariationsCard({ projectId, variations, refresh }: {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-sm font-medium">Variations</h2>
+      <SectionLabel right={
         <button onClick={() => setOpen(o => !o)} className="text-xs underline text-fg-heading">
           {open ? 'Cancel' : '+ New variation'}
         </button>
-      </div>
+      }>Variations</SectionLabel>
       {msg && <p className="text-xs text-green-700 mb-2">{msg}</p>}
 
       {open && (
@@ -475,10 +486,9 @@ function ThisWeekStrip({ gantt, offset = 0, title = 'This week' }: { gantt: Gant
 
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-2">
-        <h2 className="text-sm font-medium">{title}</h2>
-        <span className="text-xs text-fg-muted">{fmt(monIso)} &ndash; {fmt(friIso)}</span>
-      </div>
+      <SectionLabel right={<span className="text-xs text-fg-muted">{fmt(monIso)} &ndash; {fmt(friIso)}</span>}>
+        {title}
+      </SectionLabel>
       {groups.length === 0 ? (
         <p className="text-sm text-fg-muted py-4 text-center rounded-lg border border-fg-border/60 border-dashed">
           No work scheduled {title === 'This week' ? 'this week' : title.toLowerCase()}.
@@ -731,9 +741,11 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
   const overall = STATUS_UI[card.status]
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-7">
       {/* Job details */}
-      <div className="rounded-xl border border-fg-border p-4 space-y-1.5">
+      <div>
+        <SectionLabel>Job</SectionLabel>
+        <div className="rounded-xl border border-fg-border p-4 space-y-1.5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-sm font-medium truncate">{project.clientName || '-'}</p>
@@ -748,14 +760,16 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
             <a href={`https://maps.google.com/?q=${encodeURIComponent(project.address)}`} target="_blank" rel="noopener noreferrer"
               className="underline text-fg-heading">Map</a>
           )}
+          </div>
         </div>
       </div>
 
       {/* Heads up - the act-on-it list */}
       {nudges.length > 0 && (
-        <div className="rounded-xl border border-fg-border overflow-hidden">
-          <p className="text-[10px] uppercase tracking-wide text-fg-muted px-3 pt-3">Heads up</p>
-          <ul className="divide-y divide-fg-border/40 mt-1">
+        <div>
+          <SectionLabel>Heads up</SectionLabel>
+          <div className="rounded-xl border border-fg-border overflow-hidden">
+          <ul className="divide-y divide-fg-border/40">
             {nudges.map((n, i) => {
               const dot = <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${n.level === 'red' ? 'bg-red-500' : n.level === 'amber' ? 'bg-amber-500' : 'bg-fg-border'}`} />
               const label = <span className={`text-xs leading-snug ${n.level === 'red' ? 'text-red-700 font-medium' : n.level === 'amber' ? 'text-amber-700' : 'text-fg-muted'}`}>{n.text}</span>
@@ -771,10 +785,13 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
               )
             })}
           </ul>
+          </div>
         </div>
       )}
 
       {/* Scorecard strip - tap to expand the detail (the Scorecard tab was retired as redundant) */}
+      <div>
+      <SectionLabel>Scorecard</SectionLabel>
       <div className={`rounded-xl border-2 ${overall.ring} overflow-hidden`}>
         <button onClick={() => setScoreOpen(o => !o)} className="w-full text-left p-3 flex items-center gap-4">
           <div className="shrink-0">
@@ -836,21 +853,22 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
           </div>
         )}
       </div>
+      </div>
 
       {/* Schedule tracking */}
+      <div>
+      <SectionLabel right={
+        slipDays !== null ? (
+          <span className={`text-xs font-medium ${slipDays > 2 ? 'text-red-600' : slipDays > 0 ? 'text-amber-600' : 'text-green-700'}`}>
+            {slipDays > 0 ? `${slipDays} day${slipDays === 1 ? '' : 's'} behind` : slipDays < 0 ? `${-slipDays} day${slipDays === -1 ? '' : 's'} ahead` : 'On plan'}
+          </span>
+        ) : forecastEnd ? (
+          <span className="text-xs text-fg-muted">Finishes {fmt(forecastEnd)}</span>
+        ) : (
+          <span className="text-xs text-fg-muted">Not scheduled yet</span>
+        )
+      }>Schedule</SectionLabel>
       <div className="rounded-xl border border-fg-border p-4">
-        <div className="flex items-baseline justify-between mb-2">
-          <h2 className="text-sm font-medium">Schedule</h2>
-          {slipDays !== null ? (
-            <span className={`text-xs font-medium ${slipDays > 2 ? 'text-red-600' : slipDays > 0 ? 'text-amber-600' : 'text-green-700'}`}>
-              {slipDays > 0 ? `${slipDays} day${slipDays === 1 ? '' : 's'} behind` : slipDays < 0 ? `${-slipDays} day${slipDays === -1 ? '' : 's'} ahead` : 'On plan'}
-            </span>
-          ) : forecastEnd ? (
-            <span className="text-xs text-fg-muted">Finishes {fmt(forecastEnd)}</span>
-          ) : (
-            <span className="text-xs text-fg-muted">Not scheduled yet</span>
-          )}
-        </div>
         <div className="flex justify-between text-[11px] text-fg-muted mb-1">
           <span>Job progress</span><span>{Math.round(card.progressPct * 100)}%</span>
         </div>
@@ -882,9 +900,13 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
         )}
         <button onClick={() => openTab('schedule')} className="text-xs underline text-fg-muted mt-2">Open schedule</button>
       </div>
+      </div>
 
       {/* Weather (site suburb, next 5 days) */}
-      <WeatherStrip address={project.address} />
+      <div>
+        <SectionLabel>Weather</SectionLabel>
+        <WeatherStrip address={project.address} />
+      </div>
 
       {/* The fortnight programme: this week + next week */}
       <ThisWeekStrip gantt={gantt} />
@@ -893,7 +915,7 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
       {/* Call-ups: work starting soon - confirm subbies, order materials */}
       {startingSoon.length > 0 && (
         <div>
-          <h2 className="text-sm font-medium mb-2">Starting soon</h2>
+          <SectionLabel>Starting soon</SectionLabel>
           <ul className="space-y-2">
             {startingSoon.map((c, i) => (
               <li key={i} className="rounded-lg border border-fg-border p-3 flex items-center justify-between">
@@ -919,7 +941,7 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
       {/* Next milestones */}
       {upcoming.length > 0 && (
         <div>
-          <h2 className="text-sm font-medium mb-2">Next milestones</h2>
+          <SectionLabel>Next milestones</SectionLabel>
           <ul className="space-y-2">
             {upcoming.map(m => (
               <li key={m.id} className="rounded-lg border border-fg-border p-3 flex items-center justify-between">
