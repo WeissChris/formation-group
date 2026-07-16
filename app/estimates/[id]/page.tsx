@@ -7,7 +7,7 @@ import { loadEstimates, loadProposals, saveEstimate, loadTakeoffAsync, loadEstim
 import { uploadAttachment, openAttachment, safeFileName } from '@/lib/attachments'
 import { upsertEstimate, upsertProject, getEstimates, getTakeoff, upsertSubcontractor } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
-import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract, activeLineItems, estimateLabourHours, lineContractValue, itemsContractValue } from '@/lib/estimateCalculations'
+import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract, activeLineItems, estimateLabourHours, lineContractValue, itemsContractValue, STD_LABOUR_RATE } from '@/lib/estimateCalculations'
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
 import { getAllLibraryItems, getCategories, defaultMarkupForType, TARGET_MARGINS, saveLineItemToLibrary, isCustomLibraryItem } from '@/lib/itemLibrary'
@@ -639,10 +639,15 @@ function LineItemRow({
           onChange={e => {
             const t = e.target.value as EstimateLineItem['type']
             // Markup follows the item type — re-apply the type's default on change.
-            // Labour is always rated by the hour, so pin its unit of measure to 'hour'.
+            // Labour is always rated by the hour, so pin its unit of measure to 'hour' and fill in
+            // the standard crew rate so it isn't retyped on every line. An existing rate is left
+            // alone (a specialist crew can be priced off-standard).
             // Leaving Labour drops the activity breakdown (it's a labour-hours concept).
             update(t === 'Labour'
-              ? { type: t, markupPercent: defaultMarkupForType(t), uom: 'hour' }
+              ? {
+                  type: t, markupPercent: defaultMarkupForType(t), uom: 'hour',
+                  ...(item.unitCost ? {} : { unitCost: STD_LABOUR_RATE }),
+                }
               : { type: t, markupPercent: defaultMarkupForType(t), labourBreakdown: undefined })
           }}
           className={`${inputCls} bg-fg-bg appearance-none`}
