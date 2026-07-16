@@ -3,12 +3,16 @@ import { formatCurrency, clientDisplayName, clientGreetingNames } from '@/lib/ut
 import type { ProposalPhase } from '@/types'
 import { defaultPhaseDescription, defaultPhaseOutcome, phasesTotal, revisionsSummary, scopeLines, scopeLineKind, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 
+/** A sample design package the client can open from the proposal (resolved by the caller). */
+export interface ProposalSampleView { id: string; title: string; blurb?: string; url: string; size?: string }
+
 interface Props {
   clientName: string
   clientName2?: string
   careOf?: string
   revisionsIncluded?: number
   revisionsNote?: string
+  samples?: ProposalSampleView[]
   programText?: string
   projectAddress: string
   introText?: string
@@ -164,7 +168,7 @@ function DeliverablesBox({ items, editable, onChange }: {
 }
 
 export default function ProposalPreview({
-  clientName, clientName2, careOf, revisionsIncluded, revisionsNote, programText, projectAddress, introText,
+  clientName, clientName2, careOf, revisionsIncluded, revisionsNote, samples, programText, projectAddress, introText,
   phases,
   validUntil,
   welcomeVideoUrl,
@@ -348,6 +352,31 @@ export default function ProposalPreview({
           </div>
         )
       })}
+
+      {/* ── SAMPLE PACKAGES — examples of what the client receives ── */}
+      {samples && samples.length > 0 && (
+        <div className="border-t p-8" style={{ borderColor: BORDER }}>
+          <h3 className="font-light mb-1" style={{ fontSize: 20, color: HEADING }}>See a sample</h3>
+          <p className="text-xs font-light leading-relaxed mb-5" style={{ color: BODY }}>
+            Examples of the design packages you will receive.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            {samples.map(s => (
+              <a key={s.id} href={s.url} target="_blank" rel="noopener noreferrer"
+                className="border rounded-lg p-4 flex items-center justify-between gap-3 hover:bg-black/[0.02] transition-colors"
+                style={{ borderColor: BORDER }}>
+                <div className="min-w-0">
+                  <p className="text-sm font-light" style={{ color: HEADING }}>{s.title}</p>
+                  {s.blurb && <p className="text-xs font-light mt-0.5" style={{ color: MUTED }}>{s.blurb}</p>}
+                </div>
+                <span className="text-xs font-light shrink-0 whitespace-nowrap" style={{ color: GREEN }}>
+                  View{s.size ? ` (${s.size})` : ''}
+                </span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── DESIGN REVISIONS ── */}
       {revisionsIncluded != null && (

@@ -17,6 +17,7 @@ import { downloadBackup, restoreFromBackup } from '@/lib/backup'
 import { getXeroAuthUrl, getXeroStatus, disconnectXero, triggerXeroSync, type XeroStatus } from '@/lib/xero'
 import { XeroMappingSection } from '@/components/XeroMappingSection'
 import { SupervisorsSection } from '@/components/SupervisorsSection'
+import { ProposalSamplesSection } from '@/components/ProposalSamplesSection'
 import { Check } from 'lucide-react'
 
 export default function SettingsPage() {
@@ -175,6 +176,9 @@ export default function SettingsPage() {
 
           {/* Supervisors */}
           <SupervisorsSection />
+
+          {/* Sample design packages shown on design proposals */}
+          <ProposalSamplesSection />
         </div>
 
         {/* Right column — External Links */}

@@ -193,6 +193,7 @@ function mapProposalRow(row: Record<string, unknown>): DesignProposal {
     careOf: (row.care_of as string | null) || undefined,
     revisionsIncluded: row.revisions_included != null ? Number(row.revisions_included) : undefined,
     revisionsNote: (row.revisions_note as string | null) || undefined,
+    sampleIds: Array.isArray(row.sample_ids) ? row.sample_ids as string[] : undefined,
     clientEmail: row.client_email as string | undefined,
     clientPhone: row.client_phone as string | undefined,
     projectAddress: (row.project_address as string) || '',

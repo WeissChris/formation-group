@@ -7,6 +7,7 @@ import { loadProposals, saveProposal, generateRevenueFromProposal, generateInvoi
 import { upsertProposal, getProposals, reconcileProposals, deleteProposalAsync } from '@/lib/storageAsync'
 import { formatCurrency } from '@/lib/utils'
 import { getProposalPhases, syncLegacyPhaseFields, phasesTotal, makeBlankPhase, defaultPhaseDescription, defaultPhaseOutcome, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
+import { getProposalSamples, sampleUrl, formatSize, type ProposalSample } from '@/lib/proposalSamples'
 import { requestSendProposal, sendErrorMessage } from '@/lib/emailClient'
 import type { DesignProposal, ProposalContentBlock, ProposalPhase } from '@/types'
 import { Trash2, Copy, Check, Pencil, Mail } from 'lucide-react'
@@ -32,6 +33,10 @@ export default function ProposalDetailPage() {
   const [focusField, setFocusField] = useState<'intro' | 'email' | 'program' | null>(null)
   const [sending, setSending] = useState(false)
   const [sentMsg, setSentMsg] = useState('')
+  // The shared sample-package library (our 2D / 3D examples); this proposal ticks which to show.
+  const [samples, setSamples] = useState<ProposalSample[]>([])
+
+  useEffect(() => { getProposalSamples().then(setSamples) }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -410,6 +415,28 @@ export default function ProposalDetailPage() {
                     />
                   </div>
                 </div>
+                {/* Sample packages: tick which of the shared examples this client sees. */}
+                {samples.length > 0 && (
+                  <div>
+                    <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Sample packages (shown on the proposal)</label>
+                    <div className="space-y-1">
+                      {samples.map(s => {
+                        const on = (proposal.sampleIds ?? []).includes(s.id)
+                        return (
+                          <label key={s.id} className="flex items-center gap-2 text-sm font-light text-fg-heading cursor-pointer">
+                            <input type="checkbox" checked={on} className="w-3.5 h-3.5 accent-fg-dark"
+                              onChange={e => {
+                                const cur = proposal.sampleIds ?? []
+                                saveProposalField({ sampleIds: e.target.checked ? [...cur, s.id] : cur.filter(x => x !== s.id) })
+                              }} />
+                            {s.title}
+                            {s.sizeBytes ? <span className="text-2xs text-fg-muted">({formatSize(s.sizeBytes)})</span> : null}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-1 text-sm font-light">
@@ -803,6 +830,9 @@ export default function ProposalDetailPage() {
             careOf={proposal.careOf}
             revisionsIncluded={proposal.revisionsIncluded}
             revisionsNote={proposal.revisionsNote}
+            samples={samples
+              .filter(s => (proposal.sampleIds ?? []).includes(s.id))
+              .map(s => ({ id: s.id, title: s.title, blurb: s.blurb, url: sampleUrl(s.path), size: formatSize(s.sizeBytes) }))}
             programText={proposal.programText}
             projectAddress={proposal.projectAddress}
             introText={proposal.introText}

@@ -7,6 +7,7 @@ import { getProposalByToken, acceptProposalByToken } from '@/lib/publicData'
 import { notifyProposalAccepted, recordProposalView } from '@/lib/emailClient'
 import { formatCurrency, generateId, clientDisplayName, clientGreetingNames } from '@/lib/utils'
 import { getProposalPhases, phasesTotal, defaultPhaseDescription, defaultPhaseOutcome, revisionsSummary, scopeLines, scopeLineKind, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
+import { getProposalSamples, sampleUrl, formatSize, type ProposalSample } from '@/lib/proposalSamples'
 import type { DesignProposal, ProposalContentBlock, DesignProject } from '@/types'
 import { ChevronDown, Check, Play } from 'lucide-react'
 
@@ -211,6 +212,8 @@ export default function ProposalAcceptancePage() {
   const token = params.token as string
 
   const [proposal, setProposal] = useState<DesignProposal | null>(null)
+  // The shared sample-package library (public marketing files); this proposal shows the ticked ones.
+  const [samples, setSamples] = useState<ProposalSample[]>([])
   const [notFound, setNotFound] = useState(false)
   const [acceptorName, setAcceptorName] = useState('')
   const [accepted, setAccepted] = useState(false)
@@ -218,6 +221,9 @@ export default function ProposalAcceptancePage() {
   const [error, setError] = useState('')
   const [showModal, setShowModal] = useState(false)
   const acceptSectionRef = useRef<HTMLDivElement>(null)
+
+  // Sample packages are public marketing files, so the anon client can read the library directly.
+  useEffect(() => { getProposalSamples().then(setSamples).catch(() => {}) }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -673,6 +679,35 @@ export default function ProposalAcceptancePage() {
             </section>
           )
         })}
+
+        {/* ── SAMPLE PACKAGES — examples of what the client receives ── */}
+        {(() => {
+          const shown = samples.filter(s => (proposal.sampleIds ?? []).includes(s.id))
+          if (shown.length === 0) return null
+          return (
+            <section className="bg-white border-t" style={{ borderColor: BORDER }}>
+              <div className="max-w-[1200px] mx-auto px-8 py-16 md:py-20">
+                <h2 className="font-light mb-2" style={{ fontSize: 'clamp(28px, 3vw, 40px)', color: HEADING }}>See a sample</h2>
+                <p className="text-base font-light mb-8" style={{ color: BODY }}>Examples of the design packages you will receive.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {shown.map(s => (
+                    <a key={s.id} href={sampleUrl(s.path)} target="_blank" rel="noopener noreferrer"
+                      className="border rounded-lg p-6 flex items-center justify-between gap-4 hover:bg-black/[0.02] transition-colors"
+                      style={{ borderColor: BORDER }}>
+                      <div className="min-w-0">
+                        <p className="text-lg font-light" style={{ color: HEADING }}>{s.title}</p>
+                        {s.blurb && <p className="text-sm font-light mt-1" style={{ color: MUTED }}>{s.blurb}</p>}
+                      </div>
+                      <span className="text-sm font-light shrink-0 whitespace-nowrap" style={{ color: GREEN }}>
+                        View{s.sizeBytes ? ` (${formatSize(s.sizeBytes)})` : ''}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            </section>
+          )
+        })()}
 
         {/* ── DESIGN REVISIONS ── */}
         {proposal.revisionsIncluded != null && (
