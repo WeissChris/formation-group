@@ -189,6 +189,7 @@ export interface Estimate {
   roundingMode?: 'none' | 'ten' | 'hundred' | 'thousand'
   notes?: string
   categoryNotes?: Record<string, string>
+  categoryComplete?: Record<string, boolean>   // per-category "done" tick - what's still to finish
   createdAt: string
   updatedAt: string
   sentAt?: string

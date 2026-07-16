@@ -1456,16 +1456,22 @@ export default function EstimateBuilderPage() {
     if (!newName.trim() || newName === oldName) return
     setEstimate(prev => {
       if (!prev) return prev
-      // Move category notes to the new key
+      // Move category notes + the done tick to the new key
       const updatedNotes = { ...(prev.categoryNotes || {}) }
       if (updatedNotes[oldName] !== undefined) {
         updatedNotes[newName] = updatedNotes[oldName]
         delete updatedNotes[oldName]
       }
+      const updatedDone = { ...(prev.categoryComplete || {}) }
+      if (updatedDone[oldName] !== undefined) {
+        updatedDone[newName] = updatedDone[oldName]
+        delete updatedDone[oldName]
+      }
       return {
         ...prev,
         lineItems: prev.lineItems.map(i => i.category === oldName ? { ...i, category: newName } : i),
         categoryNotes: updatedNotes,
+        categoryComplete: updatedDone,
         updatedAt: new Date().toISOString(),
       }
     })
@@ -1500,7 +1506,9 @@ export default function EstimateBuilderPage() {
       if (!prev) return prev
       const notes = { ...(prev.categoryNotes || {}) }
       delete notes[category]
-      return { ...prev, lineItems: prev.lineItems.filter(i => i.category !== category), categoryNotes: notes, updatedAt: new Date().toISOString() }
+      const done = { ...(prev.categoryComplete || {}) }
+      delete done[category]
+      return { ...prev, lineItems: prev.lineItems.filter(i => i.category !== category), categoryNotes: notes, categoryComplete: done, updatedAt: new Date().toISOString() }
     })
     setHasUnsavedChanges(true)
   }
@@ -1551,6 +1559,15 @@ export default function EstimateBuilderPage() {
     setEstimate(prev => prev ? {
       ...prev,
       categoryNotes: { ...(prev.categoryNotes || {}), [category]: notes },
+      updatedAt: new Date().toISOString(),
+    } : prev)
+  }
+
+  // Tick a section off once it's finished, so what's left to do is obvious at a glance.
+  const toggleCategoryComplete = (category: string) => {
+    setEstimate(prev => prev ? {
+      ...prev,
+      categoryComplete: { ...(prev.categoryComplete || {}), [category]: !(prev.categoryComplete?.[category]) },
       updatedAt: new Date().toISOString(),
     } : prev)
   }
@@ -2059,6 +2076,8 @@ export default function EstimateBuilderPage() {
                       revenue={catRevenue}
                       inclMarkups={itemsContractValue(catActive, contract)}
                       hidden={catHidden}
+                      complete={!!estimate.categoryComplete?.[category]}
+                      onToggleComplete={() => toggleCategoryComplete(category)}
                       collapsed={isCollapsed}
                       isFirst={catIdx === 0}
                       isLast={catIdx === categories.length - 1}
@@ -2284,6 +2303,8 @@ function CategoryHeaderRow({
   revenue,
   inclMarkups,
   hidden,
+  complete,
+  onToggleComplete,
   collapsed,
   isFirst,
   isLast,
@@ -2304,6 +2325,8 @@ function CategoryHeaderRow({
   revenue: number
   inclMarkups: number
   hidden: boolean
+  complete: boolean
+  onToggleComplete: () => void
   collapsed: boolean
   isFirst: boolean
   isLast: boolean
@@ -2324,7 +2347,7 @@ function CategoryHeaderRow({
 
   return (
     <tr
-      className={`bg-fg-card/30 border-b border-fg-border group/cat ${hidden ? 'opacity-50' : ''} ${
+      className={`${complete ? 'bg-green-50' : 'bg-fg-card/30'} border-b border-fg-border group/cat ${hidden ? 'opacity-50' : ''} ${
         dragOver ? 'border-t-2 border-t-fg-heading' : 'border-t border-t-fg-border'}`}
       onDragOver={e => { e.preventDefault(); setDragOver(true) }}
       onDragLeave={() => setDragOver(false)}
@@ -2347,6 +2370,19 @@ function CategoryHeaderRow({
             className="text-fg-muted/60 hover:text-fg-heading transition-colors"
           >
             {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+          {/* Done tick: an unfinished section reads as a hollow circle, a finished one turns green,
+              so what's still to price stands out while scanning the estimate. */}
+          <button
+            onClick={onToggleComplete}
+            title={complete ? 'Section finished - click to reopen it' : 'Mark this section finished'}
+            className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
+              complete
+                ? 'bg-green-600 border-green-600 text-white'
+                : 'border-fg-border text-transparent hover:border-fg-heading hover:text-fg-muted/40'
+            }`}
+          >
+            <Check className="w-2.5 h-2.5" strokeWidth={3} />
           </button>
           {editing ? (
             <input
