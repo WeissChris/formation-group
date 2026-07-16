@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import { formatCurrency, clientDisplayName, clientGreetingNames } from '@/lib/utils'
 import type { ProposalPhase } from '@/types'
 import { defaultPhaseDescription, defaultPhaseOutcome, phasesTotal, revisionsSummary, scopeLines, scopeLineKind, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
+import { DEFAULT_SAMPLES_BLURB } from '@/lib/proposalSamples'
 
 /** A sample design package the client can open from the proposal (resolved by the caller). */
 export interface ProposalSampleView { id: string; title: string; blurb?: string; url: string; size?: string }
@@ -13,6 +14,7 @@ interface Props {
   revisionsIncluded?: number
   revisionsNote?: string
   samples?: ProposalSampleView[]
+  samplesBlurb?: string
   programText?: string
   projectAddress: string
   introText?: string
@@ -24,6 +26,7 @@ interface Props {
   // inline-editable in place. The public client view never passes this, so it stays read-only.
   editable?: boolean
   onPhaseChange?: (index: number, patch: Partial<ProposalPhase>) => void
+  onSamplesBlurbChange?: (text: string) => void
 }
 
 // Inline-editable text: plain text when read-only; a click-to-edit region when `editable`. Commits on
@@ -168,13 +171,14 @@ function DeliverablesBox({ items, editable, onChange }: {
 }
 
 export default function ProposalPreview({
-  clientName, clientName2, careOf, revisionsIncluded, revisionsNote, samples, programText, projectAddress, introText,
+  clientName, clientName2, careOf, revisionsIncluded, revisionsNote, samples, samplesBlurb, programText, projectAddress, introText,
   phases,
   validUntil,
   welcomeVideoUrl,
   processVideoUrl,
   editable,
   onPhaseChange,
+  onSamplesBlurbChange,
 }: Props) {
   const total = phasesTotal(phases)
 
@@ -358,7 +362,8 @@ export default function ProposalPreview({
         <div className="border-t p-8" style={{ borderColor: BORDER }}>
           <h3 className="font-light mb-1" style={{ fontSize: 20, color: HEADING }}>See a sample</h3>
           <p className="text-xs font-light leading-relaxed mb-5" style={{ color: BODY }}>
-            Examples of the design packages you will receive.
+            <Editable text={samplesBlurb || DEFAULT_SAMPLES_BLURB} editable={editable}
+              onCommit={t => onSamplesBlurbChange?.(t)} />
           </p>
           <div className="grid grid-cols-2 gap-4">
             {samples.map(s => (

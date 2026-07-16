@@ -7,7 +7,7 @@ import { getProposalByToken, acceptProposalByToken } from '@/lib/publicData'
 import { notifyProposalAccepted, recordProposalView } from '@/lib/emailClient'
 import { formatCurrency, generateId, clientDisplayName, clientGreetingNames } from '@/lib/utils'
 import { getProposalPhases, phasesTotal, defaultPhaseDescription, defaultPhaseOutcome, revisionsSummary, scopeLines, scopeLineKind, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
-import { getProposalSamples, sampleUrl, formatSize, type ProposalSample } from '@/lib/proposalSamples'
+import { getProposalSamples, sampleUrl, formatSize, DEFAULT_SAMPLES_BLURB, type ProposalSample } from '@/lib/proposalSamples'
 import type { DesignProposal, ProposalContentBlock, DesignProject } from '@/types'
 import { ChevronDown, Check, Play } from 'lucide-react'
 
@@ -688,7 +688,9 @@ export default function ProposalAcceptancePage() {
             <section className="bg-white border-t" style={{ borderColor: BORDER }}>
               <div className="max-w-[1200px] mx-auto px-8 py-16 md:py-20">
                 <h2 className="font-light mb-2" style={{ fontSize: 'clamp(28px, 3vw, 40px)', color: HEADING }}>See a sample</h2>
-                <p className="text-base font-light mb-8" style={{ color: BODY }}>Examples of the design packages you will receive.</p>
+                <p className="text-base font-light leading-relaxed mb-8 max-w-3xl" style={{ color: BODY }}>
+                  {proposal.samplesBlurb || DEFAULT_SAMPLES_BLURB}
+                </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   {shown.map(s => (
                     <a key={s.id} href={sampleUrl(s.path)} target="_blank" rel="noopener noreferrer"

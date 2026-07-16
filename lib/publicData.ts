@@ -194,6 +194,7 @@ function mapProposalRow(row: Record<string, unknown>): DesignProposal {
     revisionsIncluded: row.revisions_included != null ? Number(row.revisions_included) : undefined,
     revisionsNote: (row.revisions_note as string | null) || undefined,
     sampleIds: Array.isArray(row.sample_ids) ? row.sample_ids as string[] : undefined,
+    samplesBlurb: (row.samples_blurb as string | null) || undefined,
     clientEmail: row.client_email as string | undefined,
     clientPhone: row.client_phone as string | undefined,
     projectAddress: (row.project_address as string) || '',

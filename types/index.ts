@@ -331,6 +331,7 @@ export interface DesignProposal {
   revisionsIncluded?: number   // rounds of design revisions included in the fee (shown as a callout)
   revisionsNote?: string       // editable note - what happens beyond the included revisions
   sampleIds?: string[]         // fg_proposal_samples ids to show (our 2D / 3D example packages)
+  samplesBlurb?: string        // intro text above the "See a sample" cards (default if blank)
   clientEmail?: string
   clientPhone?: string
   ccEmails?: string            // extra recipients CC'd on the proposal email (comma-separated)

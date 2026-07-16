@@ -9,6 +9,11 @@ import { supabase, isSupabaseConfigured } from './supabase'
 
 const BUCKET = 'proposal-samples'
 
+// Intro text above the "See a sample" cards. Editable per proposal; this is the fallback.
+export const DEFAULT_SAMPLES_BLURB =
+  'So you can see exactly what you get, here are examples of the design packages we produce. ' +
+  'These are real packages from past projects - your own will be prepared specifically for your site.'
+
 export interface ProposalSample {
   id: string
   title: string          // client-facing name, e.g. "2D Design Package"

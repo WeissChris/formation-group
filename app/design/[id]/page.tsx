@@ -833,6 +833,8 @@ export default function ProposalDetailPage() {
             samples={samples
               .filter(s => (proposal.sampleIds ?? []).includes(s.id))
               .map(s => ({ id: s.id, title: s.title, blurb: s.blurb, url: sampleUrl(s.path), size: formatSize(s.sizeBytes) }))}
+            samplesBlurb={proposal.samplesBlurb}
+            onSamplesBlurbChange={t => saveProposalField({ samplesBlurb: t.trim() || undefined })}
             programText={proposal.programText}
             projectAddress={proposal.projectAddress}
             introText={proposal.introText}
