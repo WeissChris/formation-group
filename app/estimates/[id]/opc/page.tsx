@@ -494,10 +494,16 @@ export default function OpcPage() {
         .opc-prose:empty::before { content: attr(data-placeholder); color: #9ca3af; }
         .opc-prose ul { list-style: disc; padding-left: 1.4em; margin: 0.25em 0; }
         .opc-prose ol { list-style: decimal; padding-left: 1.4em; margin: 0.25em 0; }
+        /* Zero the page margin so the browser has no room to print its own header/footer
+           (the page URL, date and document title it injects into the margins). The cover is
+           full-bleed by design; body pages get their breathing room from padding on the
+           content wrapper below (.opc-body) instead. */
+        @page { margin: 0; }
         @media print {
-          .opc-cover { height: 25cm; break-after: page; }
+          .opc-cover { height: 29.6cm; break-after: page; }
           .opc-avoid-break { break-inside: avoid; }
           .opc-prose:empty::before { content: ''; }
+          .opc-body { padding: 1.6cm 1.6cm 1.4cm; }
         }
       `}</style>
 
@@ -567,7 +573,7 @@ export default function OpcPage() {
         </div>
       </div>
 
-      <div className="max-w-[860px] mx-auto px-8 py-14 print:px-0 print:py-10">
+      <div className="opc-body max-w-[860px] mx-auto px-8 py-14">
         {/* Intro */}
         <div className="mb-10">
           <ProseField
