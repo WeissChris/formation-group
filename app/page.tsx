@@ -7,6 +7,7 @@ import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { seedDemoData } from '@/lib/seed'
 import { formatCurrency, getFinancialYear, MONTH_NAMES } from '@/lib/utils'
 import { getEstimateTotals, variationContractValue } from '@/lib/estimateCalculations'
+import { getProposalPhases, phasesTotal } from '@/lib/proposalPhases'
 import type { Project, WeeklyRevenue, GanttEntry, WeeklyActual } from '@/types'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { calcProjectHealth, scheduleStatus } from '@/lib/projectHealth'
@@ -326,6 +327,17 @@ export default function DashboardPage() {
     return diff >= 0 && diff <= soonMs
   })
 
+  // Proposal pipeline analytics (mirrors the /design page so the numbers match). Fees are ex-GST on
+  // the proposal; * 1.1 to show the inc-GST value. "Closed" = decided proposals (accepted + lost/
+  // declined); win rate and average fee are measured across those.
+  const acceptedProposals = allProposals.filter(p => p.status === 'accepted')
+  const pendingProposals  = allProposals.filter(p => (p.status === 'sent' || p.status === 'pending') && !p.archived)
+  const closedProposals   = allProposals.filter(p => p.status === 'accepted' || p.status === 'lost' || p.status === 'declined')
+  const proposalPendingValue  = pendingProposals.reduce((s, p) => s + phasesTotal(getProposalPhases(p)) * 1.1, 0)
+  const proposalAcceptedValue = acceptedProposals.reduce((s, p) => s + phasesTotal(getProposalPhases(p)) * 1.1, 0)
+  const proposalWinRate = closedProposals.length > 0 ? Math.round((acceptedProposals.length / closedProposals.length) * 100) : null
+  const proposalAvgFee  = acceptedProposals.length > 0 ? Math.round(proposalAcceptedValue / acceptedProposals.length) : 0
+
   const supabaseActive = isSupabaseConfigured()
 
   // Live Jobs rows — combine local data (project, accepted estimates, progress claims) with
@@ -626,7 +638,28 @@ export default function DashboardPage() {
                 <span className="text-xs font-light text-fg-heading tabular-nums">{formatCurrency(designRevenueYTD)}</span>
               </div>
             </div>
-            <Link href="/design" className="text-2xs font-light tracking-wide uppercase text-fg-muted hover:text-fg-heading transition-colors">
+            <div className="mt-3 pt-3 border-t border-fg-border/30 space-y-2">
+              <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted/70">Proposals</p>
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs font-light text-fg-muted">Pending</span>
+                <span className="text-xs font-light text-fg-heading tabular-nums">
+                  {pendingProposals.length} · {formatCurrency(proposalPendingValue)}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs font-light text-fg-muted">Win rate</span>
+                <span className="text-xs font-light text-fg-heading tabular-nums">
+                  {proposalWinRate !== null ? `${proposalWinRate}% (${acceptedProposals.length}/${closedProposals.length})` : '—'}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs font-light text-fg-muted">Avg fee</span>
+                <span className="text-xs font-light text-fg-heading tabular-nums">
+                  {proposalAvgFee > 0 ? formatCurrency(proposalAvgFee) : '—'}
+                </span>
+              </div>
+            </div>
+            <Link href="/design" className="text-2xs font-light tracking-wide uppercase text-fg-muted hover:text-fg-heading transition-colors mt-5 block">
               View Proposals →
             </Link>
           </div>
