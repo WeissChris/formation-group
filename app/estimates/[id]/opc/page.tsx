@@ -319,9 +319,15 @@ export default function OpcPage() {
   const pendingRef = useRef<EstimateOpc | null>(null)
   const estimateRef = useRef<Estimate | null>(null)
   estimateRef.current = estimate
-  const mutate = (patch: Partial<EstimateOpc>) => {
+  // A patch can be a plain object OR a function of the latest state. Array edits (rows, value
+  // management) MUST use the function form and key off item id - deriving the next array from a
+  // render-time snapshot lets a slightly-late edit (e.g. a contentEditable blur) overwrite the
+  // whole array with stale data, silently dropping a row or resetting a price.
+  const mutate = (patch: Partial<EstimateOpc> | ((prev: EstimateOpc) => Partial<EstimateOpc>)) => {
     setOpc(prev => {
-      const next = { ...(prev ?? {}), ...patch }
+      const base = (prev ?? {}) as EstimateOpc
+      const resolved = typeof patch === 'function' ? patch(base) : patch
+      const next = { ...base, ...resolved }
       pendingRef.current = next
       setSaveState('saving')
       if (timer.current) clearTimeout(timer.current)
@@ -362,30 +368,38 @@ export default function OpcPage() {
   const priceOf = (row: OpcRow) =>
     round100(itemsContractValue(active.filter(i => row.categories.includes(i.category)), contract))
 
+  // All row edits read the latest state (prev.rows) rather than the render-time `rows` snapshot,
+  // for the same reason as value management above - a late blur must never overwrite the array.
   const setRow = (rowId: string, patch: Partial<OpcRow>) =>
-    mutate({ rows: rows.map(r => r.id === rowId ? { ...r, ...patch } : r) })
+    mutate(prev => ({ rows: (prev.rows ?? []).map(r => r.id === rowId ? { ...r, ...patch } : r) }))
 
   /** Merge a row into a target: categories combine, scope text concatenates, source row goes. */
   const mergeInto = (sourceId: string, targetId: string) => {
-    const source = rows.find(r => r.id === sourceId)
-    const target = rows.find(r => r.id === targetId)
-    if (!source || !target) return
-    mutate({
-      rows: rows
-        .filter(r => r.id !== sourceId)
-        .map(r => r.id === targetId
-          ? { ...r, categories: [...r.categories, ...source.categories], scope: joinProse(r.scope, source.scope) }
-          : r),
+    mutate(prev => {
+      const rs = prev.rows ?? []
+      const source = rs.find(r => r.id === sourceId)
+      const target = rs.find(r => r.id === targetId)
+      if (!source || !target) return {}
+      return {
+        rows: rs
+          .filter(r => r.id !== sourceId)
+          .map(r => r.id === targetId
+            ? { ...r, categories: [...r.categories, ...source.categories], scope: joinProse(r.scope, source.scope) }
+            : r),
+      }
     })
   }
 
   /** Eject a category out of a merged row back to its own line. */
   const ejectCategory = (rowId: string, category: string) => {
-    const row = rows.find(r => r.id === rowId)
-    if (!row || row.categories.length < 2) return
-    const next = rows.map(r => r.id === rowId ? { ...r, categories: r.categories.filter(c => c !== category) } : r)
-    next.push({ id: generateId(), title: category, categories: [category], scope: '' })
-    mutate({ rows: next })
+    mutate(prev => {
+      const rs = prev.rows ?? []
+      const row = rs.find(r => r.id === rowId)
+      if (!row || row.categories.length < 2) return {}
+      const next = rs.map(r => r.id === rowId ? { ...r, categories: r.categories.filter(c => c !== category) } : r)
+      next.push({ id: generateId(), title: category, categories: [category], scope: '' })
+      return { rows: next }
+    })
   }
 
   // Click-to-fix from the spell check panel: swap every whole-word occurrence across the
@@ -767,17 +781,17 @@ export default function OpcPage() {
           </p>
 
           <div className="space-y-2 mb-4">
-            {valueManagement.map((v, i) => (
+            {valueManagement.map(v => (
               <div key={v.id} className="relative group flex items-start gap-4 px-4 py-3" style={{ backgroundColor: BG_WARM }}>
                 <button
-                  onClick={() => mutate({ valueManagement: valueManagement.filter((_, j) => j !== i) })}
+                  onClick={() => mutate(prev => ({ valueManagement: (prev.valueManagement ?? []).filter(x => x.id !== v.id) }))}
                   title="Remove" className="print:hidden absolute top-2 right-2 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
                   <X className="w-3 h-3" />
                 </button>
                 <div className="flex-1 min-w-0 pr-6">
                   <input
                     value={v.title}
-                    onChange={e => mutate({ valueManagement: valueManagement.map((x, j) => j === i ? { ...x, title: e.target.value } : x) })}
+                    onChange={e => mutate(prev => ({ valueManagement: (prev.valueManagement ?? []).map(x => x.id === v.id ? { ...x, title: e.target.value } : x) }))}
                     placeholder="Value management option"
                     className="print:hidden w-full text-sm font-medium bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none mb-1"
                     style={{ color: HEADING }}
@@ -785,7 +799,7 @@ export default function OpcPage() {
                   <p className="hidden print:block text-sm font-medium mb-1" style={{ color: HEADING }}>{v.title}</p>
                   <ProseField
                     value={v.note ?? ''}
-                    onChange={val => mutate({ valueManagement: valueManagement.map((x, j) => j === i ? { ...x, note: val } : x) })}
+                    onChange={val => mutate(prev => ({ valueManagement: (prev.valueManagement ?? []).map(x => x.id === v.id ? { ...x, note: val } : x) }))}
                     placeholder="What changes and why it saves…"
                     className="text-xs font-light leading-relaxed"
                   />
@@ -796,7 +810,7 @@ export default function OpcPage() {
                     <span className="text-sm font-normal" style={{ color: GREEN }}>-$</span>
                     <input
                       type="number" inputMode="decimal" value={v.saving || ''}
-                      onChange={e => mutate({ valueManagement: valueManagement.map((x, j) => j === i ? { ...x, saving: Math.max(0, Number(e.target.value) || 0) } : x) })}
+                      onChange={e => { const n = Math.max(0, Number(e.target.value) || 0); mutate(prev => ({ valueManagement: (prev.valueManagement ?? []).map(x => x.id === v.id ? { ...x, saving: n } : x) })) }}
                       placeholder="0"
                       className="print:hidden w-20 text-right text-sm font-normal bg-transparent border-b border-gray-300 focus:border-gray-500 outline-none tabular-nums"
                       style={{ color: GREEN }}
@@ -817,7 +831,7 @@ export default function OpcPage() {
           )}
 
           <button
-            onClick={() => mutate({ valueManagement: [...valueManagement, { id: generateId(), title: 'New value management option', note: '', saving: 0 }] })}
+            onClick={() => mutate(prev => ({ valueManagement: [...(prev.valueManagement ?? []), { id: generateId(), title: 'New value management option', note: '', saving: 0 }] }))}
             className="print:hidden flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 transition-colors">
             <Plus className="w-3 h-3" /> Add value management option
           </button>
