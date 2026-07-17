@@ -533,10 +533,12 @@ export default function OpcPage() {
         <img src="/formation-logo-white.svg" alt="Formation" className="absolute top-8 left-10 h-6 w-auto" />
         <div className="absolute bottom-12 left-10 right-10">
           <p className="text-white/60 text-xs tracking-[0.25em] uppercase mb-3">{isQuote ? 'Quotation' : 'Preliminary Pricing'}</p>
-          <h1 className="text-white font-light leading-tight mb-4" style={{ fontSize: 'clamp(32px, 4.5vw, 52px)', letterSpacing: '0.01em' }}>
-            {isQuote ? 'Quote' : 'Opinion of Probable Cost'}
-          </h1>
-          <p className="text-white/90 font-light text-xl mb-1">{clientName}</p>
+          {!isQuote && (
+            <h1 className="text-white font-light leading-tight mb-4" style={{ fontSize: 'clamp(32px, 4.5vw, 52px)', letterSpacing: '0.01em' }}>
+              Opinion of Probable Cost
+            </h1>
+          )}
+          <p className={`text-white/90 font-light text-xl mb-1 ${isQuote ? 'mt-1' : ''}`}>{clientName}</p>
           {clientAddress && <p className="text-white/70 font-light text-base">{clientAddress}</p>}
           <input
             type="date"
