@@ -340,6 +340,7 @@ export interface DesignProposal {
   clientName: string
   clientName2?: string         // optional second client (e.g. partner) — addressed alongside clientName
   careOf?: string              // "C/o" line - the architect / agent acting on the client's behalf
+  emailGreetingName?: string   // override the delivery-email greeting (e.g. address it to the architect)
   revisionsIncluded?: number   // rounds of design revisions included in the fee (shown as a callout)
   revisionsNote?: string       // editable note - what happens beyond the included revisions
   sampleIds?: string[]         // fg_proposal_samples ids to show (our 2D / 3D example packages)

@@ -355,6 +355,16 @@ export default function ProposalDetailPage() {
                       className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors"
                     />
                   </div>
+                  <div className="md:col-span-2">
+                    <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Email greeting name (optional)</label>
+                    <input
+                      defaultValue={proposal.emailGreetingName ?? ''}
+                      onBlur={e => saveProposalField({ emailGreetingName: e.target.value.trim() || undefined })}
+                      placeholder="e.g. Ben"
+                      className="w-full px-2 py-1.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light outline-none focus:border-fg-heading transition-colors"
+                    />
+                    <p className="text-2xs font-light text-fg-muted mt-1">Overrides the auto &quot;Hi [client],&quot; in the delivery email - use when it is addressed to an architect or agent.</p>
+                  </div>
                 </div>
                 <div>
                   <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Client email</label>

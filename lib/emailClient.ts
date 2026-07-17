@@ -13,6 +13,7 @@ export async function requestSendProposal(proposal: DesignProposal): Promise<Sen
       body: JSON.stringify({
         clientName: proposal.clientName,
         clientName2: proposal.clientName2,
+        greetingName: proposal.emailGreetingName,
         clientEmail: proposal.clientEmail,
         acceptanceToken: proposal.acceptanceToken,
         projectAddress: proposal.projectAddress,

@@ -19,10 +19,16 @@ export interface ProposalEmailInput {
   to: string
   clientName: string
   clientName2?: string   // optional second client — greeted alongside clientName ("Hi A and B,")
+  greetingName?: string  // override the "Hi ..," name (e.g. address the email to the architect Ben)
   proposalUrl: string
   projectAddress?: string
   message?: string   // the email body message — separate from the proposal's on-page intro
   cc?: string        // extra recipients (comma/semicolon/space separated) CC'd, visible to the client
+}
+
+/** Who the email is addressed to: the override name if set, else the client name(s). */
+function greetName(input: ProposalEmailInput): string {
+  return (input.greetingName || '').trim() || clientGreetingNames(input.clientName, input.clientName2)
 }
 
 /** Parse a free-text recipient list into validated, de-duplicated email addresses. */
@@ -83,7 +89,7 @@ function messageParagraphs(message?: string): string[] {
 /** Plain-text body (improves deliverability and covers text-only clients). */
 export function buildProposalEmailText(input: ProposalEmailInput): string {
   return [
-    `Hi ${clientGreetingNames(input.clientName, input.clientName2)},`,
+    `Hi ${greetName(input)},`,
     '',
     messageParagraphs(input.message).join('\n\n'),
     '',
@@ -104,7 +110,7 @@ export function buildProposalEmailHtml(input: ProposalEmailInput): string {
   const BODY = '#2d2d2d'
   const MUTED = '#8A8580'
   const font = `-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif`
-  const name = escapeHtml(clientGreetingNames(input.clientName, input.clientName2))
+  const name = escapeHtml(greetName(input))
   const bodyHtml = messageParagraphs(input.message)
     .map((p, i, arr) => `<p style="margin:0 0 ${i === arr.length - 1 ? 28 : 16}px 0;font-size:14px;line-height:1.7;color:${BODY};">${escapeHtml(p)}</p>`)
     .join('')
