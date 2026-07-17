@@ -230,6 +230,16 @@ export interface EstimateOpc {
   poolSubtotalExGst?: number | null   // manual Pool & Spa subtotal ex GST (Lume quote is the source)
   exclusions?: { title: string; blurb: string }[]  // "Excluded from Both Quotes" blocks
   excludedItems?: string[]            // per-job excluded items list (front fence, firepit, ...)
+  valueManagement?: OpcValueOption[]  // value-engineering options with a cost saving each + a total
+}
+
+/** A value-management (value-engineering) option: an alternative that reduces the cost, with the
+ *  saving it delivers. The OPC totals the savings so the client sees the full reduction available. */
+export interface OpcValueOption {
+  id: string
+  title: string      // e.g. "Substitute crazy paving for standard pavers"
+  note?: string      // prose detail (HTML, same as the OPC scope fields)
+  saving: number     // dollars saved ex GST
 }
 
 /** Reusable OPC scope-of-works prose block (the snippet library). */

@@ -278,6 +278,7 @@ export default function OpcPage() {
         poolSubtotalExGst: found.opc?.poolSubtotalExGst ?? null,
         exclusions: found.opc?.exclusions ?? DEFAULT_EXCLUSIONS,
         excludedItems: found.opc?.excludedItems ?? [],
+        valueManagement: found.opc?.valueManagement ?? [],
       })
 
       const p = loadProjects().find(p => p.id === found.projectId)
@@ -388,6 +389,7 @@ export default function OpcPage() {
       rows: rows.map(r => ({ ...r, title: swap(r.title), scope: swap(r.scope) })),
       exclusions: (opc.exclusions ?? []).map(ex => ({ title: swap(ex.title), blurb: swap(ex.blurb) })),
       excludedItems: (opc.excludedItems ?? []).map(swap),
+      valueManagement: (opc.valueManagement ?? []).map(v => ({ ...v, title: swap(v.title), note: swap(v.note ?? '') })),
     })
   }
 
@@ -438,6 +440,8 @@ export default function OpcPage() {
   const dateLabel = docDate.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
   const exclusions = opc.exclusions ?? []
   const excludedItems = opc.excludedItems ?? []
+  const valueManagement = opc.valueManagement ?? []
+  const vmTotal = valueManagement.reduce((s, v) => s + (Number(v.saving) || 0), 0)
 
   return (
     <div className="min-h-screen bg-white" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
@@ -469,6 +473,7 @@ export default function OpcPage() {
               ...rows.flatMap(r => [r.title, stripProse(r.scope)]),
               ...(opc.exclusions ?? []).flatMap(ex => [ex.title, stripProse(ex.blurb)]),
               ...(opc.excludedItems ?? []),
+              ...(opc.valueManagement ?? []).flatMap(v => [v.title, stripProse(v.note ?? '')]),
             ]}
             onReplace={replaceWord}
           />
@@ -705,6 +710,73 @@ export default function OpcPage() {
             onClick={() => mutate({ exclusions: [...exclusions, { title: 'New exclusion', blurb: '' }] })}
             className="print:hidden flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 transition-colors">
             <Plus className="w-3 h-3" /> Add exclusion
+          </button>
+        </div>
+
+        {/* ── VALUE MANAGEMENT ── options to reduce cost, with a total possible saving. Hidden in
+            print when there are none so an empty section never prints. */}
+        <div className={`mb-10 opc-avoid-break ${valueManagement.length === 0 ? 'print:hidden' : ''}`}>
+          <p className="text-2xs tracking-[0.25em] uppercase mb-2" style={{ color: GREEN }}>04 — Value Management</p>
+          <div className="h-px w-16 mb-4" style={{ backgroundColor: GREEN }} />
+          <p className="text-xs font-light leading-relaxed mb-5 max-w-2xl" style={{ color: BODY }}>
+            Options to reduce the overall cost without compromising the outcome. Each can be taken up
+            independently; the potential saving for each is shown below.
+          </p>
+
+          <div className="space-y-2 mb-4">
+            {valueManagement.map((v, i) => (
+              <div key={v.id} className="relative group flex items-start gap-4 px-4 py-3" style={{ backgroundColor: BG_WARM }}>
+                <button
+                  onClick={() => mutate({ valueManagement: valueManagement.filter((_, j) => j !== i) })}
+                  title="Remove" className="print:hidden absolute top-2 right-2 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <X className="w-3 h-3" />
+                </button>
+                <div className="flex-1 min-w-0 pr-6">
+                  <input
+                    value={v.title}
+                    onChange={e => mutate({ valueManagement: valueManagement.map((x, j) => j === i ? { ...x, title: e.target.value } : x) })}
+                    placeholder="Value management option"
+                    className="print:hidden w-full text-sm font-medium bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none mb-1"
+                    style={{ color: HEADING }}
+                  />
+                  <p className="hidden print:block text-sm font-medium mb-1" style={{ color: HEADING }}>{v.title}</p>
+                  <ProseField
+                    value={v.note ?? ''}
+                    onChange={val => mutate({ valueManagement: valueManagement.map((x, j) => j === i ? { ...x, note: val } : x) })}
+                    placeholder="What changes and why it saves…"
+                    className="text-xs font-light leading-relaxed"
+                  />
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-2xs tracking-widest uppercase mb-0.5" style={{ color: MUTED }}>Saving</p>
+                  <div className="flex items-baseline justify-end gap-0.5">
+                    <span className="text-sm font-normal" style={{ color: GREEN }}>-$</span>
+                    <input
+                      type="number" inputMode="decimal" value={v.saving || ''}
+                      onChange={e => mutate({ valueManagement: valueManagement.map((x, j) => j === i ? { ...x, saving: Math.max(0, Number(e.target.value) || 0) } : x) })}
+                      placeholder="0"
+                      className="print:hidden w-20 text-right text-sm font-normal bg-transparent border-b border-gray-300 focus:border-gray-500 outline-none tabular-nums"
+                      style={{ color: GREEN }}
+                    />
+                    <span className="hidden print:inline text-sm font-normal tabular-nums" style={{ color: GREEN }}>{(v.saving || 0).toLocaleString('en-AU')}</span>
+                  </div>
+                  <p className="text-2xs font-light mt-0.5" style={{ color: MUTED }}>ex GST</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {valueManagement.length > 0 && (
+            <div className="flex items-center justify-between px-5 py-3 mb-3" style={{ backgroundColor: GREEN }}>
+              <p className="text-sm font-normal text-white">Total potential saving</p>
+              <p className="text-lg font-semibold text-white tabular-nums">-{money(vmTotal)} <span className="text-xs font-light text-white/60">ex GST</span></p>
+            </div>
+          )}
+
+          <button
+            onClick={() => mutate({ valueManagement: [...valueManagement, { id: generateId(), title: 'New value management option', note: '', saving: 0 }] })}
+            className="print:hidden flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 transition-colors">
+            <Plus className="w-3 h-3" /> Add value management option
           </button>
         </div>
 
