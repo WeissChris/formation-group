@@ -821,21 +821,6 @@ export default function OpcPage() {
           </button>
         </div>
 
-        {/* Acceptance block - quote only */}
-        {isQuote && (
-          <div className="border border-gray-200 p-6 mb-8 opc-avoid-break">
-            <p className="text-2xs font-normal tracking-widest uppercase mb-5" style={{ color: MUTED }}>Acceptance</p>
-            <p className="text-xs font-light mb-8" style={{ color: BODY }}>
-              By signing below, you authorise Formation Landscapes Pty Ltd to proceed with the works described in this quote.
-            </p>
-            <div className="grid grid-cols-2 gap-8">
-              <div><div className="border-b border-gray-300 h-10 mb-1.5" /><p className="text-2xs font-light tracking-wide" style={{ color: MUTED }}>Client signature</p></div>
-              <div><div className="border-b border-gray-300 h-10 mb-1.5" /><p className="text-2xs font-light tracking-wide" style={{ color: MUTED }}>Date</p></div>
-              <div><div className="border-b border-gray-300 h-10 mb-1.5" /><p className="text-2xs font-light tracking-wide" style={{ color: MUTED }}>Print name</p></div>
-            </div>
-          </div>
-        )}
-
         {/* Closing block: disclaimer + get-in-touch + contact details */}
         <div className="border-t border-gray-200 pt-6 pb-2 opc-avoid-break">
           <p className="text-xs font-light italic mb-6" style={{ color: MUTED }}>
