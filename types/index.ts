@@ -231,6 +231,7 @@ export interface EstimateOpc {
   exclusions?: { title: string; blurb: string }[]  // "Excluded from Both Quotes" blocks
   excludedItems?: string[]            // per-job excluded items list (front fence, firepit, ...)
   valueManagement?: OpcValueOption[]  // value-engineering options with a cost saving each + a total
+  docType?: 'opc' | 'quote'           // render the SAME document as an OPC or a formal Quote (default opc)
 }
 
 /** A value-management (value-engineering) option: an alternative that reduces the cost, with the

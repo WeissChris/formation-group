@@ -49,6 +49,11 @@ function defaultIntro(projectName: string, hasPool: boolean): string {
     hasPool ? 'both the landscape construction estimate and the pool & spa build quote' : 'the landscape construction estimate'}.`
 }
 
+function defaultQuoteIntro(projectName: string, hasPool: boolean): string {
+  return `This quote is for the ${projectName} project, prepared by Formation. It covers ${
+    hasPool ? 'the landscape construction works and the pool & spa build' : 'the landscape construction works'}. Pricing is fixed for the scope described and valid for 30 days from the date above.`
+}
+
 /** Fold the estimate's current categories into the saved row layout: vanished categories drop out,
  *  new ones append as their own row (scope seeded from the template's opcScopes when present). */
 function reconcileRows(saved: OpcRow[] | undefined, categories: string[], seeds: Record<string, string>): OpcRow[] {
@@ -270,15 +275,21 @@ export default function OpcPage() {
       const hasPool = found.projectType === 'landscape_and_pool' || found.projectType === 'pool_only'
       const active = activeLineItems(found)
       const categories = Array.from(new Set(active.map(i => i.category).filter(Boolean)))
+      // Render as an OPC or a formal Quote - the ?doc=quote link (from the estimate's Quote button)
+      // wins, else whatever was last saved, else OPC.
+      const docParam = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('doc') : null
+      const docType: 'opc' | 'quote' = (docParam === 'quote' ? 'quote' : (found.opc?.docType as 'opc' | 'quote' | undefined)) ?? 'opc'
+      const projName = found.name || found.projectName || 'client'
       setOpc({
         date: found.opc?.date ?? new Date().toISOString().slice(0, 10),
-        intro: found.opc?.intro ?? defaultIntro(found.name || found.projectName || 'client', hasPool),
+        intro: found.opc?.intro ?? (docType === 'quote' ? defaultQuoteIntro(projName, hasPool) : defaultIntro(projName, hasPool)),
         rows: reconcileRows(found.opc?.rows, categories, found.opc?.scopes ?? {}),
         scopes: found.opc?.scopes ?? {},
         poolSubtotalExGst: found.opc?.poolSubtotalExGst ?? null,
         exclusions: found.opc?.exclusions ?? DEFAULT_EXCLUSIONS,
         excludedItems: found.opc?.excludedItems ?? [],
         valueManagement: found.opc?.valueManagement ?? [],
+        docType,
       })
 
       const p = loadProjects().find(p => p.id === found.projectId)
@@ -443,6 +454,25 @@ export default function OpcPage() {
   const valueManagement = opc.valueManagement ?? []
   const vmTotal = valueManagement.reduce((s, v) => s + (Number(v.saving) || 0), 0)
 
+  // Quote mode: the SAME document, framed as a formal quote (title, disclaimer, quote number,
+  // valid-until, acceptance block) with none of the OPC content lost.
+  const isQuote = (opc.docType ?? 'opc') === 'quote'
+  const hasPoolType = estimate.projectType === 'landscape_and_pool' || estimate.projectType === 'pool_only'
+  const projName = estimate.name || estimate.projectName || 'client'
+  const validUntil = new Date(docDate.getTime() + 30 * 86400000)
+  const validUntilLabel = validUntil.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
+  const quoteNumber = `FG-${estimate.projectId
+    ? `${estimate.projectId.slice(-4).toUpperCase()}-${String(estimate.version).padStart(2, '0')}`
+    : estimate.id.slice(-6).toUpperCase()}`
+  // Flip OPC <-> Quote. Swap the intro too, but only if it's still the source mode's auto default
+  // (so a hand-written intro is never overwritten).
+  const setDocType = (next: 'opc' | 'quote') => {
+    const oldDefault = next === 'quote' ? defaultIntro(projName, hasPoolType) : defaultQuoteIntro(projName, hasPoolType)
+    const newDefault = next === 'quote' ? defaultQuoteIntro(projName, hasPoolType) : defaultIntro(projName, hasPoolType)
+    const cur = stripProse(opc.intro ?? '').trim()
+    mutate({ docType: next, ...((!cur || cur === oldDefault.trim()) ? { intro: newDefault } : {}) })
+  }
+
   return (
     <div className="min-h-screen bg-white" style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
       <style>{`
@@ -467,6 +497,14 @@ export default function OpcPage() {
         </Link>
         <div className="flex items-center gap-3">
           <span className="text-2xs text-white/40 w-14">{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : ''}</span>
+          {/* One-click OPC <-> Quote: same document, quote framing, nothing lost. */}
+          <button
+            onClick={() => setDocType(isQuote ? 'opc' : 'quote')}
+            title={isQuote ? 'Turn this back into an Opinion of Probable Cost' : 'Turn this OPC into a formal Quote - keeps all the content'}
+            className="px-4 py-1.5 bg-emerald-600 text-white text-xs font-light tracking-architectural uppercase hover:bg-emerald-700 transition-colors"
+          >
+            {isQuote ? 'Turn into OPC' : 'Turn into Quote'}
+          </button>
           <SpellCheckButton
             getTexts={() => [
               stripProse(opc.intro ?? ''),
@@ -494,9 +532,9 @@ export default function OpcPage() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/formation-logo-white.svg" alt="Formation" className="absolute top-8 left-10 h-6 w-auto" />
         <div className="absolute bottom-12 left-10 right-10">
-          <p className="text-white/60 text-xs tracking-[0.25em] uppercase mb-3">Preliminary Pricing</p>
+          <p className="text-white/60 text-xs tracking-[0.25em] uppercase mb-3">{isQuote ? 'Quotation' : 'Preliminary Pricing'}</p>
           <h1 className="text-white font-light leading-tight mb-4" style={{ fontSize: 'clamp(32px, 4.5vw, 52px)', letterSpacing: '0.01em' }}>
-            Opinion of Probable Cost
+            {isQuote ? 'Quote' : 'Opinion of Probable Cost'}
           </h1>
           <p className="text-white/90 font-light text-xl mb-1">{clientName}</p>
           {clientAddress && <p className="text-white/70 font-light text-base">{clientAddress}</p>}
@@ -507,6 +545,9 @@ export default function OpcPage() {
             className="print:hidden mt-3 bg-transparent text-white/60 text-sm font-light border border-white/20 px-2 py-0.5 rounded-none outline-none [color-scheme:dark]"
           />
           <p className="hidden print:block text-white/60 text-sm font-light mt-3">{dateLabel}</p>
+          {isQuote && (
+            <p className="text-white/60 text-sm font-light mt-1">Quote no. {quoteNumber} &middot; Valid until {validUntilLabel}</p>
+          )}
         </div>
       </div>
 
@@ -780,12 +821,27 @@ export default function OpcPage() {
           </button>
         </div>
 
+        {/* Acceptance block - quote only */}
+        {isQuote && (
+          <div className="border border-gray-200 p-6 mb-8 opc-avoid-break">
+            <p className="text-2xs font-normal tracking-widest uppercase mb-5" style={{ color: MUTED }}>Acceptance</p>
+            <p className="text-xs font-light mb-8" style={{ color: BODY }}>
+              By signing below, you authorise Formation Landscapes Pty Ltd to proceed with the works described in this quote.
+            </p>
+            <div className="grid grid-cols-2 gap-8">
+              <div><div className="border-b border-gray-300 h-10 mb-1.5" /><p className="text-2xs font-light tracking-wide" style={{ color: MUTED }}>Client signature</p></div>
+              <div><div className="border-b border-gray-300 h-10 mb-1.5" /><p className="text-2xs font-light tracking-wide" style={{ color: MUTED }}>Date</p></div>
+              <div><div className="border-b border-gray-300 h-10 mb-1.5" /><p className="text-2xs font-light tracking-wide" style={{ color: MUTED }}>Print name</p></div>
+            </div>
+          </div>
+        )}
+
         {/* Closing block: disclaimer + get-in-touch + contact details */}
         <div className="border-t border-gray-200 pt-6 pb-2 opc-avoid-break">
           <p className="text-xs font-light italic mb-6" style={{ color: MUTED }}>
-            This Opinion of Probable Cost is preliminary pricing prepared from the design documentation
-            available at the date above. It is not a fixed-price quotation; a formal quote will follow
-            once the design and scope are finalised.
+            {isQuote
+              ? `This quote is fixed for the scope described and valid for 30 days from the date above. Prices are subject to change after this period or if the scope changes.`
+              : `This Opinion of Probable Cost is preliminary pricing prepared from the design documentation available at the date above. It is not a fixed-price quotation; a formal quote will follow once the design and scope are finalised.`}
           </p>
           <div className="flex items-end justify-between gap-6">
             <div>
