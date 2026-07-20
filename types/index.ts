@@ -231,6 +231,7 @@ export interface EstimateOpc {
   exclusions?: { title: string; blurb: string }[]  // "Excluded from Both Quotes" blocks
   excludedItems?: string[]            // per-job excluded items list (front fence, firepit, ...)
   valueManagement?: OpcValueOption[]  // value-engineering options with a cost saving each + a total
+  upgrades?: OpcUpgradeOption[]       // optional upgrades with an added cost each + a total
   docType?: 'opc' | 'quote'           // render the SAME document as an OPC or a formal Quote (default opc)
 }
 
@@ -241,6 +242,15 @@ export interface OpcValueOption {
   title: string      // e.g. "Substitute crazy paving for standard pavers"
   note?: string      // prose detail (HTML, same as the OPC scope fields)
   saving: number     // dollars saved ex GST
+}
+
+/** The mirror of a value-management option: an optional extra the client can add, with the cost it
+ *  adds. Kept separate from OpcValueOption so the dollar field is named for what it means. */
+export interface OpcUpgradeOption {
+  id: string
+  title: string      // e.g. "Upgrade to full automatic irrigation"
+  note?: string      // prose detail (HTML, same as the OPC scope fields)
+  amount: number     // extra cost ex GST
 }
 
 /** Reusable OPC scope-of-works prose block (the snippet library). */

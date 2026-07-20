@@ -289,6 +289,7 @@ export default function OpcPage() {
         exclusions: found.opc?.exclusions ?? DEFAULT_EXCLUSIONS,
         excludedItems: found.opc?.excludedItems ?? [],
         valueManagement: found.opc?.valueManagement ?? [],
+        upgrades: found.opc?.upgrades ?? [],
         docType,
       })
 
@@ -415,6 +416,7 @@ export default function OpcPage() {
       exclusions: (opc.exclusions ?? []).map(ex => ({ title: swap(ex.title), blurb: swap(ex.blurb) })),
       excludedItems: (opc.excludedItems ?? []).map(swap),
       valueManagement: (opc.valueManagement ?? []).map(v => ({ ...v, title: swap(v.title), note: swap(v.note ?? '') })),
+      upgrades: (opc.upgrades ?? []).map(u => ({ ...u, title: swap(u.title), note: swap(u.note ?? '') })),
     })
   }
 
@@ -467,6 +469,11 @@ export default function OpcPage() {
   const excludedItems = opc.excludedItems ?? []
   const valueManagement = opc.valueManagement ?? []
   const vmTotal = valueManagement.reduce((s, v) => s + (Number(v.saving) || 0), 0)
+  const upgrades = opc.upgrades ?? []
+  const upTotal = upgrades.reduce((s, u) => s + (Number(u.amount) || 0), 0)
+  // Both closing sections are optional and only print when they hold something, so the section
+  // number for upgrades shifts up when value management is empty (no gap in the printed doc).
+  const upgradesPrintNum = valueManagement.length > 0 ? '05' : '04'
 
   // Quote mode: the SAME document, framed as a formal quote (title, disclaimer, quote number,
   // valid-until, acceptance block) with none of the OPC content lost.
@@ -532,6 +539,7 @@ export default function OpcPage() {
               ...(opc.exclusions ?? []).flatMap(ex => [ex.title, stripProse(ex.blurb)]),
               ...(opc.excludedItems ?? []),
               ...(opc.valueManagement ?? []).flatMap(v => [v.title, stripProse(v.note ?? '')]),
+              ...(opc.upgrades ?? []).flatMap(u => [u.title, stripProse(u.note ?? '')]),
             ]}
             onReplace={replaceWord}
           />
@@ -785,6 +793,11 @@ export default function OpcPage() {
             Options to reduce the overall cost without compromising the outcome. Each can be taken up
             independently; the potential saving for each is shown below.
           </p>
+          {valueManagement.length === 0 && (
+            <p className="print:hidden text-2xs italic mb-4" style={{ color: MUTED }}>
+              Optional - this section is left out of the printed document while it is empty.
+            </p>
+          )}
 
           <div className="space-y-2 mb-4">
             {valueManagement.map(v => (
@@ -840,6 +853,83 @@ export default function OpcPage() {
             onClick={() => mutate(prev => ({ valueManagement: [...(prev.valueManagement ?? []), { id: generateId(), title: 'New value management option', note: '', saving: 0 }] }))}
             className="print:hidden flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 transition-colors">
             <Plus className="w-3 h-3" /> Add value management option
+          </button>
+        </div>
+
+        {/* ── UPGRADES ── the mirror of value management: optional extras the client can add, with
+            the cost each adds. Optional too, so it only prints when it holds something, and it
+            takes 04 when value management is empty. */}
+        <div className={`mb-10 opc-avoid-break ${upgrades.length === 0 ? 'print:hidden' : ''}`}>
+          <p className="text-2xs tracking-[0.25em] uppercase mb-2" style={{ color: GREEN }}>
+            <span className="print:hidden">05</span>
+            <span className="hidden print:inline">{upgradesPrintNum}</span>
+            {' '}&mdash; Upgrade Options
+          </p>
+          <div className="h-px w-16 mb-4" style={{ backgroundColor: GREEN }} />
+          <p className="text-xs font-light leading-relaxed mb-5 max-w-2xl" style={{ color: BODY }}>
+            Optional additions to the scope described above. Each can be taken up independently; the
+            additional cost for each is shown below.
+          </p>
+          {upgrades.length === 0 && (
+            <p className="print:hidden text-2xs italic mb-4" style={{ color: MUTED }}>
+              Optional - this section is left out of the printed document while it is empty.
+            </p>
+          )}
+
+          <div className="space-y-2 mb-4">
+            {upgrades.map(u => (
+              <div key={u.id} className="relative group flex items-start gap-4 px-4 py-3" style={{ backgroundColor: BG_WARM }}>
+                <button
+                  onClick={() => mutate(prev => ({ upgrades: (prev.upgrades ?? []).filter(x => x.id !== u.id) }))}
+                  title="Remove" className="print:hidden absolute top-2 right-2 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <X className="w-3 h-3" />
+                </button>
+                <div className="flex-1 min-w-0 pr-6">
+                  <input
+                    value={u.title}
+                    onChange={e => mutate(prev => ({ upgrades: (prev.upgrades ?? []).map(x => x.id === u.id ? { ...x, title: e.target.value } : x) }))}
+                    placeholder="Upgrade option"
+                    className="print:hidden w-full text-sm font-medium bg-transparent border border-transparent hover:border-gray-300 focus:border-gray-400 rounded-none outline-none mb-1"
+                    style={{ color: HEADING }}
+                  />
+                  <p className="hidden print:block text-sm font-medium mb-1" style={{ color: HEADING }}>{u.title}</p>
+                  <ProseField
+                    value={u.note ?? ''}
+                    onChange={val => mutate(prev => ({ upgrades: (prev.upgrades ?? []).map(x => x.id === u.id ? { ...x, note: val } : x) }))}
+                    placeholder="What the upgrade adds…"
+                    className="text-xs font-light leading-relaxed"
+                  />
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-2xs tracking-widest uppercase mb-0.5" style={{ color: MUTED }}>Add</p>
+                  <div className="flex items-baseline justify-end gap-0.5">
+                    <span className="text-sm font-normal" style={{ color: HEADING }}>+$</span>
+                    <input
+                      type="number" inputMode="decimal" value={u.amount || ''}
+                      onChange={e => { const n = Math.max(0, Number(e.target.value) || 0); mutate(prev => ({ upgrades: (prev.upgrades ?? []).map(x => x.id === u.id ? { ...x, amount: n } : x) })) }}
+                      placeholder="0"
+                      className="print:hidden w-20 text-right text-sm font-normal bg-transparent border-b border-gray-300 focus:border-gray-500 outline-none tabular-nums"
+                      style={{ color: HEADING }}
+                    />
+                    <span className="hidden print:inline text-sm font-normal tabular-nums" style={{ color: HEADING }}>{(u.amount || 0).toLocaleString('en-AU')}</span>
+                  </div>
+                  <p className="text-2xs font-light mt-0.5" style={{ color: MUTED }}>ex GST</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {upgrades.length > 0 && (
+            <div className="flex items-center justify-between px-5 py-3 mb-3" style={{ backgroundColor: HEADING }}>
+              <p className="text-sm font-normal text-white">Total if all upgrades taken</p>
+              <p className="text-lg font-semibold text-white tabular-nums">+{money(upTotal)} <span className="text-xs font-light text-white/60">ex GST</span></p>
+            </div>
+          )}
+
+          <button
+            onClick={() => mutate(prev => ({ upgrades: [...(prev.upgrades ?? []), { id: generateId(), title: 'New upgrade option', note: '', amount: 0 }] }))}
+            className="print:hidden flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 transition-colors">
+            <Plus className="w-3 h-3" /> Add upgrade option
           </button>
         </div>
 
