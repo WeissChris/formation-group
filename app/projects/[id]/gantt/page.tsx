@@ -25,10 +25,11 @@ import {
 } from '@/lib/utils'
 import { readLineItemRevenue, getEstimateContract, lineContractValue, emptyCostBreakdown, splitByShares, STD_LABOUR_RATE, type CostBreakdown } from '@/lib/estimateCalculations'
 import { normalizedPcts, rebalancedPcts, datedPeriodCount } from '@/lib/ganttAllocation'
-import { labourWorkingDays } from '@/lib/ganttSchedule'
+import { labourWorkingDays, workingDaysBetween } from '@/lib/ganttSchedule'
 import { vicPublicHolidayName } from '@/lib/publicHolidays'
 import { mapSubtaskTree, findSubtaskInTree, removeSubtaskFromTree, addChildSubtask, flattenSubtasks } from '@/lib/ganttSubtasks'
 import { plannedByWeek, entryClaimSegments, claimLeafSegments, segmentWeekShare, segmentWeekShares } from '@/lib/ganttForecast'
+import { projectSnapshot, clampOffset, shiftMap, applyShift, type ShiftSnapshot } from '@/lib/ganttShift'
 import { buildPhasedBudget, phasedBudgetToCsv } from '@/lib/xccBudget'
 import { loadCachedXeroAccounts } from '@/lib/xero'
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
@@ -706,6 +707,9 @@ export default function GanttPage() {
     // Set when dragging the category's roll-up summary bar: shift EVERY segment (own bar + all subtask
     // leaves) by the same offset from their snapshot, so the whole category slides together.
     rollup?: { segs: { id: string; start: string; end: string }[]; spanStart: string; spanEnd: string }
+    // Set when dragging the PROJECT bar: the same idea, but snapshotted across every entry, so a
+    // delayed kick-off moves the whole job in one drag.
+    project?: ShiftSnapshot
   } | null>(null)
 
   // Resizing state — dragging a bar's left (start) or right (end) edge to extend/shorten it.
@@ -1251,10 +1255,25 @@ export default function GanttPage() {
 
     // Handle moving
     if (moving) {
+      const offset = colIdx - moving.anchorColIdx
+
+      // Project drag: slide EVERY category by the same clamped offset, in one state update (calling
+      // updateEntry per entry would fire N renders mid-drag). A pure date shift changes no
+      // allocations, so recalcEntry isn't needed - the debounced autosave + syncForecast then move
+      // the revenue forecast and cash-flow with the job.
+      if (moving.project) {
+        const snap = moving.project
+        const clamped = clampOffset(colIndexForDate(snap.spanStart), colIndexForDate(snap.spanEnd), offset, colCount)
+        const moved = shiftMap(snap, clamped, colIndexForDate, dateForColIdx)
+        if (moved.size) {
+          hasUnsavedChangesRef.current = true
+          setEntries(prev => applyShift(prev, moved))
+        }
+        return
+      }
+
       const entry = entries.find(e => e.id === moving.entryId)
       if (!entry) return
-
-      const offset = colIdx - moving.anchorColIdx
 
       // Roll-up drag: slide the whole category. Clamp the offset by the group's full span (so nothing
       // leaves the window), then shift every snapshotted segment from its original by that offset.
@@ -1372,6 +1391,29 @@ export default function GanttPage() {
     const spanStart = segs.map(s => s.start).sort()[0]
     const spanEnd = segs.map(s => s.end).sort().slice(-1)[0]
     setMoving({ entryId: entry.id, segId: `${entry.id}-rollup`, anchorColIdx: colIdx, originalStart: spanStart, originalEnd: spanEnd, rollup: { segs, spanStart, spanEnd } })
+  }
+
+  // Grab the PROJECT bar to slide the entire job - every category, type line and subtask - by the
+  // same offset. This is the "kick-off pushed back a week" move: drag once, then set the baseline.
+  const handleProjectMouseDown = (e: React.MouseEvent, colIdx: number) => {
+    e.stopPropagation()
+    const snap = projectSnapshot(entries)
+    if (!snap) return
+    setMoving({
+      entryId: '', segId: 'project-rollup', anchorColIdx: colIdx,
+      originalStart: snap.spanStart, originalEnd: snap.spanEnd, project: snap,
+    })
+  }
+
+  /** Same move without the mouse - handy for "push it back 5 days" on a long job. */
+  const shiftProjectByCols = (cols: number) => {
+    const snap = projectSnapshot(entries)
+    if (!snap || !cols) return
+    const clamped = clampOffset(colIndexForDate(snap.spanStart), colIndexForDate(snap.spanEnd), cols, colCount)
+    const moved = shiftMap(snap, clamped, colIndexForDate, dateForColIdx)
+    if (!moved.size) return
+    hasUnsavedChangesRef.current = true
+    setEntries(prev => applyShift(prev, moved))
   }
 
   // Drag a bar's start/end edge to extend or shorten it (Instagantt-style). Stops propagation so it
@@ -1710,13 +1752,27 @@ export default function GanttPage() {
     try { localStorage.setItem(`fg_gantt_baselines_${id}`, JSON.stringify(list)) } catch { /* ignore */ }
     void upsertGanttBaselinesRemote(id, list)
   }
+  // Creep is always measured against the FIRST baseline, so appending is the safe default. The one
+  // exception is a job that hasn't started: a kick-off pushed back before anyone is on site is a
+  // genuine change of plan, not creep, so while the project is still pre-Active a new baseline
+  // REPLACES the anchor. Once it's Active the anchor is frozen and snapshots only ever append.
+  const canReanchorBaseline = project?.stage !== 'active' && project?.status !== 'complete' && project?.status !== 'invoiced'
   const handleSetBaseline = () => {
     const snap: BaselineSnap = { id: generateId(), capturedAt: new Date().toISOString(), entries: latestEntriesRef.current }
-    const list = [...baselines, snap]
+    const replacing = canReanchorBaseline && baselines.length > 0
+    if (replacing && !window.confirm(
+      'Replace the plan with the current schedule?\n\n' +
+      'The job has not started, so this resets the baseline every later delay is measured against. ' +
+      'Once it goes Active the baseline is frozen and further snapshots only get added alongside it.'
+    )) return
+    const list = replacing ? [snap] : [...baselines, snap]
     setBaselines(list)
     persistBaselines(list)
+    setLoadedBaselineId(replacing ? null : loadedBaselineId)
     setBaselineMenuOpen(false)
-    setSuccessMsg('Baseline saved — start dates now show slip against the latest snapshot')
+    setSuccessMsg(replacing
+      ? 'Plan reset — this schedule is now the baseline'
+      : 'Baseline saved — start dates now show slip against the latest snapshot')
     setTimeout(() => setSuccessMsg(''), 3000)
   }
   const handleLoadBaseline = (bid: string) => {
@@ -2102,6 +2158,13 @@ export default function GanttPage() {
 
   const fixedColsWidth = COL_CATEGORY + COL_BUDGET
   const tableWidth = fixedColsWidth + columns.length * CELL_W
+
+  // ── Whole-of-project bar ──────────────────────────────────────────────────
+  // One row above the categories spanning the entire job. Dragging it slides every category by the
+  // same offset, which is how a delayed kick-off is handled: drag once, then set the baseline.
+  const projectSnap = projectSnapshot(entries)
+  const baselineSnap = activeBaseline ? projectSnapshot(activeBaseline.entries) : null
+  const projectSlipDays = projectSnap && baselineSnap ? daysBetweenIso(baselineSnap.spanStart, projectSnap.spanStart) : 0
 
   // Sticky-left helper: the 2 fixed columns (Category/Budget) stay put while the grid scrolls horizontally
   // (Crew + Start/Duration removed to maximise grid space — Andrew). idx 0 = Category, 1 = Budget, 2 = a
@@ -2507,14 +2570,19 @@ export default function GanttPage() {
           <div className="relative">
             <button onClick={() => setBaselineMenuOpen(o => !o)}
               title="Baselines — snapshot the schedule, or load a previous one as a ghost overlay to compare"
-              className={`px-4 py-2 border text-xs font-light tracking-architectural uppercase transition-colors ${loadedBaselineId ? 'border-fg-heading text-fg-heading' : 'border-fg-border text-fg-muted hover:text-fg-heading hover:border-fg-heading'}`}>
-              Baseline{loadedBaselineId ? ' ●' : baselines.length ? ` (${baselines.length})` : ''} ▾
+              className={`px-4 py-2 border text-xs font-light tracking-architectural uppercase transition-colors ${
+                baselines.length === 0 ? 'border-amber-400/60 text-amber-400/90'
+                : loadedBaselineId ? 'border-fg-heading text-fg-heading'
+                : 'border-fg-border text-fg-muted hover:text-fg-heading hover:border-fg-heading'}`}>
+              Baseline{loadedBaselineId ? ' ●' : baselines.length ? ` (${baselines.length})` : ' !'} ▾
             </button>
             {baselineMenuOpen && (
               <div className="absolute right-0 mt-1 z-50 min-w-[240px] border border-fg-border bg-fg-bg shadow-lg text-xs font-light">
                 <button onClick={handleSetBaseline}
                   className="w-full text-left px-3 py-2 border-b border-fg-border/60 text-fg-heading hover:bg-fg-card/30 transition-colors">
-                  + Set {baselines.length ? 'new ' : ''}baseline <span className="text-fg-muted/60">(now)</span>
+                  {canReanchorBaseline && baselines.length > 0
+                    ? <>Reset the plan to this schedule <span className="text-fg-muted/60">(job not started)</span></>
+                    : <>+ Set {baselines.length ? 'new ' : ''}baseline <span className="text-fg-muted/60">(now)</span></>}
                 </button>
                 {baselines.length === 0 ? (
                   <div className="px-3 py-2 text-fg-muted/60 italic">No baselines yet</div>
@@ -2550,6 +2618,21 @@ export default function GanttPage() {
           <Link href="/revenue" className="text-xs font-light text-fg-heading underline">
             View Revenue Calendar →
           </Link>
+        </div>
+      )}
+
+      {/* An Active job with no baseline is measuring creep against nothing - the office had no
+          warning about this at all before, only the foreman's cockpit did. */}
+      {!siteMode && !clientPrint && baselines.length === 0 && project?.stage === 'active' && entries.length > 0 && (
+        <div className="mb-4 px-3 py-2.5 border border-amber-400/50 bg-amber-400/5 flex items-center justify-between gap-4 flex-wrap">
+          <p className="text-xs font-light text-amber-400/90">
+            No baseline captured for this job - timeline creep is not being tracked, and the foreman&apos;s
+            score can&apos;t include schedule slip.
+          </p>
+          <button onClick={handleSetBaseline}
+            className="px-3 py-1 border border-amber-400/60 text-amber-400/90 text-2xs font-light tracking-architectural uppercase hover:bg-amber-400/10 transition-colors whitespace-nowrap">
+            Set baseline now
+          </button>
         </div>
       )}
 
@@ -2799,6 +2882,70 @@ export default function GanttPage() {
             </thead>
 
             <tbody>
+              {/* ── Whole project ── one bar for the entire job; drag it to move the kick-off. */}
+              {projectSnap && (
+                <tr className="border-b-2 border-fg-border">
+                  <td className="border-r border-fg-border bg-fg-card/40 pl-2 pr-1.5 py-2 align-middle"
+                    style={{ width: COL_CATEGORY, ...stickyL(0) }}>
+                    <p className="text-xs font-semibold text-fg-heading truncate">{project?.name || 'Whole project'}</p>
+                    <p className="text-2xs text-fg-muted">
+                      {new Date(`${projectSnap.spanStart}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                      {' - '}
+                      {new Date(`${projectSnap.spanEnd}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' })}
+                      {' · '}{workingDaysBetween(projectSnap.spanStart, projectSnap.spanEnd)} working days
+                      {projectSlipDays !== 0 && (
+                        <span className={projectSlipDays > 0 ? 'text-amber-600' : 'text-green-700'}>
+                          {' · '}{projectSlipDays > 0 ? '+' : ''}{projectSlipDays}d vs baseline
+                        </span>
+                      )}
+                    </p>
+                  </td>
+                  <td className="border-r border-fg-border bg-fg-card/40 px-2 py-2 align-middle"
+                    style={{ width: COL_BUDGET, ...stickyL(1) }}>
+                    {!clientPrint && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-2xs text-fg-muted">Shift</span>
+                        <button onClick={() => shiftProjectByCols(-1)} title="Bring the whole job forward one column"
+                          className="px-1.5 border border-fg-border text-2xs leading-4 hover:border-fg-heading">&minus;</button>
+                        <button onClick={() => shiftProjectByCols(1)} title="Push the whole job back one column"
+                          className="px-1.5 border border-fg-border text-2xs leading-4 hover:border-fg-heading">+</button>
+                        <button onClick={() => shiftProjectByCols(timeView === 'weeks' ? 1 : 5)}
+                          title="Push the whole job back a week"
+                          className="px-1.5 border border-fg-border text-2xs leading-4 hover:border-fg-heading">+1wk</button>
+                      </div>
+                    )}
+                  </td>
+                  {columns.map((col, i) => {
+                    const iso = toISODate(col)
+                    const inSpan = iso >= projectSnap.spanStart && iso <= projectSnap.spanEnd
+                    const isStart = iso === projectSnap.spanStart
+                    const isEnd = iso === projectSnap.spanEnd
+                    const ghost = baselineSnap && iso >= baselineSnap.spanStart && iso <= baselineSnap.spanEnd
+                    return (
+                      <td key={i} style={{ width: CELL_W, minWidth: CELL_W, padding: 0, position: 'relative', borderLeft: colBorderLeft(i), backgroundColor: '#FFFFFF' }}
+                        className={`gantt-cell border-r ${timeView === 'weeks' ? 'border-fg-border/55' : 'border-fg-border/25'}`}
+                        onMouseEnter={() => handleCellMouseEnter('', i)}>
+                        {ghost && (
+                          <div className="absolute inset-x-0 top-0.5 h-1 pointer-events-none" title="Baseline"
+                            style={{ background: '#DEEBF7', opacity: 0.9 }} />
+                        )}
+                        {inSpan && (
+                          <div
+                            onMouseDown={e => handleProjectMouseDown(e, i)}
+                            title={`${project?.name || 'Project'} - drag to move the whole job`}
+                            className="absolute inset-y-1.5 cursor-grab active:cursor-grabbing"
+                            style={{
+                              left: isStart ? 2 : 0, right: isEnd ? 2 : 0, background: '#3D5A3A',
+                              borderRadius: isStart && isEnd ? 3 : isStart ? '3px 0 0 3px' : isEnd ? '0 3px 3px 0' : 0,
+                            }}
+                          />
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
+              )}
+
               {categories.map(cat => {
                 const entry = entries.find(e => e.category === cat.category) ?? {
                   id: generateId(), projectId: id, estimateId: estimate.id, category: cat.category,

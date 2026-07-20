@@ -25,6 +25,14 @@ export default function VariationApprovalPage() {
       setLoading(false)
       if (v?.status === 'accepted') setDone('approved')
       else if (v?.status === 'declined') setDone('rejected')
+      // Read receipt: lets the office and the foreman who raised it see the client has opened this.
+      // Best-effort and idempotent server-side, so a failure here must never block the page.
+      else if (v) {
+        void fetch('/api/variations/viewed', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ acceptanceToken: token }),
+        }).catch(() => undefined)
+      }
     })()
     return () => { cancelled = true }
   }, [token])

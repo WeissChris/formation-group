@@ -11,7 +11,7 @@ import {
   loadProgressPaymentStages, saveProject,
   loadSubcontractors,
 } from '@/lib/storage'
-import { getProjects, reconcileVariations, upsertProject, deleteProjectAsync, upsertSubcontractor, deleteSubcontractorAsync, upsertGanttBaselinesRemote } from '@/lib/storageAsync'
+import { getProjects, reconcileVariations, upsertProject, deleteProjectAsync, upsertSubcontractor, deleteSubcontractorAsync, upsertGanttBaselinesRemote, getGanttBaselinesRemote } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { uploadAttachment, openAttachment, safeFileName } from '@/lib/attachments'
 import { getEstimateTotals, variationContractValue, estimateLabourHours, activeLineItems, STD_LABOUR_RATE, costBreakdown } from '@/lib/estimateCalculations'
@@ -1151,7 +1151,7 @@ export default function ProjectDetailPage() {
     })
   }
 
-  const handleStageChange = (newStage: ProjectStage) => {
+  const handleStageChange = async (newStage: ProjectStage) => {
     if (!project) return
     const warning = PROGRESSION_WARNINGS[newStage]
     if (warning) {
@@ -1177,16 +1177,38 @@ export default function ProjectDetailPage() {
     // immovable reference the creep tracking measures against - captured automatically so it never
     // relies on someone remembering to click "Set baseline". Later snapshots are appended, never
     // overwriting this first one.
-    if (newStage === 'active' && ganttEntries.length > 0) {
+    //
+    // The REMOTE row is the authority: the local key is per-browser, so on a second device an empty
+    // local list used to look like "no baseline" and re-write index 0, silently moving the goalpost.
+    if (newStage === 'active') {
+      const key = `fg_gantt_baselines_${project.id}`
+      let localList: unknown[] = []
       try {
-        const key = `fg_gantt_baselines_${project.id}`
-        const existing = JSON.parse(localStorage.getItem(key) || '[]')
-        if (!Array.isArray(existing) || existing.length === 0) {
-          const list = [{ id: generateId(), capturedAt: new Date().toISOString(), entries: ganttEntries }]
-          try { localStorage.setItem(key, JSON.stringify(list)) } catch { /* ignore */ }
-          void upsertGanttBaselinesRemote(project.id, list)
-        }
+        const parsed = JSON.parse(localStorage.getItem(key) || '[]')
+        if (Array.isArray(parsed)) localList = parsed
       } catch { /* ignore */ }
+      const remoteList = await getGanttBaselinesRemote(project.id)
+
+      if (remoteList.length > 0) {
+        // Already anchored elsewhere - adopt it locally rather than starting a competing list.
+        if (localList.length === 0) {
+          try { localStorage.setItem(key, JSON.stringify(remoteList)) } catch { /* ignore */ }
+        }
+      } else if (localList.length > 0) {
+        void upsertGanttBaselinesRemote(project.id, localList)   // local-only: push it up
+      } else if (ganttEntries.length > 0) {
+        if (!window.confirm(
+          'Set the original baseline for this job now?\n\n' +
+          'It freezes today\'s schedule as the plan every later delay is measured against, and it ' +
+          'cannot be reset once the job is Active. Cancel if the programme is not final yet.'
+        )) return
+        const list = [{ id: generateId(), capturedAt: new Date().toISOString(), entries: ganttEntries }]
+        try { localStorage.setItem(key, JSON.stringify(list)) } catch { /* ignore */ }
+        void upsertGanttBaselinesRemote(project.id, list)
+      } else if (!window.confirm(
+        'This job has no schedule on the gantt yet, so no baseline can be captured and timeline ' +
+        'creep will not be tracked.\n\nStart it anyway?'
+      )) return
     }
 
     const newChecklist = buildChecklist(newStage)

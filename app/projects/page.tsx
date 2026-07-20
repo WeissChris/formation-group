@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { loadProjects, loadGanttEntries, saveProject, loadSupervisors } from '@/lib/storage'
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
-import { getProjects, getSupervisors, upsertProject } from '@/lib/storageAsync'
+import { getProjects, getSupervisors, upsertProject, getProjectIdsWithBaselines } from '@/lib/storageAsync'
 import { STAGE_LABELS, STAGE_COLOURS } from '@/lib/stageConfig'
 import { scheduleStatus, healthColour, healthBg, getForecastCompletion, getForecastStart } from '@/lib/projectHealth'
 import { supervisorColourByName, UNASSIGNED_COLOUR } from '@/lib/supervisors'
@@ -48,6 +48,9 @@ function ProjectsInner() {
   const [search, setSearch] = useState('')
   const [entityFilter, setEntityFilter] = useState<EntityType | 'all'>(entityParam ?? 'all')
   const [supervisors, setSupervisors] = useState<Supervisor[]>([])
+  // Which projects have a gantt baseline. Read remotely, not from localStorage - baselines are set
+  // on whichever machine built the programme, so a local-only check would flag half the list.
+  const [baselined, setBaselined] = useState<Set<string> | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -69,6 +72,7 @@ function ProjectsInner() {
       setGanttByProject(map)
       setSupervisors(loadSupervisors())
       try { const sups = await getSupervisors(); if (!cancelled) setSupervisors(sups) } catch { /* keep local */ }
+      try { const b = await getProjectIdsWithBaselines(); if (!cancelled) setBaselined(b) } catch { /* skip the flag */ }
     })()
     return () => { cancelled = true }
   }, [])
@@ -220,6 +224,13 @@ function ProjectsInner() {
                     {p.stage && (
                       <span className={`text-2xs px-1.5 py-0.5 rounded-sm font-medium uppercase tracking-wide ${STAGE_COLOURS[p.stage as ProjectStage]}`}>
                         {STAGE_LABELS[p.stage as ProjectStage]}
+                      </span>
+                    )}
+                    {/* Running with no baseline = creep isn't being measured against anything. */}
+                    {p.stage === 'active' && baselined && !baselined.has(p.id) && (
+                      <span title="No gantt baseline - timeline creep is not being tracked"
+                        className="text-2xs px-1.5 py-0.5 rounded-sm font-medium uppercase tracking-wide bg-amber-400/15 text-amber-400/90">
+                        No baseline
                       </span>
                     )}
                   </div>

@@ -11,8 +11,9 @@ import { upsertEstimate, upsertProgressClaim, deleteProgressClaimAsync } from '@
 import { createXeroDraftInvoice } from '@/lib/xero'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { getEstimateTotals, getEstimateContract, readLineItemRevenue, activeLineItems, lineContractValue, variationContractValue } from '@/lib/estimateCalculations'
+import { variationStage, isAwaitingOffice, type VariationStage } from '@/lib/variationStatus'
 import type { ProgressPaymentStage, Estimate, WeeklyActual, ProgressClaim, ProgressClaimLineItem, EntityType } from '@/types'
-import { Plus, X, FileText, Receipt, GitBranch, Eye, Check, ChevronRight, ArrowLeft } from 'lucide-react'
+import { Plus, X, FileText, Receipt, GitBranch, Eye, Check, ChevronRight, ArrowLeft, Send } from 'lucide-react'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -23,22 +24,11 @@ function formatDateShort(dateStr: string | undefined): string {
   return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-function mapVariationStatus(status: Estimate['status']): string {
-  switch (status) {
-    case 'sent': return 'SUBMITTED'
-    case 'accepted': return 'APPROVED'
-    case 'declined': return 'REJECTED'
-    case 'variation':
-    case 'draft':
-    default: return 'DRAFT'
-  }
-}
-
-function variationStatusColor(status: Estimate['status']): string {
-  switch (status) {
-    case 'accepted': return 'text-green-400/80 border-green-400/40'
-    case 'sent': return 'text-blue-400/80 border-blue-400/40'
-    case 'declined': return 'text-red-400/80 border-red-400/40'
+function variationStatusColor(stage: VariationStage): string {
+  switch (stage.level) {
+    case 'green': return 'text-green-400/80 border-green-400/40'
+    case 'red': return 'text-red-400/80 border-red-400/40'
+    case 'amber': return 'text-amber-400/80 border-amber-400/40'
     default: return 'text-fg-muted border-fg-border'
   }
 }
@@ -1033,7 +1023,63 @@ function VariationsSubTab({
   onVariationsChange: () => void
 }) {
   const router = useRouter()
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [queueMsg, setQueueMsg] = useState('')
 
+  // Foreman-raised variations waiting on Chris. Nothing has left the building until he approves one.
+  const awaiting = variations.filter(isAwaitingOffice)
+
+  /** Patch the local copy so the table reflects the server write without waiting for a sync pull. */
+  const patchLocal = (id: string, patch: Partial<Estimate>) => {
+    const all = loadEstimates()
+    const idx = all.findIndex(e => e.id === id)
+    if (idx < 0) return
+    all[idx] = { ...all[idx], ...patch, updatedAt: new Date().toISOString() }
+    void upsertEstimate(all[idx])
+  }
+
+  /** Approve + release to the client: mints the token, sends the branded email, flips to 'sent'. */
+  const handleApproveAndSend = async (v: Estimate) => {
+    if (!confirm(`Approve VMO-${v.variationNumber ?? '?'} and email it to the client for approval?`)) return
+    setBusyId(v.id); setQueueMsg('')
+    const res = await fetch(`/api/variations/${v.id}/approve`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+    })
+    const body = await res.json().catch(() => ({}))
+    setBusyId(null)
+    if (!res.ok) {
+      setQueueMsg(body.error === 'no_client_email'
+        ? 'This project has no client email on file - add one on the project before sending.'
+        : `Could not send: ${body.error || 'unknown error'}`)
+      return
+    }
+    patchLocal(v.id, {
+      status: 'sent', sentAt: body.officeApprovedAt, officeApprovedAt: body.officeApprovedAt,
+      acceptanceToken: body.acceptanceToken, officeRejectedAt: undefined, officeRejectReason: undefined,
+    })
+    setQueueMsg(body.emailed
+      ? `Sent to ${body.clientEmail} for approval.`
+      : `Approved, but the email did not send (${body.emailError || 'unknown'}). Share this link: ${body.approvalUrl}`)
+    onVariationsChange()
+  }
+
+  /** Send it back to the foreman for changes. The client never sees it. */
+  const handleRequestChanges = async (v: Estimate) => {
+    const reason = prompt(`What needs changing on VMO-${v.variationNumber ?? '?'}? (the foreman sees this)`)
+    if (!reason?.trim()) return
+    setBusyId(v.id); setQueueMsg('')
+    const res = await fetch(`/api/variations/${v.id}/reject`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() }),
+    })
+    const body = await res.json().catch(() => ({}))
+    setBusyId(null)
+    if (!res.ok) { setQueueMsg(`Could not send it back: ${body.error || 'unknown error'}`); return }
+    patchLocal(v.id, { status: 'draft', officeRejectedAt: body.officeRejectedAt, officeRejectReason: reason.trim() })
+    setQueueMsg(`Sent back to ${v.raisedBy || 'the foreman'} for changes.`)
+    onVariationsChange()
+  }
+
+  /** Office-only shortcut: mark an office-created variation accepted without the client flow. */
   const handleApprove = (v: Estimate) => {
     const all = loadEstimates()
     const idx = all.findIndex(e => e.id === v.id)
@@ -1099,6 +1145,59 @@ function VariationsSubTab({
 
   return (
     <div>
+      {/* Foreman approval queue — the ONLY thing standing between a site-raised VMO and the client. */}
+      {awaiting.length > 0 && (
+        <div className="mb-6 border border-amber-400/40 bg-amber-400/5">
+          <div className="px-4 py-2.5 border-b border-amber-400/25">
+            <p className="text-2xs font-light tracking-architectural uppercase text-amber-400/90">
+              Awaiting your approval &middot; {awaiting.length}
+            </p>
+          </div>
+          <ul>
+            {awaiting.map(v => (
+              <li key={v.id} className="px-4 py-3 border-b border-amber-400/15 last:border-b-0">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-light text-fg-heading">
+                      <span className="text-amber-400/80">VMO-{v.variationNumber ?? '?'}</span>
+                      {v.raisedBy ? <span className="text-fg-muted"> &middot; raised by {v.raisedBy}</span> : null}
+                      {v.submittedAt ? <span className="text-fg-muted"> &middot; {formatDateShort(v.submittedAt)}</span> : null}
+                    </p>
+                    <p className="text-xs font-light text-fg-muted mt-1">{v.variationReason || v.name || '-'}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs font-light tabular-nums text-green-400/80">
+                      +{formatCurrency(variationContractValue(v))}
+                    </span>
+                    <Link
+                      href={`/estimates/${v.id}`}
+                      className="flex items-center gap-1 text-2xs font-light tracking-wide uppercase text-fg-muted border border-fg-border px-2 py-0.5 hover:text-fg-heading hover:border-fg-heading transition-colors whitespace-nowrap"
+                    >
+                      <Eye className="w-2.5 h-2.5" /> Open
+                    </Link>
+                    <button
+                      onClick={() => handleRequestChanges(v)}
+                      disabled={busyId === v.id}
+                      className="flex items-center gap-1 text-2xs font-light tracking-wide uppercase text-red-400/80 border border-red-400/40 px-2 py-0.5 hover:bg-red-400/10 transition-colors whitespace-nowrap disabled:opacity-40"
+                    >
+                      <X className="w-2.5 h-2.5" /> Request changes
+                    </button>
+                    <button
+                      onClick={() => handleApproveAndSend(v)}
+                      disabled={busyId === v.id}
+                      className="flex items-center gap-1 text-2xs font-light tracking-wide uppercase text-green-400/80 border border-green-400/40 px-2 py-0.5 hover:bg-green-400/10 transition-colors whitespace-nowrap disabled:opacity-40"
+                    >
+                      <Send className="w-2.5 h-2.5" /> {busyId === v.id ? 'Sending...' : 'Approve & send'}
+                    </button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {queueMsg && <p className="text-xs font-light text-fg-muted mb-4 break-all">{queueMsg}</p>}
+
       <div className="flex items-baseline justify-between mb-6">
         <p className="text-xs font-light tracking-wide text-fg-muted">
           {variations.length} variation{variations.length !== 1 ? 's' : ''}
@@ -1123,7 +1222,7 @@ function VariationsSubTab({
             <table className="w-full border-collapse">
               <thead>
                 <tr className="border-b border-fg-border">
-                  {['VMO #', 'Description', 'Status', 'Amount', 'Date', 'Actions'].map(h => (
+                  {['VMO #', 'Description', 'Raised by', 'Status', 'Amount', 'Date', 'Actions'].map(h => (
                     <th key={h} className="pb-3 pr-4 text-left text-2xs font-light tracking-architectural uppercase text-fg-muted whitespace-nowrap last:pr-0">
                       {h}
                     </th>
@@ -1135,8 +1234,8 @@ function VariationsSubTab({
                   .sort((a, b) => (a.variationNumber ?? 0) - (b.variationNumber ?? 0))
                   .map(v => {
                     const totals = getEstimateTotals(v)
-                    const statusLabel = mapVariationStatus(v.status)
-                    const statusColor = variationStatusColor(v.status)
+                    const stage = variationStage(v)
+                    const statusColor = variationStatusColor(stage)
                     return (
                       <tr key={v.id} className="border-b border-fg-border/40 group">
                         <td className="py-3 pr-4 text-xs font-light text-amber-400/80 whitespace-nowrap">
@@ -1145,9 +1244,15 @@ function VariationsSubTab({
                         <td className="py-3 pr-4 text-xs font-light text-fg-heading max-w-[220px]">
                           {v.variationReason || v.name || '—'}
                         </td>
+                        <td className="py-3 pr-4 text-xs font-light text-fg-muted whitespace-nowrap">
+                          {v.raisedBy || 'Office'}
+                        </td>
                         <td className="py-3 pr-4">
-                          <span className={`text-2xs font-light tracking-wide uppercase border rounded-sm px-1.5 py-0.5 whitespace-nowrap ${statusColor}`}>
-                            {statusLabel}
+                          <span
+                            className={`text-2xs font-light tracking-wide uppercase border rounded-sm px-1.5 py-0.5 whitespace-nowrap ${statusColor}`}
+                            title={stage.key === 'changes' ? v.officeRejectReason : undefined}
+                          >
+                            {stage.label}
                           </span>
                         </td>
                         <td className="py-3 pr-4 text-xs font-light tabular-nums whitespace-nowrap">
@@ -1166,21 +1271,26 @@ function VariationsSubTab({
                             >
                               <Eye className="w-2.5 h-2.5" /> View
                             </Link>
-                            {(v.status === 'variation' || v.status === 'draft' || v.status === 'sent') && (
-                              <button
-                                onClick={() => handleApprove(v)}
-                                className="flex items-center gap-1 text-2xs font-light tracking-wide uppercase text-green-400/80 border border-green-400/40 px-2 py-0.5 hover:bg-green-400/10 transition-colors whitespace-nowrap"
-                              >
-                                <Check className="w-2.5 h-2.5" /> Approve
-                              </button>
-                            )}
-                            {(v.status === 'variation' || v.status === 'draft' || v.status === 'sent') && (
-                              <button
-                                onClick={() => handleReject(v)}
-                                className="flex items-center gap-1 text-2xs font-light tracking-wide uppercase text-red-400/80 border border-red-400/40 px-2 py-0.5 hover:bg-red-400/10 transition-colors whitespace-nowrap"
-                              >
-                                <X className="w-2.5 h-2.5" /> Reject
-                              </button>
+                            {/* Manual office-side status flips. A foreman-submitted variation is
+                                handled by the approval queue above (which is what actually emails
+                                the client), so these only show once it is out of that queue. */}
+                            {!isAwaitingOffice(v) && (v.status === 'variation' || v.status === 'draft' || v.status === 'sent') && (
+                              <>
+                                <button
+                                  onClick={() => handleApprove(v)}
+                                  title="Record it as approved without going through the client's digital approval"
+                                  className="flex items-center gap-1 text-2xs font-light tracking-wide uppercase text-green-400/80 border border-green-400/40 px-2 py-0.5 hover:bg-green-400/10 transition-colors whitespace-nowrap"
+                                >
+                                  <Check className="w-2.5 h-2.5" /> Mark approved
+                                </button>
+                                <button
+                                  onClick={() => handleReject(v)}
+                                  title="Record it as rejected"
+                                  className="flex items-center gap-1 text-2xs font-light tracking-wide uppercase text-red-400/80 border border-red-400/40 px-2 py-0.5 hover:bg-red-400/10 transition-colors whitespace-nowrap"
+                                >
+                                  <X className="w-2.5 h-2.5" /> Mark rejected
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>

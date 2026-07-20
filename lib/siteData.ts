@@ -146,28 +146,40 @@ export async function getSiteBaseline(id: string): Promise<SiteBaseline | null> 
 
 // ── Subbie bookings (booked tick + append-only time-stamped comment log per category) ─
 export interface BookingComment { text: string; by: string; at: string }
-export interface SubbieBooking { category: string; booked: boolean; comments: BookingComment[]; updatedAt?: string }
+export interface SubbieBooking {
+  category: string; booked: boolean; comments: BookingComment[]
+  subbieId?: string | null   // explicit link to a subcontractor package (migration 41)
+  updatedAt?: string
+}
 export async function getSiteBookings(id: string): Promise<SubbieBooking[]> {
   const d = await getJson<{ ok: boolean; bookings: SubbieBooking[] }>(`/api/site/projects/${id}/bookings`)
   return d?.bookings ?? []
 }
-export async function saveSiteBooking(id: string, payload: { category: string; booked?: boolean; addComment?: string }): Promise<boolean> {
+export async function saveSiteBooking(
+  id: string, payload: { category: string; booked?: boolean; addComment?: string; subbieId?: string },
+): Promise<boolean> {
   const res = await fetch(`/api/site/projects/${id}/bookings`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   })
   return res.ok
 }
 
-// ── Variations (foreman-raised, capped $1000, client digital approval) ───────────
+// ── Variations (foreman drafts -> office approves -> client approves digitally) ───
 export interface SiteVariation {
   id: string
   number: number
   reason: string
   amount: number
-  status: string   // 'sent' -> pending; 'accepted'; 'declined'
+  status: string   // 'draft' -> with the office; 'sent' -> with the client; 'accepted'; 'declined'
   acceptedByName?: string
   acceptedAt?: string | null
   declinedAt?: string | null
+  raisedBy?: string
+  submittedAt?: string | null
+  officeApprovedAt?: string | null
+  officeRejectedAt?: string | null
+  officeRejectReason?: string
+  firstViewedAt?: string | null
   approvalUrl?: string | null
 }
 export async function getSiteVariations(id: string): Promise<SiteVariation[]> {
@@ -175,14 +187,27 @@ export async function getSiteVariations(id: string): Promise<SiteVariation[]> {
   return d?.variations ?? []
 }
 export async function createSiteVariation(id: string, payload: { description: string; amount: number }): Promise<
-  { ok: true; variation: SiteVariation; emailed: boolean; dryRun: boolean; clientEmail: string | null } |
-  { ok: false; error: string; cap?: number }
+  { ok: true; variation: SiteVariation } | { ok: false; error: string }
 > {
   const res = await fetch(`/api/site/projects/${id}/variations`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   })
   const body = await res.json().catch(() => ({}))
-  return res.ok ? body : { ok: false, error: body.error || 'failed', cap: body.cap }
+  return res.ok ? body : { ok: false, error: body.error || 'failed' }
+}
+/** Edit + resend a draft the office bounced back. Refused once the office has released it. */
+export async function updateSiteVariation(
+  id: string, payload: { id: string; description?: string; amount?: number },
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`/api/site/projects/${id}/variations`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  })
+  const body = await res.json().catch(() => ({}))
+  return res.ok ? { ok: true } : { ok: false, error: body.error || 'failed' }
+}
+export async function deleteSiteVariation(id: string, variationId: string): Promise<boolean> {
+  const res = await fetch(`/api/site/projects/${id}/variations?vid=${encodeURIComponent(variationId)}`, { method: 'DELETE' })
+  return res.ok
 }
 
 /** Foreman safety writes (toolbox / incident / swms_ack) - see the route for shapes. */
@@ -323,6 +348,37 @@ export async function saveSiteMaterials(id: string, materials: SiteMaterial[]): 
   const res = await fetch(`/api/site/projects/${id}/materials`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ materials }),
   })
+  return res.ok
+}
+
+/**
+ * Attach a supplier quote to a material. Mints a signed upload URL server-side then pushes the file
+ * bytes straight to Storage (bypassing the Vercel function-body limit), mirroring uploadSitePlan.
+ * Returns the stored object path, or null on any failure.
+ */
+export async function uploadMaterialQuote(id: string, materialId: string, file: File): Promise<string | null> {
+  if (!supabase) return null
+  const res = await fetch(`/api/site/projects/${id}/materials/quotes`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ materialId, fileName: file.name }),
+  })
+  if (!res.ok) return null
+  const { path, token } = await res.json() as { path: string; token: string }
+  const { error } = await supabase.storage.from('material-quotes').uploadToSignedUrl(path, token, file)
+  return error ? null : path
+}
+
+/** Open a stored quote in a new tab via a short-lived signed URL. */
+export async function openMaterialQuote(id: string, path: string): Promise<boolean> {
+  const d = await getJson<{ ok: boolean; url: string }>(
+    `/api/site/projects/${id}/materials/quotes?path=${encodeURIComponent(path)}`)
+  if (!d?.ok || !d.url) return false
+  window.open(d.url, '_blank', 'noopener')
+  return true
+}
+
+export async function deleteMaterialQuote(id: string, path: string): Promise<boolean> {
+  const res = await fetch(`/api/site/projects/${id}/materials/quotes?path=${encodeURIComponent(path)}`, { method: 'DELETE' })
   return res.ok
 }
 

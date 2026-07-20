@@ -411,12 +411,21 @@ export async function upsertEstimate(estimate: Estimate): Promise<void> {
     // Don't downgrade a variation the client already responded to. Approval/rejection is written
     // straight to Supabase from the public page; if our local copy is still 'sent', pull the client's
     // response down first so this push can't clobber it. (Only 'sent' variations can be responded to.)
-    if (fresh.parentEstimateId && fresh.status === 'sent') {
+    if (fresh.parentEstimateId && (fresh.status === 'sent' || fresh.status === 'draft')) {
       const { data: remote } = await supabase
         .from('fg_estimates')
-        .select('status, accepted_at, accepted_by_name, archived, declined_at, declined_by_name')
+        .select('status, accepted_at, accepted_by_name, archived, declined_at, declined_by_name, first_viewed_at, raised_by, submitted_at')
         .eq('id', fresh.id)
         .maybeSingle()
+      // The foreman's cockpit and the client's page both write straight to Supabase via the service
+      // role, so these fields never originate locally - adopt them before pushing, never overwrite.
+      if (remote) {
+        const adopt: Partial<Estimate> = {}
+        if (remote.first_viewed_at && !fresh.firstViewedAt) adopt.firstViewedAt = remote.first_viewed_at as string
+        if (remote.raised_by && !fresh.raisedBy) adopt.raisedBy = remote.raised_by as string
+        if (remote.submitted_at && remote.submitted_at !== fresh.submittedAt) adopt.submittedAt = remote.submitted_at as string
+        if (Object.keys(adopt).length) { fresh = { ...fresh, ...adopt }; saveEstimate(fresh) }
+      }
       if (remote && remote.status === 'accepted') {
         fresh = { ...fresh, status: 'accepted', acceptedAt: (remote.accepted_at as string) ?? fresh.acceptedAt, acceptedByName: (remote.accepted_by_name as string) ?? fresh.acceptedByName, archived: false }
         saveEstimate(fresh)
@@ -456,6 +465,12 @@ export async function upsertEstimate(estimate: Estimate): Promise<void> {
       declined_at: fresh.declinedAt ?? null,
       declined_by_name: fresh.declinedByName ?? null,
       archived: fresh.archived ?? false,
+      first_viewed_at: fresh.firstViewedAt ?? null,
+      raised_by: fresh.raisedBy ?? null,
+      submitted_at: fresh.submittedAt ?? null,
+      office_approved_at: fresh.officeApprovedAt ?? null,
+      office_rejected_at: fresh.officeRejectedAt ?? null,
+      office_reject_reason: fresh.officeRejectReason ?? null,
       opc: fresh.opc ?? null,
       notes: fresh.notes,
       updated_at: fresh.updatedAt ?? new Date().toISOString(),
@@ -925,6 +940,31 @@ export async function upsertGanttBaselinesRemote(projectId: string, baselines: u
   }
 }
 
+/**
+ * A project's baseline list from Supabase. The local key is per-browser, so "no local baselines"
+ * does NOT mean none was ever set — a second device would otherwise re-write index 0 and wash the
+ * creep anchor away. Check here before capturing an original baseline.
+ */
+export async function getGanttBaselinesRemote(projectId: string): Promise<unknown[]> {
+  if (!isSupabaseConfigured() || !supabase) return []
+  const { data } = await supabase.from('fg_gantt_baselines')
+    .select('baselines').eq('project_id', projectId).maybeSingle()
+  const list = data?.baselines
+  return Array.isArray(list) ? list : []
+}
+
+/** Project ids that have at least one gantt baseline - drives the "no baseline" flag on the list. */
+export async function getProjectIdsWithBaselines(): Promise<Set<string>> {
+  const out = new Set<string>()
+  if (!isSupabaseConfigured() || !supabase) return out
+  const { data } = await supabase.from('fg_gantt_baselines').select('project_id, baselines')
+  for (const r of data ?? []) {
+    const list = (r as { baselines?: unknown }).baselines
+    if (Array.isArray(list) && list.length > 0) out.add((r as { project_id: string }).project_id)
+  }
+  return out
+}
+
 /** All projects' milestone arrays — used by the gantt/programme mounts + login hydrate to restore. */
 export async function getAllGanttMilestones(): Promise<{ projectId: string; milestones: Milestone[] }[]> {
   if (isSupabaseConfigured() && supabase) {
@@ -1043,6 +1083,12 @@ export function mapEstimate(row: Record<string, unknown>): Estimate {
     declinedAt: (row.declined_at as string | null) || undefined,
     declinedByName: (row.declined_by_name as string | null) || undefined,
     archived: (row.archived as boolean) || undefined,
+    firstViewedAt: (row.first_viewed_at as string | null) || undefined,
+    raisedBy: (row.raised_by as string | null) || undefined,
+    submittedAt: (row.submitted_at as string | null) || undefined,
+    officeApprovedAt: (row.office_approved_at as string | null) || undefined,
+    officeRejectedAt: (row.office_rejected_at as string | null) || undefined,
+    officeRejectReason: (row.office_reject_reason as string | null) || undefined,
     opc: (row.opc as Estimate['opc']) || undefined,
     notes: row.notes as string | undefined,
     createdAt: row.created_at as string,

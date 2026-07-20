@@ -209,6 +209,13 @@ export interface Estimate {
   declinedAt?: string
   declinedByName?: string
   archived?: boolean          // rejected variations are archived (hidden from active lists)
+  firstViewedAt?: string      // when the client first opened /variation/[token] (read receipt)
+  // Foreman-raised variations: drafted on site, approved by the office, THEN sent to the client.
+  raisedBy?: string           // supervisor who raised it
+  submittedAt?: string        // foreman clicked "Send draft" - it's with the office
+  officeApprovedAt?: string   // office approved and sent it to the client
+  officeRejectedAt?: string   // office sent it back for changes (status stays 'draft')
+  officeRejectReason?: string
   opc?: EstimateOpc           // Opinion of Probable Cost document data (see /estimates/[id]/opc)
 }
 

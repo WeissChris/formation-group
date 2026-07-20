@@ -10,13 +10,20 @@ import { isVicPublicHoliday, vicPublicHolidayName } from '@/lib/publicHolidays'
 import {
   siteMe, getSiteProject, getSiteGantt, getSiteActuals, getSiteSubbies, getSiteBoq,
   getSitePlans, uploadSitePlan, deleteSitePlan, getSiteHours, getSiteMilestones, getSiteSafety, postSiteSafety,
-  getSiteBaseline, getSiteVariations, createSiteVariation, getSiteBookings, saveSiteBooking,
+  getSiteBaseline, getSiteVariations, createSiteVariation, updateSiteVariation, deleteSiteVariation,
+  getSiteBookings, saveSiteBooking,
   getSiteHandover, saveSiteHandover, getSiteIntroPack, getSiteMaterials, saveSiteMaterials, getSiteBooklet,
   getSiteIrrigation, saveSiteIrrigation, uploadSiteIrrigationPlan, deleteSiteIrrigation,
+  uploadMaterialQuote, openMaterialQuote, deleteMaterialQuote,
   type SiteProject, type SitePlan, type SiteMilestone, type SiteSafety, type SiteBaseline, type SiteVariation,
   type SubbieBooking, type HandoverChecklist, type SiteMaterial, type IrrigationPlan,
 } from '@/lib/siteData'
-import { unconfirmedMaterials, materialRowsFromLines } from '@/lib/projectMaterials'
+import {
+  unconfirmedMaterials, materialRowsFromLines, materialVariance, materialTotals, overspentMaterials,
+  MAX_QUOTES_PER_MATERIAL, type MaterialQuote,
+} from '@/lib/projectMaterials'
+import { variationStage, isForemanEditable, daysSince, type VariationStage } from '@/lib/variationStatus'
+import { matchScopesToSubbies, nextDueScope } from '@/lib/subbieScopes'
 import { nextZoneColor, zoneCentroid, type IrrigationZone } from '@/lib/irrigationPlan'
 import { HANDOVER_SECTIONS, handoverProgress, blueTapeOf, openBlueTapeCount, type HandoverData, type HandoverRow, type BlueTapeEntry } from '@/lib/handoverChecklist'
 import { openAttachment } from '@/lib/attachments'
@@ -137,7 +144,9 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
         {tab === 'schedule' && <Schedule gantt={gantt} projectId={project.id} />}
         {tab === 'boq' && <Boq projectId={project.id} projectName={project.name} address={project.address} />}
         {tab === 'materials' && <Materials projectId={project.id} materials={materials} refresh={refreshMaterials} estimate={estimate} />}
-        {tab === 'subbies' && <Subbies projectId={project.id} />}
+        {tab === 'subbies' && (
+          <Subbies projectId={project.id} gantt={gantt} bookings={bookings} refreshBookings={refreshBookings} />
+        )}
         {tab === 'plans' && <Plans projectId={project.id} />}
         {tab === 'safety' && <Safety projectId={project.id} safety={safety} refresh={refreshSafety} />}
         {tab === 'handover' && (
@@ -186,9 +195,50 @@ function fmt(iso: string): string {
 function money(n: number): string { return '$' + Math.round(n).toLocaleString('en-AU') }
 
 // ── Subbie contact box (booked tick + time-stamped comment log; due dates from the gantt) ──
+/** A subcontractor scope on the schedule: derived dates + the foreman's persisted booking state. */
+interface SubbieScope {
+  category: string
+  due: string            // earliest subcontractor claim start for the category
+  end: string            // latest subcontractor claim end - together these are the booking window
+  inDays: number
+  booked: boolean
+  comments: { text: string; by: string; at: string }[]
+  subbieId?: string | null
+}
+
+/**
+ * Every gantt category with subcontractor work in it, with its scheduled window and the foreman's
+ * booked tick / comment log. The LIST and the dates are derived live from the schedule, so moving a
+ * bar moves the due date with no writes. Shared by the dashboard booking card and the Subbies tab
+ * so the two can't show different dates.
+ */
+function deriveSubbieScopes(gantt: GanttEntry[], bookings: SubbieBooking[], todayIso: string): SubbieScope[] {
+  const window = new Map<string, { start: string; end: string }>()
+  for (const e of gantt) for (const { costType, seg } of entryClaimSegments(e)) {
+    if (costType !== 'subcontractor' || !seg.startDate) continue
+    const ex = window.get(e.category)
+    const end = seg.endDate || seg.startDate
+    if (!ex) window.set(e.category, { start: seg.startDate, end })
+    else window.set(e.category, {
+      start: seg.startDate < ex.start ? seg.startDate : ex.start,
+      end: end > ex.end ? end : ex.end,
+    })
+  }
+  const state = new Map(bookings.map(b => [b.category, b]))
+  return Array.from(window.entries())
+    .map(([category, w]) => ({
+      category, due: w.start, end: w.end,
+      inDays: Math.round((new Date(w.start).getTime() - new Date(todayIso).getTime()) / 86400000),
+      booked: state.get(category)?.booked ?? false,
+      comments: state.get(category)?.comments ?? [],
+      subbieId: state.get(category)?.subbieId ?? null,
+    }))
+    .sort((a, b) => Number(a.booked) - Number(b.booked) || a.due.localeCompare(b.due))
+}
+
 function SubbieBookingsCard({ projectId, scopes, refresh }: {
   projectId: string
-  scopes: { category: string; due: string; inDays: number; booked: boolean; comments: { text: string; by: string; at: string }[] }[]
+  scopes: SubbieScope[]
   refresh: () => void
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({})
@@ -269,7 +319,11 @@ function SubbieBookingsCard({ projectId, scopes, refresh }: {
   )
 }
 
-// ── Variations (foreman-raised, capped at $1000, client approves digitally) ─────────
+// ── Variations (foreman drafts -> office approves -> client approves digitally) ─────
+const CHIP_TONE: Record<VariationStage['level'], string> = {
+  red: 'text-red-600', amber: 'text-amber-600', green: 'text-green-700', muted: 'text-fg-muted',
+}
+
 function VariationsCard({ projectId, variations, refresh }: {
   projectId: string; variations: SiteVariation[]; refresh: () => void
 }) {
@@ -279,26 +333,42 @@ function VariationsCard({ projectId, variations, refresh }: {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
+  const [editing, setEditing] = useState<string | null>(null)
 
   const amt = parseFloat(amount) || 0
-  const overCap = amt > 1000
+
+  const reset = () => { setDescription(''); setAmount(''); setOpen(false); setEditing(null) }
 
   const submit = async () => {
-    if (!description.trim() || !(amt > 0) || overCap) return
+    if (!description.trim() || !(amt > 0)) return
     setBusy(true); setError(''); setMsg('')
-    const res = await createSiteVariation(projectId, { description: description.trim(), amount: amt })
+    const res = editing
+      ? await updateSiteVariation(projectId, { id: editing, description: description.trim(), amount: amt })
+      : await createSiteVariation(projectId, { description: description.trim(), amount: amt })
     setBusy(false)
     if (res.ok) {
-      setDescription(''); setAmount(''); setOpen(false)
-      setMsg(res.emailed
-        ? `Sent to ${res.clientEmail} for approval.`
-        : res.clientEmail
-          ? 'Created - email delivery is not configured yet, share the approval link below.'
-          : 'Created - the client has no email on file, share the approval link below.')
+      reset()
+      setMsg('Sent to the office. You\'ll see here when it goes to the client.')
       refresh()
     } else {
-      setError(res.error === 'no_base_estimate' ? 'No estimate on this job yet - the office needs to set one up.' : 'Could not create the variation.')
+      setError(res.error === 'no_base_estimate'
+        ? 'No estimate on this job yet - the office needs to set one up.'
+        : res.error === 'locked'
+          ? 'The office has already sent this one to the client.'
+          : 'Could not save the variation.')
     }
+  }
+
+  const startEdit = (v: SiteVariation) => {
+    setEditing(v.id); setDescription(v.reason); setAmount(String(v.amount || '')); setOpen(true); setMsg(''); setError('')
+  }
+
+  const bin = async (v: SiteVariation) => {
+    if (!confirm(`Delete VMO-${v.number}?`)) return
+    setBusy(true)
+    const ok = await deleteSiteVariation(projectId, v.id)
+    setBusy(false)
+    if (ok) { setMsg('Deleted.'); refresh() } else setError('Could not delete it.')
   }
 
   const share = async (url: string) => {
@@ -308,17 +378,10 @@ function VariationsCard({ projectId, variations, refresh }: {
     } catch { /* cancelled */ }
   }
 
-  const statusChip = (v: SiteVariation) =>
-    v.status === 'accepted'
-      ? <span className="text-[10px] uppercase tracking-wide text-green-700 shrink-0">Approved{v.acceptedByName ? ` · ${v.acceptedByName}` : ''}</span>
-      : v.status === 'declined'
-        ? <span className="text-[10px] uppercase tracking-wide text-fg-muted shrink-0">Declined</span>
-        : <span className="text-[10px] uppercase tracking-wide text-amber-600 shrink-0">Awaiting client</span>
-
   return (
     <div>
       <SectionLabel right={
-        <button onClick={() => setOpen(o => !o)} className="text-xs underline text-fg-heading">
+        <button onClick={() => { open ? reset() : setOpen(true) }} className="text-xs underline text-fg-heading">
           {open ? 'Cancel' : '+ New variation'}
         </button>
       }>Variations</SectionLabel>
@@ -332,17 +395,15 @@ function VariationsCard({ projectId, variations, refresh }: {
           <input value={amount} onChange={e => setAmount(e.target.value)} type="number" inputMode="decimal" min={0}
             placeholder="Price ex GST ($)"
             className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
-          {overCap && (
-            <p className="text-xs text-red-600">
-              Over $1,000 - variations this size go through the office to price and send.
-            </p>
-          )}
           {error && <p className="text-xs text-red-600">{error}</p>}
-          <button onClick={submit} disabled={busy || !description.trim() || !(amt > 0) || overCap}
+          <button onClick={submit} disabled={busy || !description.trim() || !(amt > 0)}
             className="w-full rounded-lg bg-fg-heading text-white py-2.5 text-sm font-medium disabled:opacity-40">
-            {busy ? 'Sending...' : 'Send to client for approval'}
+            {busy ? 'Sending...' : editing ? 'Resend draft to office' : 'Send draft'}
           </button>
-          <p className="text-[10px] text-fg-muted">The client gets a link to approve or decline online. The office sees it too.</p>
+          <p className="text-[10px] text-fg-muted">
+            It goes to the office first. Once Chris approves it, the client gets a link to approve or decline
+            and you&apos;ll see the result here.
+          </p>
         </div>
       )}
 
@@ -350,22 +411,43 @@ function VariationsCard({ projectId, variations, refresh }: {
         !open && <p className="text-sm text-fg-muted">None raised from site.</p>
       ) : (
         <ul className="space-y-2">
-          {variations.map(v => (
-            <li key={v.id} className="rounded-lg border border-fg-border p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium truncate">VMO-{v.number}{v.reason ? ` · ${v.reason.slice(0, 60)}` : ''}</p>
-                {statusChip(v)}
-              </div>
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-xs text-fg-muted tabular-nums">{money(v.amount)} ex GST</span>
-                {v.approvalUrl && (
-                  <button onClick={() => share(v.approvalUrl!)} className="text-xs underline text-fg-heading">
-                    Share approval link
-                  </button>
+          {variations.map(v => {
+            const stage = variationStage(v)
+            const editable = isForemanEditable(v)
+            const waiting = stage.key === 'sent' ? daysSince(v.officeApprovedAt ?? undefined) : null
+            return (
+              <li key={v.id} className={`rounded-lg border p-3 ${stage.key === 'changes' ? 'border-red-300 bg-red-50/40' : 'border-fg-border'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium truncate">VMO-{v.number}{v.reason ? ` · ${v.reason.slice(0, 60)}` : ''}</p>
+                  <span className={`text-[10px] uppercase tracking-wide shrink-0 ${CHIP_TONE[stage.level]}`}>
+                    {stage.label}{stage.key === 'approved' && v.acceptedByName ? ` · ${v.acceptedByName}` : ''}
+                  </span>
+                </div>
+                {stage.key === 'changes' && v.officeRejectReason && (
+                  <p className="text-xs text-red-700 mt-1">Office: {v.officeRejectReason}</p>
                 )}
-              </div>
-            </li>
-          ))}
+                {stage.key === 'sent' && waiting != null && waiting >= 3 && (
+                  <p className="text-xs text-amber-700 mt-1">Sent {waiting} days ago - the client hasn&apos;t opened it yet.</p>
+                )}
+                <div className="flex items-center justify-between gap-3 mt-1 flex-wrap">
+                  <span className="text-xs text-fg-muted tabular-nums">{money(v.amount)} ex GST</span>
+                  <div className="flex items-center gap-3">
+                    {editable && (
+                      <>
+                        <button onClick={() => startEdit(v)} className="text-xs underline text-fg-heading">Edit</button>
+                        <button onClick={() => bin(v)} className="text-xs underline text-fg-muted">Delete</button>
+                      </>
+                    )}
+                    {v.approvalUrl && (
+                      <button onClick={() => share(v.approvalUrl!)} className="text-xs underline text-fg-heading">
+                        Share approval link
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
@@ -551,23 +633,7 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
 
   // Subbie contact box: every category with subcontractor work on the gantt, due = its scheduled
   // start (moves automatically with the schedule). Booked tick + comment persist per category.
-  const subbieScopes = useMemo(() => {
-    const byCategory = new Map<string, string>()   // category -> earliest sub-claim start
-    for (const e of gantt) for (const { costType, seg } of entryClaimSegments(e)) {
-      if (costType !== 'subcontractor' || !seg.startDate) continue
-      const ex = byCategory.get(e.category)
-      if (!ex || seg.startDate < ex) byCategory.set(e.category, seg.startDate)
-    }
-    const state = new Map(bookings.map(b => [b.category, b]))
-    return Array.from(byCategory.entries())
-      .map(([category, due]) => ({
-        category, due,
-        inDays: Math.round((new Date(due).getTime() - new Date(todayIso).getTime()) / 86400000),
-        booked: state.get(category)?.booked ?? false,
-        comments: state.get(category)?.comments ?? [],
-      }))
-      .sort((a, b) => Number(a.booked) - Number(b.booked) || a.due.localeCompare(b.due))
-  }, [gantt, bookings, todayIso])
+  const subbieScopes = useMemo(() => deriveSubbieScopes(gantt, bookings, todayIso), [gantt, bookings, todayIso])
 
   // Schedule tracking: the gantt's latest bar end (the live forecast completion) vs the office
   // planned completion. Positive diff = finishing later than planned = behind.
@@ -719,10 +785,17 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
       out.push({ text: 'Send the client introduction pack', level: 'red', href: `/site/${project.id}/intro-pack` })
     }
 
-    // Materials not yet confirmed (ordered / price locked in).
+    // Materials not yet confirmed (ordered / price locked in), and any that came in over allowance.
     const unconfirmed = unconfirmedMaterials(materials).length
     if (unconfirmed > 0) {
       out.push({ text: `${unconfirmed} material${unconfirmed === 1 ? '' : 's'} not yet confirmed`, level: 'amber', tab: 'materials' })
+    }
+    const over = overspentMaterials(materials)
+    if (over.length > 0) {
+      out.push({
+        text: `${over.length} material${over.length === 1 ? '' : 's'} over allowance${over.length === 1 ? ` - ${over[0].type}` : ''}`,
+        level: 'amber', tab: 'materials',
+      })
     }
 
     // Client handover booklet: once the job is essentially done (checklist signed off, or 95%+ elapsed)
@@ -731,8 +804,26 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
       out.push({ text: 'Produce and deliver the client handover booklet', level: 'amber', href: `/site/${project.id}/handover-booklet` })
     }
 
+    // Variations the foreman raised: what the office and the client have done with them. The card
+    // itself lives further down the dashboard, so these are the "you need to look" prompts.
+    for (const v of variations) {
+      const stage = variationStage(v)
+      if (stage.key === 'changes') {
+        out.push({ text: `VMO-${v.number} needs changes${v.officeRejectReason ? ` - ${v.officeRejectReason}` : ''}`, level: 'red' })
+      } else if (stage.key === 'approved' && v.raisedBy) {
+        out.push({ text: `VMO-${v.number} approved by the client`, level: 'info' })
+      } else if (stage.key === 'declined' && v.raisedBy) {
+        out.push({ text: `VMO-${v.number} declined by the client`, level: 'amber' })
+      } else if (stage.key === 'sent') {
+        const days = daysSince(v.officeApprovedAt ?? undefined)
+        if (days != null && days >= 3) {
+          out.push({ text: `VMO-${v.number} sent ${days} days ago - the client hasn't opened it`, level: 'amber' })
+        }
+      }
+    }
+
     return out
-  }, [safety, plans, subbieScopes, card.progressPct, handover, forecastEnd, introSentAt, materials, bookletSentAt, project.id])
+  }, [safety, plans, subbieScopes, card.progressPct, handover, forecastEnd, introSentAt, materials, bookletSentAt, variations, project.id])
 
   const overall = STATUS_UI[card.status]
 
@@ -1139,6 +1230,7 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
 // the dashboard Heads Up box. Edits autosave (debounced), then refresh the workspace so the flag updates.
 function Materials({ projectId, materials, refresh, estimate }: { projectId: string; materials: SiteMaterial[]; refresh: () => void; estimate: Estimate | null }) {
   const [rows, setRows] = useState<SiteMaterial[]>(materials)
+  const [uploading, setUploading] = useState<string | null>(null)
   const dirty = useRef(false)
   // Adopt server data whenever it lands, unless we have unsaved local edits in flight.
   useEffect(() => { if (!dirty.current) setRows(materials) }, [materials])
@@ -1157,37 +1249,68 @@ function Materials({ projectId, materials, refresh, estimate }: { projectId: str
 
   const edit = (next: SiteMaterial[]) => { dirty.current = true; setRows(next) }
   const update = (id: string, patch: Partial<SiteMaterial>) => edit(rows.map(r => r.id === id ? { ...r, ...patch } : r))
-  const addRow = () => edit([...rows, { id: generateId(), type: '', source: '', allowance: 0, confirmed: false }])
+  const addRow = () => edit([...rows, {
+    id: generateId(), type: '', source: '', allowance: 0, actual: 0, notes: '', quotes: [], confirmed: false,
+  }])
   const removeRow = (id: string) => edit(rows.filter(r => r.id !== id))
+
+  // Quote attachments live in Storage; the row keeps only the object path.
+  const attach = async (m: SiteMaterial, files: FileList | null) => {
+    const list = Array.from(files ?? [])
+    if (!list.length) return
+    setUploading(m.id)
+    const added: MaterialQuote[] = []
+    for (const f of list.slice(0, MAX_QUOTES_PER_MATERIAL - m.quotes.length)) {
+      const path = await uploadMaterialQuote(projectId, m.id, f)
+      if (path) added.push({ name: f.name, path })
+    }
+    setUploading(null)
+    if (added.length) update(m.id, { quotes: [...m.quotes, ...added] })
+  }
+  const detach = async (m: SiteMaterial, q: MaterialQuote) => {
+    if (!confirm(`Remove ${q.name}?`)) return
+    await deleteMaterialQuote(projectId, q.path)
+    update(m.id, { quotes: m.quotes.filter(x => x.path !== q.path) })
+  }
 
   // Seed rows from the BOQ's Material lines (allowance pre-filled from the budget), skipping any
   // already listed. Only offered when the estimate actually has material lines not yet pulled.
   const boqRows = estimate ? materialRowsFromLines(estimate.lineItems, rows, generateId) : []
   const pullFromBoq = () => { if (boqRows.length) edit([...rows, ...boqRows]) }
 
-  const unconfirmed = rows.filter(r => (r.type.trim() || r.source.trim() || r.allowance > 0) && !r.confirmed).length
-  const totalAllowance = rows.reduce((s, r) => s + (r.allowance || 0), 0)
+  const unconfirmed = unconfirmedMaterials(rows).length
+  const totals = materialTotals(rows)
+  const overspent = overspentMaterials(rows).length
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm text-fg-heading font-medium">Materials</p>
-        {unconfirmed > 0 && (
-          <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{unconfirmed} unconfirmed</span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {overspent > 0 && (
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-100 text-red-700">{overspent} over allowance</span>
+          )}
+          {unconfirmed > 0 && (
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{unconfirmed} unconfirmed</span>
+          )}
+        </div>
       </div>
       <p className="text-xs text-fg-muted">
-        What we need, where it comes from, and what we&apos;ve allowed. Tick Confirmed once it&apos;s ordered or the price is locked in - anything left unconfirmed shows in Heads up.
+        What we need, where it comes from, what we&apos;ve allowed and what it actually cost. Attach the supplier
+        quote so it&apos;s on the job, not in someone&apos;s inbox. Tick Confirmed once it&apos;s ordered or the price is
+        locked in - anything left unconfirmed shows in Heads up.
       </p>
 
       {rows.length === 0 ? (
         <p className="text-sm text-fg-muted py-6 text-center">No materials listed yet.</p>
       ) : (
         <ul className="space-y-2">
-          {rows.map(r => (
-            <li key={r.id} className={`rounded-xl border p-3 ${r.confirmed ? 'border-fg-border bg-fg-card/20' : 'border-amber-300/60 bg-amber-50/30'}`}>
+          {rows.map(r => {
+            const v = materialVariance(r)
+            return (
+            <li key={r.id} className={`rounded-xl border p-3 ${v?.over ? 'border-red-300 bg-red-50/30' : r.confirmed ? 'border-fg-border bg-fg-card/20' : 'border-amber-300/60 bg-amber-50/30'}`}>
               <div className="flex items-start gap-2">
-                <div className="flex-1 space-y-2">
+                <div className="flex-1 space-y-2 min-w-0">
                   <input value={r.type} onChange={e => update(r.id, { type: e.target.value })}
                     placeholder="Material (e.g. Bluestone paving 400x400)"
                     className="w-full text-sm bg-transparent border-b border-fg-border/60 focus:border-fg-heading outline-none py-1" />
@@ -1196,23 +1319,61 @@ function Materials({ projectId, materials, refresh, estimate }: { projectId: str
                     className="w-full text-xs text-fg-muted bg-transparent border-b border-fg-border/60 focus:border-fg-heading outline-none py-1" />
                   <div className="flex items-center gap-4 flex-wrap">
                     <label className="text-xs text-fg-muted flex items-center gap-1">
-                      Allowance $
+                      Allowed $
                       <input type="number" inputMode="decimal" value={r.allowance || ''}
                         onChange={e => update(r.id, { allowance: Number(e.target.value) || 0 })}
-                        className="w-24 text-sm bg-transparent border-b border-fg-border/60 focus:border-fg-heading outline-none py-0.5 tabular-nums" />
+                        className="w-20 text-sm bg-transparent border-b border-fg-border/60 focus:border-fg-heading outline-none py-0.5 tabular-nums" />
                     </label>
+                    <label className="text-xs text-fg-muted flex items-center gap-1">
+                      Actual $
+                      <input type="number" inputMode="decimal" value={r.actual || ''}
+                        onChange={e => update(r.id, { actual: Number(e.target.value) || 0 })}
+                        className="w-20 text-sm bg-transparent border-b border-fg-border/60 focus:border-fg-heading outline-none py-0.5 tabular-nums" />
+                    </label>
+                    {v && (
+                      <span className={`text-xs tabular-nums font-medium ${v.over ? 'text-red-600' : 'text-green-700'}`}>
+                        {v.over ? '+' : ''}{money(v.diff)}
+                        {v.pct != null ? ` (${v.over ? '+' : ''}${Math.round(v.pct * 100)}%)` : ''}
+                      </span>
+                    )}
                     <label className="text-xs flex items-center gap-1.5 ml-auto cursor-pointer">
                       <input type="checkbox" checked={r.confirmed} onChange={e => update(r.id, { confirmed: e.target.checked })}
                         className="w-4 h-4 accent-fg-heading" />
                       <span className={r.confirmed ? 'text-fg-heading' : 'text-amber-700'}>{r.confirmed ? 'Confirmed' : 'Confirm'}</span>
                     </label>
                   </div>
+
+                  <textarea value={r.notes} onChange={e => update(r.id, { notes: e.target.value })} rows={2}
+                    placeholder="Notes - lead time, sizes, who to ask for..."
+                    className="w-full text-xs bg-transparent border border-fg-border/60 rounded-lg px-2 py-1.5 focus:border-fg-heading outline-none resize-y" />
+
+                  {/* Quotes: stored in the private material-quotes bucket, opened via signed URL. */}
+                  {r.quotes.length > 0 && (
+                    <ul className="space-y-1">
+                      {r.quotes.map(q => (
+                        <li key={q.path} className="flex items-center justify-between gap-2">
+                          <button onClick={() => void openMaterialQuote(projectId, q.path)}
+                            className="text-xs underline text-fg-heading truncate text-left">{q.name}</button>
+                          <button onClick={() => void detach(r, q)} title="Remove quote"
+                            className="text-fg-muted/60 hover:text-red-500 text-xs px-1 shrink-0">&#10005;</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {r.quotes.length < MAX_QUOTES_PER_MATERIAL && (
+                    <label className="inline-block text-xs underline text-fg-heading cursor-pointer">
+                      {uploading === r.id ? 'Uploading...' : '+ Attach quote'}
+                      <input type="file" multiple className="hidden" disabled={uploading === r.id}
+                        onChange={e => { void attach(r, e.target.files); e.target.value = '' }} />
+                    </label>
+                  )}
                 </div>
                 <button onClick={() => removeRow(r.id)} title="Remove"
                   className="text-fg-muted/50 hover:text-red-500 text-xs px-1 leading-none pt-1">&#10005;</button>
               </div>
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
 
@@ -1231,15 +1392,33 @@ function Materials({ projectId, materials, refresh, estimate }: { projectId: str
       </div>
 
       {rows.length > 0 && (
-        <p className="text-xs text-fg-muted text-right">Total allowance: <span className="tabular-nums text-fg-heading">${totalAllowance.toLocaleString('en-AU')}</span></p>
+        <div className="flex items-center justify-end gap-4 text-xs text-fg-muted">
+          <span>Allowed <span className="tabular-nums text-fg-heading">{money(totals.allowance)}</span></span>
+          <span>Actual <span className="tabular-nums text-fg-heading">{money(totals.actual)}</span></span>
+          <span className={totals.diff > 0 ? 'text-red-600 font-medium' : 'text-green-700'}>
+            {totals.diff > 0 ? '+' : ''}<span className="tabular-nums">{money(totals.diff)}</span>
+          </span>
+        </div>
       )}
     </div>
   )
 }
 
-function Subbies({ projectId }: { projectId: string }) {
+/**
+ * Subbies tab: the companies on the job, each expanding to show when they're booked in (derived
+ * from the schedule), the booked tick and the comment log - the same data the dashboard booking
+ * card holds, but keyed by company instead of by schedule category.
+ */
+function Subbies({ projectId, gantt, bookings, refreshBookings }: {
+  projectId: string; gantt: GanttEntry[]; bookings: SubbieBooking[]; refreshBookings: () => void
+}) {
   const [subbies, setSubbies] = useState<SubcontractorPackage[] | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
   useEffect(() => { getSiteSubbies(projectId).then(setSubbies) }, [projectId])
+
+  const todayIso = toISO(new Date())
+  const scopes = useMemo(() => deriveSubbieScopes(gantt, bookings, todayIso), [gantt, bookings, todayIso])
+  const matched = useMemo(() => matchScopesToSubbies(scopes, subbies ?? []), [scopes, subbies])
 
   const download = (s: SubcontractorPackage) => {
     if (s.quoteFilePath) { void openAttachment(s.quoteFilePath); return }
@@ -1251,25 +1430,157 @@ function Subbies({ projectId }: { projectId: string }) {
 
   if (subbies === null) return <p className="text-sm text-fg-muted py-6 text-center">Loading...</p>
   if (subbies.length === 0) return <p className="text-sm text-fg-muted py-6 text-center">No subcontractors on this job.</p>
+
   return (
-    <ul className="space-y-2">
-      {subbies.map(s => (
-        <li key={s.id} className="rounded-lg border border-fg-border p-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-medium truncate">{s.name}</p>
-              <p className="text-xs text-fg-muted">{s.trade}</p>
-            </div>
-            <span className="text-xs text-fg-muted tabular-nums shrink-0">{money(s.approvedValue + (s.variations || 0))}</span>
-          </div>
-          {(s.quoteFilePath || s.quoteFileData) && (
-            <button onClick={() => download(s)} className="mt-2 text-xs underline text-fg-heading">
-              Download quote ({s.quoteFileName || 'PDF'})
-            </button>
-          )}
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-4">
+      <ul className="space-y-2">
+        {matched.subbies.map(({ subbie: s, scopes: mine, suggested }) => {
+          const next = nextDueScope(mine)
+          const isOpen = open === s.id
+          const dueTone = !next ? 'text-fg-muted'
+            : next.booked ? 'text-fg-muted'
+            : next.inDays < 0 ? 'text-red-600 font-medium'
+            : next.inDays <= 7 ? 'text-amber-600 font-medium' : 'text-fg-muted'
+          return (
+            <li key={s.id} className="rounded-lg border border-fg-border">
+              <button onClick={() => setOpen(isOpen ? null : s.id)} className="w-full text-left p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{s.name}</p>
+                    <p className="text-xs text-fg-muted">{s.trade}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs text-fg-muted tabular-nums">{money(s.approvedValue + (s.variations || 0))}</p>
+                    <p className={`text-xs ${dueTone}`}>
+                      {!next ? 'Not on the schedule'
+                        : next.booked ? `Booked · ${fmt(next.due)}`
+                        : `Due ${fmt(next.due)}${next.inDays >= 0 ? ` · in ${next.inDays}d` : ' · OVERDUE'}`}
+                    </p>
+                  </div>
+                </div>
+              </button>
+
+              {isOpen && (
+                <div className="px-3 pb-3 space-y-3 border-t border-fg-border/60 pt-3">
+                  {(s.quoteFilePath || s.quoteFileData) && (
+                    <button onClick={() => download(s)} className="text-xs underline text-fg-heading">
+                      Download quote ({s.quoteFileName || 'PDF'})
+                    </button>
+                  )}
+                  {mine.length === 0 ? (
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-fg-muted">
+                        Nothing on the schedule is linked to {s.name} yet, so there&apos;s no booking date.
+                      </p>
+                      {matched.unlinked.length > 0 && (
+                        <label className="block text-xs text-fg-muted">
+                          Link a scope:
+                          <select
+                            defaultValue=""
+                            onChange={async e => {
+                              if (!e.target.value) return
+                              await saveSiteBooking(projectId, { category: e.target.value, subbieId: s.id })
+                              refreshBookings()
+                            }}
+                            className="ml-2 border border-fg-border rounded-lg px-2 py-1 text-xs bg-white"
+                          >
+                            <option value="">Choose...</option>
+                            {matched.unlinked.map(u => <option key={u.category} value={u.category}>{u.category}</option>)}
+                          </select>
+                        </label>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      {suggested && (
+                        <p className="text-[10px] text-fg-muted">Matched on trade name - link it explicitly if that&apos;s wrong.</p>
+                      )}
+                      {mine.map(sc => (
+                        <ScopeDetail key={sc.category} projectId={projectId} scope={sc} refresh={refreshBookings} />
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+
+      {/* Scheduled subcontractor work with no company attached - still needs someone booked. */}
+      {matched.unlinked.length > 0 && (
+        <div>
+          <SectionLabel>Scopes with no company yet</SectionLabel>
+          <ul className="space-y-2">
+            {matched.unlinked.map(sc => (
+              <li key={sc.category} className="rounded-lg border border-fg-border p-3">
+                <ScopeDetail projectId={projectId} scope={sc} refresh={refreshBookings} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** One scheduled scope: window, booked tick and the append-only comment log. */
+function ScopeDetail({ projectId, scope, refresh }: {
+  projectId: string; scope: SubbieScope; refresh: () => void
+}) {
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const toggle = async () => {
+    setBusy(true)
+    await saveSiteBooking(projectId, { category: scope.category, booked: !scope.booked })
+    setBusy(false); refresh()
+  }
+  const addComment = async () => {
+    if (!draft.trim()) return
+    setBusy(true)
+    const ok = await saveSiteBooking(projectId, { category: scope.category, addComment: draft.trim() })
+    setBusy(false)
+    if (ok) { setDraft(''); refresh() }
+  }
+  const stamp = (at: string) =>
+    new Date(at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <label className="flex items-center gap-2.5 min-w-0 cursor-pointer">
+          <input type="checkbox" checked={scope.booked} disabled={busy} onChange={toggle}
+            className="w-4 h-4 accent-fg-heading shrink-0" />
+          <span className={`text-sm font-medium truncate ${scope.booked ? 'text-fg-muted' : ''}`}>{scope.category}</span>
+        </label>
+        <span className="text-xs text-fg-muted tabular-nums shrink-0">
+          {fmt(scope.due)}{scope.end && scope.end !== scope.due ? ` - ${fmt(scope.end)}` : ''}
+        </span>
+      </div>
+
+      {scope.comments.length > 0 && (
+        <ul className="space-y-1 border-l-2 border-fg-border/50 pl-2.5">
+          {[...scope.comments].reverse().map((c, i) => (
+            <li key={i} className="text-xs leading-snug">
+              <span className="text-fg-heading">{c.text}</span>
+              <span className="text-[10px] text-fg-muted"> — {c.by}, {stamp(c.at)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="flex gap-2">
+        <input value={draft} onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') addComment() }}
+          placeholder="Add a comment - e.g. confirmed for Tuesday 7am..."
+          className="flex-1 min-w-0 border border-fg-border/60 rounded-lg px-2.5 py-1.5 text-xs bg-white placeholder:text-fg-muted/50" />
+        <button onClick={addComment} disabled={busy || !draft.trim()}
+          className="shrink-0 rounded-lg bg-fg-heading text-white px-3 py-1.5 text-xs font-medium disabled:opacity-40">
+          {busy ? '...' : 'Add'}
+        </button>
+      </div>
+    </div>
   )
 }
 
