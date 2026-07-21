@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useParams, useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -823,8 +823,10 @@ export default function GanttPage() {
   const effLookback = Math.max(LOOKBACK_WEEKS, jumpBackWeeks)
 
   // Render enough weeks to reach the project's last scheduled date, floored at WEEK_COUNT (+ any extra
-  // lookback added by a jump). Covers bars, nested subtasks and milestones.
-  const horizonWeeks = (() => {
+  // lookback added by a jump). Covers bars, nested subtasks and milestones. Memoized on the schedule so a
+  // move that doesn't extend the horizon (the common case) reuses the same Date arrays instead of
+  // rebuilding getNextFridays/getWorkingDays every mousemove.
+  const horizonWeeks = useMemo(() => {
     let latest = ''
     for (const e of entries) {
       for (const s of e.segments) if (s.endDate && s.endDate > latest) latest = s.endDate
@@ -836,8 +838,8 @@ export default function GanttPage() {
     const firstCol = new Date(); firstCol.setDate(firstCol.getDate() - effLookback * 7)
     const weeks = Math.ceil((new Date(`${latest}T00:00:00`).getTime() - firstCol.getTime()) / (7 * 86400000)) + 4
     return Math.min(200 + extraBack, Math.max(WEEK_COUNT + extraBack, weeks))
-  })()
-  const fridays = (() => {
+  }, [entries, milestones, effLookback])
+  const fridays = useMemo(() => {
     const all = getNextFridays(horizonWeeks, effLookback)
     if (!clientPrint) return all
     // Client PDF: trim to the active work range — cut the empty weeks before the first bar and after the
@@ -853,8 +855,8 @@ export default function GanttPage() {
     const lastFri = toISODate(snapToFriday(new Date(`${latest}T00:00:00`)))
     const trimmed = all.filter(f => { const iso = toISODate(f); return iso >= firstFri && iso <= lastFri })
     return trimmed.length ? trimmed : all
-  })()
-  const workingDays = getWorkingDays(fridays)
+  }, [horizonWeeks, effLookback, clientPrint, entries, milestones])
+  const workingDays = useMemo(() => getWorkingDays(fridays), [fridays])
   const currentWeekIso = fridays[effLookback] ? toISODate(fridays[effLookback]) : (fridays[0] ? toISODate(fridays[0]) : '')
   const today = toISODate(new Date())
 
@@ -863,6 +865,15 @@ export default function GanttPage() {
   // Column set for current view
   const columns: Date[] = timeView === 'days' ? workingDays : fridays
   const colCount = columns.length
+
+  // O(1) date -> column index. The per-cell bar/ghost render used columns.findIndex(toISODate(...))
+  // inside the columns.map, i.e. O(cols^2) per row every render; this Map (rebuilt only when the columns
+  // change) makes each lookup constant time.
+  const colIndexByIso = useMemo(() => {
+    const m = new Map<string, number>()
+    columns.forEach((c, i) => m.set(toISODate(c), i))
+    return m
+  }, [columns])
 
   // Land the initial horizontal scroll on "today" (a few weeks of history sit to its left). Once only,
   // so zooming/re-rendering doesn't fight the user's scroll position.
@@ -987,22 +998,29 @@ export default function GanttPage() {
     return () => { cancelled = true }
   }, [id, router])
 
-  const rawCategories: CategorySummary[] = [
-    ...(estimate ? extractCategories(estimate) : []),
-    // Accepted variations are scheduled as their own categories, prefixed so they read as variation work.
-    ...variations.flatMap(v => extractCategories(v).map(c => ({ ...c, category: `VMO-${v.variationNumber ?? '?'} · ${c.category}` }))),
-  ]
-  // Custom category order (Andrew: drag/reorder). Persisted per project; categories not in the saved
-  // order fall back to their estimate order at the end.
-  const categories: CategorySummary[] = [...rawCategories].sort((a, b) => {
-    const ia = categoryOrder.indexOf(a.category); const ib = categoryOrder.indexOf(b.category)
-    return (ia < 0 ? 1e9 + rawCategories.indexOf(a) : ia) - (ib < 0 ? 1e9 + rawCategories.indexOf(b) : ib)
-  })
+  // Categories come from the estimate + accepted variations only — NOT from `entries`, so this must be
+  // memoized or it re-parses every line item (and runs the O(n^2) order sort) on every drag mousemove.
+  const categories: CategorySummary[] = useMemo(() => {
+    const rawCategories: CategorySummary[] = [
+      ...(estimate ? extractCategories(estimate) : []),
+      // Accepted variations are scheduled as their own categories, prefixed so they read as variation work.
+      ...variations.flatMap(v => extractCategories(v).map(c => ({ ...c, category: `VMO-${v.variationNumber ?? '?'} · ${c.category}` }))),
+    ]
+    // Custom category order (Andrew: drag/reorder). Persisted per project; categories not in the saved
+    // order fall back to their estimate order at the end.
+    return [...rawCategories].sort((a, b) => {
+      const ia = categoryOrder.indexOf(a.category); const ib = categoryOrder.indexOf(b.category)
+      return (ia < 0 ? 1e9 + rawCategories.indexOf(a) : ia) - (ib < 0 ? 1e9 + rawCategories.indexOf(b) : ib)
+    })
+  }, [estimate, variations, categoryOrder])
   // Sequential (by display order) colour per category so neighbouring sections never collide — drives the
   // colour-coded summary bar AND every task bar in the section, so a section reads as one cohesive block
   // (Instagantt-style). The discipline (Materials/Labour/Sub) is carried by the bar's label, not its colour.
-  const categoryColourMap: Record<string, string> = {}
-  categories.forEach((c, i) => { categoryColourMap[c.category] = CATEGORY_PALETTE[i % CATEGORY_PALETTE.length] })
+  const categoryColourMap: Record<string, string> = useMemo(() => {
+    const map: Record<string, string> = {}
+    categories.forEach((c, i) => { map[c.category] = CATEGORY_PALETTE[i % CATEGORY_PALETTE.length] })
+    return map
+  }, [categories])
   const sectionColour = (cat: string) => categoryColourMap[cat] || categoryColour(cat)
   const persistCategoryOrder = (order: string[]) => {
     setCategoryOrder(order)
@@ -1131,6 +1149,18 @@ export default function GanttPage() {
     })
   }
 
+  // Drag moves/resizes only change segment DATES, never allocations (labour/material/sub %, cost and
+  // revenue are % of budget, independent of when the bar sits). So skip recalcEntry on every mousemove
+  // frame - it re-derived the same numbers. recalcEntry still runs for draws, %-edits, split and crew.
+  const updateEntryDatesOnly = (updated: GanttEntry) => {
+    hasUnsavedChangesRef.current = true
+    setEntries(prev => {
+      const idx = prev.findIndex(e => e.id === updated.id || e.category === updated.category)
+      if (idx >= 0) { const next = [...prev]; next[idx] = updated; return next }
+      return [...prev, updated]
+    })
+  }
+
   // One-time on load: re-derive every loaded scope's allocation so the display + reconciliation are
   // right immediately (labour from bars, materials/equipment capped to ≤100% total). Cleans up any
   // saved over-allocation before the popover reads it. Idempotent for already-granular gantts; not
@@ -1158,10 +1188,10 @@ export default function GanttPage() {
 
   // ── Column index helpers ────────────────────────────────────────────────────
 
-  /** Find column index for a given ISO date */
+  /** Find column index for a given ISO date (O(1) via the prebuilt Map). */
   const colIndexForDate = useCallback((iso: string): number => {
-    return columns.findIndex(c => toISODate(c) === iso)
-  }, [columns])
+    return colIndexByIso.get(iso) ?? -1
+  }, [colIndexByIso])
 
   /** Date from column index */
   const dateForColIdx = useCallback((idx: number): string => {
@@ -1223,7 +1253,14 @@ export default function GanttPage() {
     setDrawing({ category, subtaskId, segId: drawId, anchorIdx: colIdx })
   }
 
-  const handleCellMouseEnter = (category: string, colIdx: number, subtaskId?: string) => {
+  // Drag mousemove is coalesced to at most ONE update per animation frame (see handleCellMouseEnter):
+  // onMouseEnter fires for every grid cell the cursor crosses, and each used to trigger a full
+  // re-render. pendingEnterRef holds the latest cell; rafRef guards a single scheduled frame.
+  const pendingEnterRef = useRef<{ category: string; colIdx: number; subtaskId?: string } | null>(null)
+  const enterRafRef = useRef<number | null>(null)
+  useEffect(() => () => { if (enterRafRef.current != null) cancelAnimationFrame(enterRafRef.current) }, [])
+
+  const processCellEnter = (category: string, colIdx: number, subtaskId?: string) => {
     // Handle drawing
     if (drawing && drawing.category === category && drawing.subtaskId === subtaskId) {
       const entry = entries.find(e => e.category === category)
@@ -1290,7 +1327,7 @@ export default function GanttPage() {
         const shiftSeg = (s: GanttSegment): GanttSegment => { const n = shifted.get(s.id); return n ? { ...s, startDate: n.s, endDate: n.e } : s }
         const mapAll = (sts: GanttSubtask[]): GanttSubtask[] =>
           sts.map(st => ({ ...st, segments: st.segments.map(shiftSeg), ...(st.subtasks?.length ? { subtasks: mapAll(st.subtasks) } : {}) }))
-        updateEntry({ ...entry, segments: entry.segments.map(shiftSeg), subtasks: mapAll(entry.subtasks ?? []) })
+        updateEntryDatesOnly({ ...entry, segments: entry.segments.map(shiftSeg), subtasks: mapAll(entry.subtasks ?? []) })
         return
       }
 
@@ -1318,12 +1355,12 @@ export default function GanttPage() {
             s.id === moving.segId ? { ...s, startDate: newStart, endDate: newEnd } : s
           ),
         }))
-        updateEntry({ ...entry, subtasks: updatedSubtasks })
+        updateEntryDatesOnly({ ...entry, subtasks: updatedSubtasks })
       } else {
         const updatedSegs = entry.segments.map(s =>
           s.id === moving.segId ? { ...s, startDate: newStart, endDate: newEnd } : s
         )
-        updateEntry({ ...entry, segments: updatedSegs })
+        updateEntryDatesOnly({ ...entry, segments: updatedSegs })
       }
     }
 
@@ -1343,16 +1380,38 @@ export default function GanttPage() {
         ? weeksBetween(newStart, newEnd)
         : Math.max(1, Math.ceil((daysBetweenIso(newStart, newEnd) + 1) / 7))
       const apply = (s: GanttSegment) => s.id === resizing.segId ? { ...s, startDate: newStart, endDate: newEnd, weekCount: wc, grain: timeView } : s
+      // Dates + weekCount only; the % allocations are unchanged, so skip recalc (the forecast spread
+      // reads weekCount/dates downstream and updates on the next render regardless).
       if (resizing.subtaskId) {
         const updatedSubtasks = mapSubtaskTree(entry.subtasks ?? [], resizing.subtaskId, st => ({ ...st, segments: st.segments.map(apply) }))
-        updateEntry({ ...entry, subtasks: updatedSubtasks })
+        updateEntryDatesOnly({ ...entry, subtasks: updatedSubtasks })
       } else {
-        updateEntry({ ...entry, segments: entry.segments.map(apply) })
+        updateEntryDatesOnly({ ...entry, segments: entry.segments.map(apply) })
       }
     }
   }
 
+  // Coalescing wrapper: record the latest cell and process at most once per frame. A fast drag crosses
+  // many cells per frame; without this each crossing forced a full re-render. Date math uses the drag's
+  // start snapshot + a functional setEntries, so the frame-delayed closure is never stale.
+  const handleCellMouseEnter = (category: string, colIdx: number, subtaskId?: string) => {
+    pendingEnterRef.current = { category, colIdx, subtaskId }
+    if (enterRafRef.current != null) return
+    enterRafRef.current = requestAnimationFrame(() => {
+      enterRafRef.current = null
+      const p = pendingEnterRef.current
+      pendingEnterRef.current = null
+      if (p) processCellEnter(p.category, p.colIdx, p.subtaskId)
+    })
+  }
+
   const handleMouseUp = () => {
+    // Flush the final cell synchronously BEFORE clearing the drag state, so the last position the cursor
+    // reached isn't dropped with the pending frame (processCellEnter no-ops once moving/drawing is null).
+    if (enterRafRef.current != null) { cancelAnimationFrame(enterRafRef.current); enterRafRef.current = null }
+    const p = pendingEnterRef.current
+    pendingEnterRef.current = null
+    if (p) processCellEnter(p.category, p.colIdx, p.subtaskId)
     setDrawing(null)
     setMoving(null)
     setResizing(null)
@@ -1965,10 +2024,10 @@ export default function GanttPage() {
   // Per-week revenue/cost, plus the week's revenue split by type (Andrew: define each week's revenue source
   // by Materials/Labour/Subcontractor). A segment's weekly revenue is apportioned by its category's
   // revenue-by-type ratio.
-  const catByName = new Map(categories.map(c => [c.category, c]))
+  const catByName = useMemo(() => new Map(categories.map(c => [c.category, c])), [categories])
   // Milestone claims (Andrew iter2 §3) — a milestone's $ value adds to its week's revenue in the cash-flow
   // strip + the fortnight/invoice totals. Keyed by the milestone's week-ending Friday. Opt-in (unset = 0).
-  const milestoneRevByWeek = (() => {
+  const milestoneRevByWeek = useMemo(() => {
     const map = new Map<string, number>()
     for (const m of milestones) {
       if (!m.value || m.value <= 0) continue
@@ -1977,11 +2036,13 @@ export default function GanttPage() {
       map.set(friIso, (map.get(friIso) ?? 0) + m.value)
     }
     return map
-  })()
+  }, [milestones])
   // ONE cash-flow cell PER WEEK (Andrew). The columns are grouped purely by their week-ending Friday and the
   // WEEK's total is computed once — so a bar that starts/ends mid-week never fragments the strip into several
   // cramped cells in Days view (the old per-column collapse did). Weeks view: each column is already a week.
-  const footerRuns = (() => {
+  // Memoized: this is one of the two heaviest per-render loops (entries x claim segments x week-share), so it
+  // must not rebuild on renders that don't touch the schedule (hover, popover, zoom).
+  const footerRuns = useMemo(() => {
     const groups: { startIdx: number; span: number; weekKey: string }[] = []
     for (let i = 0; i < columns.length; i++) {
       const weekKey = toISODate(snapToFriday(columns[i]))
@@ -2019,18 +2080,12 @@ export default function GanttPage() {
       }
       return { startIdx: g.startIdx, span: g.span, weekKey: friIso, rev, cost, revType }
     })
-  })()
+  }, [columns, entries, catByName, milestoneRevByWeek])
 
   // ── Today indicator column index ──────────────────────────────────────────
 
-  const todayColIdx = (() => {
-    if (timeView === 'weeks') {
-      // Find nearest Friday
-      return fridays.findIndex(f => toISODate(f) === currentWeekIso)
-    } else {
-      return workingDays.findIndex(d => toISODate(d) === today)
-    }
-  })()
+  // columns === fridays (weeks) or workingDays (days), so the O(1) Map covers both views.
+  const todayColIdx = colIndexByIso.get(timeView === 'weeks' ? currentWeekIso : today) ?? -1
 
   // ── Week boundary column indices ────────────────────────────────────────────
   // In days view a week boundary (Friday→Monday) falls every 5th column; in weeks view every column is a
@@ -2212,7 +2267,7 @@ export default function GanttPage() {
     typeColour?: string,   // distinct discipline colour for Materials/Labour/Subcontractor lines (iter2 §1)
   ) => {
     // Column just past the last dated bar — where a trailing description sits (RHS of the grid line).
-    const datedEnds = segs.filter(s => s.startDate && s.endDate).map(s => columns.findIndex(c => toISODate(c) === s.endDate)).filter(idx => idx >= 0)
+    const datedEnds = segs.filter(s => s.startDate && s.endDate).map(s => colIndexByIso.get(s.endDate) ?? -1).filter(idx => idx >= 0)
     const trailingIdx = trailingLabel && datedEnds.length ? Math.min(Math.max(...datedEnds) + 1, columns.length - 1) : -1
     return columns.map((col, i) => {
       const iso = toISODate(col)
@@ -2248,8 +2303,8 @@ export default function GanttPage() {
           {/* Baseline ghost overlay (Andrew) — a thin #DEEBF7 band along the top tracking the loaded
               baseline's span, so the live bars and the baseline are both visible for comparison. */}
           {ghostSegs?.filter(s => isSegmentActiveInCol(s, col)).map(gs => {
-            const gStart = columns.findIndex(c => toISODate(c) === gs.startDate)
-            const gEnd = columns.findIndex(c => toISODate(c) === gs.endDate)
+            const gStart = colIndexByIso.get(gs.startDate) ?? -1
+            const gEnd = colIndexByIso.get(gs.endDate) ?? -1
             const gIsStart = i === gStart || (gStart === -1 && i === 0)
             const gIsEnd = i === gEnd || (gEnd === -1 && i === columns.length - 1)
             return (
@@ -2272,8 +2327,8 @@ export default function GanttPage() {
             </div>
           ))}
           {activeSegs.map(seg => {
-            const startIdx = columns.findIndex(c => toISODate(c) === seg.startDate)
-            const endIdx = columns.findIndex(c => toISODate(c) === seg.endDate)
+            const startIdx = colIndexByIso.get(seg.startDate) ?? -1
+            const endIdx = colIndexByIso.get(seg.endDate) ?? -1
             const isStart = i === startIdx || (startIdx === -1 && i === 0)
             const isEnd = i === endIdx || (endIdx === -1 && i === columns.length - 1)
             const colour = typeColour ?? (isSubtask ? subtaskBarColour(crewType) : barColour(seg, crewType))
