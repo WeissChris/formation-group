@@ -37,36 +37,91 @@ export function addToIgnoreList(word: string): void {
   try { localStorage.setItem(IGNORE_KEY, JSON.stringify(Array.from(list))) } catch { /* ignore */ }
 }
 
+/** A labelled chunk of the document, so an issue can be traced back to WHERE it appears. */
+export interface SpellBlock {
+  label: string   // e.g. "Intro", "Scope: Paving", "Notes"
+  text: string
+}
+
+/** One place a flagged word appears: which section, plus the text either side so it's findable. */
+export interface SpellOccurrence {
+  label: string
+  before: string   // up to ~40 chars before the word
+  match: string    // the word exactly as written
+  after: string    // up to ~40 chars after the word
+}
+
 export interface SpellingIssue {
   word: string
   count: number
   suggestions: string[]
+  occurrences: SpellOccurrence[]
+}
+
+const CONTEXT_CHARS = 40
+const MAX_OCCURRENCES = 6   // enough to locate it; don't flood the panel on a word used everywhere
+const MAX_SUGGESTIONS = 6
+
+/** A single word-context excerpt around [start, end) in text, trimmed to word boundaries. */
+function excerpt(text: string, start: number, end: number): { before: string; after: string } {
+  let b = Math.max(0, start - CONTEXT_CHARS)
+  let a = Math.min(text.length, end + CONTEXT_CHARS)
+  // Don't cut mid-word on the outer edges - back up/forward to whitespace when we clipped.
+  if (b > 0) { const sp = text.indexOf(' ', b); if (sp >= 0 && sp < start) b = sp + 1 }
+  if (a < text.length) { const sp = text.lastIndexOf(' ', a); if (sp > end) a = sp }
+  const before = (b > 0 ? '…' : '') + text.slice(b, start).replace(/\s+/g, ' ')
+  const after = text.slice(end, a).replace(/\s+/g, ' ') + (a < text.length ? '…' : '')
+  return { before, after }
 }
 
 /**
- * Check a set of labelled text blocks. Returns unknown words (deduped, with counts and
- * suggestions), skipping numbers, short tokens, ALL-CAPS acronyms and the ignore list.
+ * Check labelled text blocks. Returns unknown words (deduped case-insensitively, with counts,
+ * suggestions AND the labelled context of each occurrence so the user can see where each one is),
+ * skipping numbers, short tokens, ALL-CAPS acronyms and the ignore list.
+ *
+ * Accepts plain strings too (treated as unlabelled blocks) for back-compat.
  */
-export async function checkSpelling(texts: string[]): Promise<SpellingIssue[]> {
+export async function checkSpelling(blocks: (SpellBlock | string)[]): Promise<SpellingIssue[]> {
   const typo = await loadChecker()
   const ignore = loadIgnoreList()
-  const counts = new Map<string, number>()
+  // Keyed by lower-cased word so "Hunza"/"hunza" collapse into one issue; the display keeps the
+  // first spelling seen. Order preserved via `order`.
+  const issues = new Map<string, SpellingIssue>()
+  const order: string[] = []
 
-  for (const text of texts) {
-    for (const raw of text.match(/[A-Za-z][A-Za-z'’]*/g) ?? []) {
+  const re = /[A-Za-z][A-Za-z'’]*/g
+  for (const block of blocks) {
+    const label = typeof block === 'string' ? '' : block.label
+    const text = typeof block === 'string' ? block : block.text
+    let m: RegExpExecArray | null
+    re.lastIndex = 0
+    while ((m = re.exec(text)) !== null) {
+      const raw = m[0]
       const word = raw.replace(/[’']$/, '')
       if (word.length < 3) continue
       if (word === word.toUpperCase()) continue          // acronyms (GST, LPOD, PVC)
       if (ignore.has(word.toLowerCase())) continue
-      if (counts.has(word)) { counts.set(word, counts.get(word)! + 1); continue }
+      const key = word.toLowerCase()
+      const existing = issues.get(key)
+      if (existing) {
+        existing.count++
+        if (existing.occurrences.length < MAX_OCCURRENCES) {
+          const { before, after } = excerpt(text, m.index, m.index + word.length)
+          existing.occurrences.push({ label, before, match: word, after })
+        }
+        continue
+      }
       if (typo.check(word) || typo.check(word.toLowerCase())) continue
-      counts.set(word, 1)
+      const { before, after } = excerpt(text, m.index, m.index + word.length)
+      issues.set(key, {
+        word,
+        count: 1,
+        suggestions: checker?.suggest(word, MAX_SUGGESTIONS) ?? [],
+        occurrences: [{ label, before, match: word, after }],
+      })
+      order.push(key)
     }
   }
 
-  return Array.from(counts.entries()).map(([word, count]) => ({
-    word,
-    count,
-    suggestions: (checker?.suggest(word, 3) ?? []),
-  }))
+  return order.map(k => issues.get(k)!)
 }

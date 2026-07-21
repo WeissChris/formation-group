@@ -534,12 +534,24 @@ export default function OpcPage() {
           </button>
           <SpellCheckButton
             getTexts={() => [
-              stripProse(opc.intro ?? ''),
-              ...rows.flatMap(r => [r.title, stripProse(r.scope)]),
-              ...(opc.exclusions ?? []).flatMap(ex => [ex.title, stripProse(ex.blurb)]),
-              ...(opc.excludedItems ?? []),
-              ...(opc.valueManagement ?? []).flatMap(v => [v.title, stripProse(v.note ?? '')]),
-              ...(opc.upgrades ?? []).flatMap(u => [u.title, stripProse(u.note ?? '')]),
+              { label: 'Intro', text: stripProse(opc.intro ?? '') },
+              ...rows.flatMap(r => [
+                { label: 'Category title', text: r.title },
+                { label: `Scope: ${r.title || 'category'}`, text: stripProse(r.scope) },
+              ]),
+              ...(opc.exclusions ?? []).flatMap(ex => [
+                { label: 'Exclusion title', text: ex.title },
+                { label: `Exclusion: ${ex.title || ''}`.trim().replace(/:$/, ''), text: stripProse(ex.blurb) },
+              ]),
+              ...(opc.excludedItems ?? []).map(it => ({ label: 'Excluded item', text: it })),
+              ...(opc.valueManagement ?? []).flatMap(v => [
+                { label: 'Value option title', text: v.title },
+                { label: `Value option: ${v.title || ''}`.trim().replace(/:$/, ''), text: stripProse(v.note ?? '') },
+              ]),
+              ...(opc.upgrades ?? []).flatMap(u => [
+                { label: 'Upgrade title', text: u.title },
+                { label: `Upgrade: ${u.title || ''}`.trim().replace(/:$/, ''), text: stripProse(u.note ?? '') },
+              ]),
             ]}
             onReplace={replaceWord}
           />

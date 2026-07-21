@@ -102,10 +102,10 @@ export default function QuotePage() {
         </Link>
         <div className="flex items-center gap-3">
           <SpellCheckButton getTexts={() => [
-            clientName,
-            clientAddress,
-            ...categoryTotals.map(c => c.category),
-            estimate.notes ?? '',
+            { label: 'Client name', text: clientName },
+            { label: 'Address', text: clientAddress },
+            ...categoryTotals.map(c => ({ label: 'Category', text: c.category })),
+            { label: 'Notes', text: estimate.notes ?? '' },
           ]} />
           <button
             onClick={() => window.print()}
