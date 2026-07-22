@@ -75,6 +75,18 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
   const refreshMaterials = () => getSiteMaterials(params.id).then(setMaterials)
   const refreshVariations = () => getSiteVariations(params.id).then(setVariations)
   const refreshBookings = () => getSiteBookings(params.id).then(setBookings)
+  // Optimistic booked tick: flip the local state at once so the checkbox responds instantly, then
+  // persist. A save failure reconciles from the server. Without this the tick waited on a save +
+  // a full re-fetch round-trip, which read as "nothing happened".
+  const toggleBooking = async (category: string, booked: boolean) => {
+    setBookings(prev => {
+      const i = prev.findIndex(b => b.category === category)
+      if (i >= 0) { const next = [...prev]; next[i] = { ...next[i], booked }; return next }
+      return [...prev, { category, booked, comments: [] }]
+    })
+    const ok = await saveSiteBooking(params.id, { category, booked })
+    if (!ok) refreshBookings()
+  }
 
   useEffect(() => {
     siteMe().then(m => {
@@ -138,14 +150,14 @@ export default function SiteProjectWorkspace({ params }: { params: { id: string 
           <Dashboard project={project} gantt={gantt} card={card} milestones={milestones} openTab={setTab}
             safety={safety} plans={plans} baseline={baseline} hoursWeeks={hoursWeeks}
             variations={variations} refreshVariations={refreshVariations}
-            bookings={bookings} refreshBookings={refreshBookings} handover={handover} introSentAt={introSentAt}
+            bookings={bookings} refreshBookings={refreshBookings} onToggleBooking={toggleBooking} handover={handover} introSentAt={introSentAt}
             materials={materials} bookletSentAt={bookletSentAt} />
         )}
         {tab === 'schedule' && <Schedule gantt={gantt} projectId={project.id} />}
         {tab === 'boq' && <Boq projectId={project.id} projectName={project.name} address={project.address} />}
         {tab === 'materials' && <Materials projectId={project.id} materials={materials} refresh={refreshMaterials} estimate={estimate} />}
         {tab === 'subbies' && (
-          <Subbies projectId={project.id} gantt={gantt} bookings={bookings} refreshBookings={refreshBookings} />
+          <Subbies projectId={project.id} gantt={gantt} bookings={bookings} refreshBookings={refreshBookings} onToggleBooking={toggleBooking} />
         )}
         {tab === 'plans' && <Plans projectId={project.id} />}
         {tab === 'safety' && <Safety projectId={project.id} safety={safety} refresh={refreshSafety} />}
@@ -236,20 +248,17 @@ function deriveSubbieScopes(gantt: GanttEntry[], bookings: SubbieBooking[], toda
     .sort((a, b) => Number(a.booked) - Number(b.booked) || a.due.localeCompare(b.due))
 }
 
-function SubbieBookingsCard({ projectId, scopes, refresh }: {
+function SubbieBookingsCard({ projectId, scopes, refresh, onToggle }: {
   projectId: string
   scopes: SubbieScope[]
   refresh: () => void
+  onToggle: (category: string, booked: boolean) => void
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [savingFor, setSavingFor] = useState<string | null>(null)
 
-  const toggle = async (s: (typeof scopes)[number]) => {
-    setSavingFor(s.category)
-    await saveSiteBooking(projectId, { category: s.category, booked: !s.booked })
-    setSavingFor(null)
-    refresh()
-  }
+  // Optimistic - the tick flips at once via onToggle; no await, no spinner.
+  const toggle = (s: (typeof scopes)[number]) => onToggle(s.category, !s.booked)
   const addComment = async (s: (typeof scopes)[number]) => {
     const draft = (drafts[s.category] || '').trim()
     if (!draft) return
@@ -616,13 +625,14 @@ function ThisWeekStrip({ gantt, offset = 0, title = 'This week' }: { gantt: Gant
 }
 
 // ── Dashboard (default landing — the at-a-glance cockpit view) ─────────────────────
-function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, baseline, hoursWeeks, variations, refreshVariations, bookings, refreshBookings, handover, introSentAt, materials, bookletSentAt }: {
+function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, baseline, hoursWeeks, variations, refreshVariations, bookings, refreshBookings, onToggleBooking, handover, introSentAt, materials, bookletSentAt }: {
   project: SiteProject; gantt: GanttEntry[]; card: ReturnType<typeof computeScorecard>
   milestones: SiteMilestone[]; openTab: (t: Tab) => void
   safety: SiteSafety | null; plans: SitePlan[]; baseline: SiteBaseline | null
   hoursWeeks: { weekEnding: string; hours: number }[]
   variations: SiteVariation[]; refreshVariations: () => void
   bookings: SubbieBooking[]; refreshBookings: () => void
+  onToggleBooking: (category: string, booked: boolean) => void
   handover: HandoverChecklist | null
   introSentAt: string | null | undefined   // undefined = still loading; null = not sent
   materials: SiteMaterial[]
@@ -1019,7 +1029,7 @@ function Dashboard({ project, gantt, card, milestones, openTab, safety, plans, b
 
       {/* Subbie contact box: due dates from the gantt; tick when booked in; comment for delays */}
       {subbieScopes.length > 0 && (
-        <SubbieBookingsCard projectId={project.id} scopes={subbieScopes} refresh={refreshBookings} />
+        <SubbieBookingsCard projectId={project.id} scopes={subbieScopes} refresh={refreshBookings} onToggle={onToggleBooking} />
       )}
 
       {/* Variations: the crew raise small ones (<= $1000) and the client approves digitally */}
@@ -1409,8 +1419,9 @@ function Materials({ projectId, materials, refresh, estimate }: { projectId: str
  * from the schedule), the booked tick and the comment log - the same data the dashboard booking
  * card holds, but keyed by company instead of by schedule category.
  */
-function Subbies({ projectId, gantt, bookings, refreshBookings }: {
+function Subbies({ projectId, gantt, bookings, refreshBookings, onToggleBooking }: {
   projectId: string; gantt: GanttEntry[]; bookings: SubbieBooking[]; refreshBookings: () => void
+  onToggleBooking: (category: string, booked: boolean) => void
 }) {
   const [subbies, setSubbies] = useState<SubcontractorPackage[] | null>(null)
   const [open, setOpen] = useState<string | null>(null)
@@ -1496,7 +1507,7 @@ function Subbies({ projectId, gantt, bookings, refreshBookings }: {
                         <p className="text-[10px] text-fg-muted">Matched on trade name - link it explicitly if that&apos;s wrong.</p>
                       )}
                       {mine.map(sc => (
-                        <ScopeDetail key={sc.category} projectId={projectId} scope={sc} refresh={refreshBookings} />
+                        <ScopeDetail key={sc.category} projectId={projectId} scope={sc} refresh={refreshBookings} onToggle={onToggleBooking} />
                       ))}
                     </>
                   )}
@@ -1514,7 +1525,7 @@ function Subbies({ projectId, gantt, bookings, refreshBookings }: {
           <ul className="space-y-2">
             {matched.unlinked.map(sc => (
               <li key={sc.category} className="rounded-lg border border-fg-border p-3">
-                <ScopeDetail projectId={projectId} scope={sc} refresh={refreshBookings} />
+                <ScopeDetail projectId={projectId} scope={sc} refresh={refreshBookings} onToggle={onToggleBooking} />
               </li>
             ))}
           </ul>
@@ -1525,17 +1536,14 @@ function Subbies({ projectId, gantt, bookings, refreshBookings }: {
 }
 
 /** One scheduled scope: window, booked tick and the append-only comment log. */
-function ScopeDetail({ projectId, scope, refresh }: {
+function ScopeDetail({ projectId, scope, refresh, onToggle }: {
   projectId: string; scope: SubbieScope; refresh: () => void
+  onToggle: (category: string, booked: boolean) => void
 }) {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const toggle = async () => {
-    setBusy(true)
-    await saveSiteBooking(projectId, { category: scope.category, booked: !scope.booked })
-    setBusy(false); refresh()
-  }
+  const toggle = () => onToggle(scope.category, !scope.booked)   // optimistic - instant tick
   const addComment = async () => {
     if (!draft.trim()) return
     setBusy(true)
