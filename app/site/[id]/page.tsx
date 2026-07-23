@@ -1103,13 +1103,17 @@ function Boq({ projectId, projectName, address }: { projectId: string; projectNa
   const [open, setOpen] = useState<Record<string, boolean>>({})
   useEffect(() => { getSiteBoq(projectId).then(setEstimate) }, [projectId])
 
+  const allCats = () => {
+    if (!estimate) return []
+    return Array.from(new Set(activeLineItems(estimate).map(i => i.category || 'Uncategorised')))
+  }
+  const setAll = (isOpen: boolean) => setOpen(Object.fromEntries(allCats().map(c => [c, isOpen])))
+
   // Print: expand every category first so the printout is the complete bill, then hand to the
   // browser's print dialog (on a phone that's "Save as PDF" / share).
   const printBoq = () => {
     if (!estimate) return
-    const items = activeLineItems(estimate)
-    const cats = Array.from(new Set(items.map(i => i.category || 'Uncategorised')))
-    setOpen(Object.fromEntries(cats.map(c => [c, true])))
+    setAll(true)
     setTimeout(() => window.print(), 150)
   }
 
@@ -1167,10 +1171,21 @@ function Boq({ projectId, projectName, address }: { projectId: string; projectNa
           <Stat label="Cost allowance">{money(view.totalCost)}</Stat>
           <Stat label="Labour allowed">{Math.round(view.totalHours).toLocaleString('en-AU')} hrs</Stat>
         </div>
-        <button onClick={printBoq}
-          className="shrink-0 rounded-lg border border-fg-border px-3 py-2 text-xs text-fg-heading underline">
-          Print / PDF
-        </button>
+        <div className="shrink-0 flex flex-col gap-1.5">
+          <button onClick={printBoq}
+            className="rounded-lg border border-fg-border px-3 py-2 text-xs text-fg-heading underline">
+            Print / PDF
+          </button>
+          {(() => {
+            const allOpen = view.groups.every(g => open[g.cat])
+            return (
+              <button onClick={() => setAll(!allOpen)}
+                className="rounded-lg border border-fg-border px-3 py-2 text-xs text-fg-heading underline">
+                {allOpen ? 'Collapse all' : 'Expand all'}
+              </button>
+            )
+          })()}
+        </div>
       </div>
       {/* The stat pair again for print (the screen block above is hidden there to drop the button) */}
       <div className="hidden print:grid grid-cols-2 gap-2">
