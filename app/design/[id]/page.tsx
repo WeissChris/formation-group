@@ -486,9 +486,20 @@ export default function ProposalDetailPage() {
             </div>
             <div className="bg-fg-bg px-4 py-4">
               <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-1">Valid Until</p>
-              <p className="text-sm font-light text-fg-heading">
-                {new Date(proposal.validUntil).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
-              </p>
+              {/* Editable so an expiry can be pushed out (client away, extended negotiation) without
+                  recreating the proposal - the date was previously only settable at creation. */}
+              {editing ? (
+                <input
+                  type="date"
+                  value={proposal.validUntil || ''}
+                  onChange={e => { if (e.target.value) saveProposalField({ validUntil: e.target.value }) }}
+                  className="text-sm font-light text-fg-heading bg-transparent border-b border-fg-border focus:border-fg-heading outline-none py-0.5"
+                />
+              ) : (
+                <p className="text-sm font-light text-fg-heading">
+                  {new Date(proposal.validUntil).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+              )}
             </div>
           </div>
 
