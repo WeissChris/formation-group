@@ -28,6 +28,7 @@ import { normalizedPcts, rebalancedPcts, datedPeriodCount } from '@/lib/ganttAll
 import { labourWorkingDays, workingDaysBetween } from '@/lib/ganttSchedule'
 import { vicPublicHolidayName } from '@/lib/publicHolidays'
 import { mapSubtaskTree, findSubtaskInTree, removeSubtaskFromTree, addChildSubtask, flattenSubtasks } from '@/lib/ganttSubtasks'
+import { dedupeGanttEntries } from '@/lib/ganttDedupe'
 import { plannedByWeek, entryClaimSegments, claimLeafSegments, segmentWeekShare, segmentWeekShares } from '@/lib/ganttForecast'
 import { projectSnapshot, clampOffset, shiftMap, applyShift, type ShiftSnapshot } from '@/lib/ganttShift'
 import { buildPhasedBudget, phasedBudgetToCsv } from '@/lib/xccBudget'
@@ -685,7 +686,7 @@ export default function GanttPage() {
   const pendingRemoteRefreshRef = useRef(false)
   useCrossTabRefresh(['gantt'], () => {
     if (hasUnsavedChangesRef.current) { pendingRemoteRefreshRef.current = true; return }
-    setEntries(loadGanttEntries(id))
+    setEntries(dedupeGanttEntries(loadGanttEntries(id)))
   })
 
   // Drawing state
@@ -961,7 +962,9 @@ export default function GanttPage() {
       setEstimate(base)
       // Accepted variations get scheduled into the programme too (Andrew: import variations).
       setVariations(ests.filter(e => !!e.parentEstimateId && e.status === 'accepted' && !e.archived))
-      const localEntries = loadGanttEntries(id)
+      // Collapse duplicate category rows (pre-liveSync residue) on every load - the next Save then
+      // persists the collapsed set and upsertGanttEntries prunes the losing ids from Supabase.
+      const localEntries = dedupeGanttEntries(loadGanttEntries(id))
       setEntries(localEntries)
       const localMilestones = loadMilestones(id)
       setMilestones(localMilestones)
@@ -973,7 +976,7 @@ export default function GanttPage() {
         try {
           const allRemote = await getAllGanttEntries()
           if (cancelled) return
-          const mine = allRemote.filter(e => e.projectId === id)
+          const mine = dedupeGanttEntries(allRemote.filter(e => e.projectId === id))
           if (mine.length > 0) {
             saveGanttEntries(id, mine)   // cache locally so subsequent loads/Saves see them
             setEntries(mine)
@@ -1799,7 +1802,7 @@ export default function GanttPage() {
     hasUnsavedChangesRef.current = false   // persisted — nothing for flush to re-save
     // A remote refresh that arrived mid-edit was deferred — now safe to adopt (our save merged into the
     // same 'fg_gantt' store, so this re-read keeps our just-saved version under newest-wins).
-    if (pendingRemoteRefreshRef.current) { pendingRemoteRefreshRef.current = false; setEntries(loadGanttEntries(id)) }
+    if (pendingRemoteRefreshRef.current) { pendingRemoteRefreshRef.current = false; setEntries(dedupeGanttEntries(loadGanttEntries(id))) }
     setSuccessMsg(`Saved — timeline + revenue forecast (${n} forecast week${n === 1 ? '' : 's'})`)
     setTimeout(() => setSuccessMsg(''), 3000)
   }
