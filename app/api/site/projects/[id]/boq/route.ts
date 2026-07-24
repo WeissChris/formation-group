@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { siteSessionFrom, loadOwnedProjectRow } from '@/lib/siteServer'
+import { mergeAcceptedVariations } from '@/lib/boqVariations'
 
 export const runtime = 'nodejs'
 
 /**
- * GET /api/site/projects/[id]/boq -> the accepted estimate row (raw snake_case) for the project's BOQ.
- * Prefers the accepted BASE estimate (not a variation); falls back to the latest version if none is
- * accepted yet. The /site BOQ tab maps it with the shared mapEstimate + estimateCalculations helpers,
- * so the figures match the office estimate exactly. Ownership enforced (project.foreman === session).
+ * GET /api/site/projects/[id]/boq -> the accepted estimate row (raw snake_case) for the project's BOQ,
+ * with every ACCEPTED variation's line items folded in (categories prefixed "VMO-N · ...", matching the
+ * office gantt's naming). Prefers the accepted BASE estimate; falls back to the latest version if none
+ * is accepted yet. The /site BOQ tab maps it with the shared mapEstimate + estimateCalculations
+ * helpers, so the figures match the office exactly - and because the scorecard + materials pull read
+ * the same payload, a client-approved VMO's labour hours and cost allowances reach site immediately.
+ * Ownership enforced (project.foreman === session).
  */
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const session = siteSessionFrom(request)
@@ -25,5 +29,5 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   const accepted = base.filter(e => e.status === 'accepted')
   const pick = [...(accepted.length ? accepted : base.length ? base : estimates)].sort(byVersionDesc)[0] ?? null
 
-  return NextResponse.json({ ok: true, estimate: pick })
+  return NextResponse.json({ ok: true, estimate: mergeAcceptedVariations(pick, estimates) })
 }
