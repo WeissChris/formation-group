@@ -1,0 +1,671 @@
+<title>Gantt walkthrough - Formation Group</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+  :root{
+    --bg:#f2efe9; --panel:#ffffff; --ink:#23211e; --muted:#77716b; --line:#e2ddd5;
+    --green:#3D5A3A; --green-ink:#ffffff; --green-soft:rgba(61,90,58,.12);
+    --amber:#b45309; --amber-soft:rgba(180,83,9,.12);
+    --ghost:#DEEBF7;
+    /* stage (the mock app) deliberately stays light in both themes - it mirrors the real app */
+    --st-bg:#eceae7; --st-panel:#ffffff; --st-ink:#1a1a1a; --st-muted:#8A8580; --st-line:#d3d3d3;
+    --st-dark:#2b2b28;
+    --exca:#B08968; --walls:#6B8CAE; --pav:#7A9E7E;
+    --shadow:0 12px 40px rgba(35,33,30,.10);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#17191b; --panel:#1f2224; --ink:#ece9e4; --muted:#9b958d; --line:#33373a;
+           --green:#8fb08a; --green-ink:#14210f; --green-soft:rgba(143,176,138,.16);
+           --amber:#e0a35c; --amber-soft:rgba(224,163,92,.14);
+           --shadow:0 12px 40px rgba(0,0,0,.45); }
+  }
+  :root[data-theme="dark"]{ --bg:#17191b; --panel:#1f2224; --ink:#ece9e4; --muted:#9b958d; --line:#33373a;
+           --green:#8fb08a; --green-ink:#14210f; --green-soft:rgba(143,176,138,.16);
+           --amber:#e0a35c; --amber-soft:rgba(224,163,92,.14);
+           --shadow:0 12px 40px rgba(0,0,0,.45); }
+  :root[data-theme="light"]{ --bg:#f2efe9; --panel:#ffffff; --ink:#23211e; --muted:#77716b; --line:#e2ddd5;
+           --green:#3D5A3A; --green-ink:#ffffff; --green-soft:rgba(61,90,58,.12);
+           --amber:#b45309; --amber-soft:rgba(180,83,9,.12);
+           --shadow:0 12px 40px rgba(35,33,30,.10); }
+
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1060px; margin:0 auto; padding:28px 20px 56px}
+
+  /* ── header ─────────────────────────────────────────── */
+  header{display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:18px}
+  .eyebrow{font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:var(--green); font-weight:600; margin:0 0 6px}
+  h1{font-size:clamp(22px,3.4vw,32px); font-weight:300; letter-spacing:.01em; margin:0; text-wrap:balance}
+  .counter{font-size:12px; color:var(--muted); white-space:nowrap; padding-bottom:4px; font-variant-numeric:tabular-nums}
+  .counter b{color:var(--ink); font-weight:600}
+
+  /* ── stage ──────────────────────────────────────────── */
+  .stagewrap{background:var(--panel); border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow); overflow:hidden}
+  .stagescroll{overflow-x:auto}
+  .stage{min-width:680px; background:var(--st-bg); padding:14px 14px 10px; position:relative}
+
+  .toolbar{display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap}
+  .tb{font-size:9.5px; letter-spacing:.12em; text-transform:uppercase; padding:5px 10px; border:1px solid #b9b4ac;
+      color:#6f6a63; background:transparent; border-radius:2px; white-space:nowrap; transition:box-shadow .3s, border-color .3s, background .3s}
+  .tb.dark{background:var(--st-dark); color:rgba(255,255,255,.85); border-color:var(--st-dark)}
+  .tb.amberchip{border-color:#d3a05a; color:#9a6420; display:none}
+  .tb.on{border-color:var(--st-ink); color:var(--st-ink)}
+  .stage[data-nobase="1"] .tb.amberchip{display:inline-block}
+  .tbspacer{flex:1}
+
+  .chart{background:var(--st-panel); border:1px solid #c9c4bc; position:relative}
+
+  .crow{display:flex; align-items:stretch; border-bottom:1px solid #eceae5; position:relative}
+  .crow:last-child{border-bottom:none}
+  .lab{width:176px; min-width:176px; padding:6px 10px; border-right:2px solid #8A8580; background:var(--st-panel)}
+  .lab .nm{font-size:11.5px; font-weight:600; color:var(--st-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .lab .sub{font-size:9.5px; color:var(--st-muted); font-variant-numeric:tabular-nums; white-space:nowrap}
+  .lab .sub .slip{color:#b45309; font-weight:600; opacity:0; transition:opacity .4s}
+  .stage[data-slip="1"] .lab .sub .slip{opacity:1}
+  .lab.indent{padding-left:26px}
+  .lab.indent .nm{font-weight:400; font-size:10.5px; color:#4a463f}
+
+  .track{position:relative; flex:1;
+    background:
+      repeating-linear-gradient(to right, transparent 0, transparent calc(5% - 1px), #000 calc(5% - 1px), #000 calc(5% - .5px), transparent calc(5% - .5px), transparent 5%) ,
+      repeating-linear-gradient(to right, transparent 0, transparent calc(1% - .5px), #e5e2dc calc(1% - .5px), #e5e2dc 1%);
+    background-size:100% 100%, 5% 100%;
+  }
+  /* simpler + correct: day lines every 5% of track, heavy line every 25% (week) */
+  .track{background:
+      repeating-linear-gradient(to right,#111 0,#111 1px,transparent 1px,transparent 25%),
+      repeating-linear-gradient(to right,#e0ddd6 0,#e0ddd6 1px,transparent 1px,transparent 5%);
+  }
+
+  .bar{position:absolute; top:5px; bottom:5px; border-radius:3px;
+       left:calc(var(--s)*5% + 2px); width:calc(var(--l)*5% - 4px);
+       transition:left .7s cubic-bezier(.4,0,.2,1), width .7s cubic-bezier(.4,0,.2,1), opacity .45s;
+       display:flex; align-items:center; padding:0 6px; overflow:hidden}
+  .bar .t{font-size:9px; color:#fff; font-weight:600; letter-spacing:.02em; white-space:nowrap; text-shadow:0 1px 1px rgba(0,0,0,.25)}
+  .bar.hidden{opacity:0}
+  .rollup{top:4px; bottom:auto; height:7px; border-radius:4px; opacity:.55}
+  .ghostband{position:absolute; top:2px; height:5px; border-radius:3px; background:var(--ghost);
+       left:calc(var(--s)*5% + 2px); width:calc(var(--l)*5% - 4px); opacity:0; transition:opacity .5s}
+  .stage[data-ghost="1"] .ghostband{opacity:.95}
+
+  .rowproj .track .bar{background:var(--green)}
+  .rowproj{background:#f5f3ef}
+  .rowproj .lab{background:#f5f3ef}
+
+  .diamond{position:absolute; top:50%; left:calc(var(--s)*5%); transform:translate(-50%,-50%) rotate(45deg);
+     width:10px; height:10px; background:#a06a2c; opacity:0; transition:opacity .5s, transform .5s}
+  .stage[data-diamond="1"] .diamond{opacity:1}
+  .mslabel{position:absolute; top:50%; transform:translateY(-50%); left:calc(var(--s)*5% + 12px); font-size:9px; color:#6f6a63; opacity:0; transition:opacity .5s; white-space:nowrap}
+  .stage[data-diamond="1"] .mslabel{opacity:1}
+
+  /* day header */
+  .dhead{display:flex; border-bottom:1px solid #c9c4bc; background:#faf9f7}
+  .dhead .lab{background:#faf9f7; padding:4px 10px}
+  .dhead .lab .nm{font-weight:400; font-size:10px; color:var(--st-muted)}
+  .days{flex:1; display:flex}
+  .day{flex:1; text-align:center; font-size:8.5px; color:var(--st-muted); padding:3px 0; border-left:1px solid #eceae5; font-variant-numeric:tabular-nums}
+  .day.wk{border-left:1px solid #111}
+  .day.today{color:#c0392b; font-weight:700}
+
+  /* cash strip */
+  .cash{display:flex; border-bottom:2px solid #8A8580; background:#faf9f7}
+  .cash .lab{background:#faf9f7}
+  .weeks{flex:1; display:flex}
+  .week{flex:1; border-left:1px solid #111; padding:5px 8px; position:relative}
+  .week:first-child{border-left:none}
+  .week .wr{display:flex; justify-content:space-between; font-size:8.5px; color:var(--st-muted); font-variant-numeric:tabular-nums; line-height:1.35}
+  .week .wr b{color:var(--st-ink); font-weight:600}
+  .week .tot{border-top:1px solid #e0ddd6; margin-top:2px; padding-top:2px; font-size:9.5px}
+  .inv{position:absolute; top:4px; right:6px; background:#f5d76a; color:#5c4a08; font-size:8px; font-weight:700;
+       padding:1px 5px; border-radius:2px; opacity:0; transition:opacity .5s}
+  .week[data-inv="1"] .inv{opacity:1}
+  .cash .wr span, .cash .tot b{transition:opacity .3s}
+
+  /* today line across rows */
+  .todayline{position:absolute; top:0; bottom:0; width:2px; background:rgba(192,57,43,.55); pointer-events:none;
+     left:calc(176px + (100% - 176px) * .30); z-index:5}
+
+  /* popover mock */
+  .pop{position:absolute; z-index:30; width:230px; background:#fff; border:1px solid #b9b4ac; box-shadow:0 14px 34px rgba(0,0,0,.22);
+       border-radius:4px; padding:10px 12px; opacity:0; pointer-events:none; transform:translateY(6px); transition:opacity .4s, transform .4s;
+       left:calc(176px + (100% - 176px) * .33); top:148px}
+  .stage[data-pop="1"] .pop{opacity:1; transform:translateY(0)}
+  .pop h4{margin:0 0 6px; font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:#6f6a63; font-weight:600}
+  .pop .pr{display:flex; justify-content:space-between; align-items:center; font-size:10.5px; color:#33302b; padding:3px 0; border-bottom:1px solid #f0ede8}
+  .pop .pr:last-child{border-bottom:none}
+  .pop .pv{border:1px solid #d6d2ca; border-radius:2px; padding:1px 7px; font-variant-numeric:tabular-nums; background:#fbfaf8}
+  .pop .hint{font-size:8.5px; color:#8A8580; margin-top:6px}
+
+  /* cursor */
+  .cursor{position:absolute; z-index:40; width:14px; height:14px; border-radius:50%; background:rgba(35,33,30,.85);
+     box-shadow:0 0 0 4px rgba(35,33,30,.18); opacity:0; transition:left .8s cubic-bezier(.4,0,.2,1), top .8s cubic-bezier(.4,0,.2,1), opacity .3s;
+     pointer-events:none}
+  .stage[data-cursor="1"] .cursor{opacity:1}
+
+  /* spotlight */
+  .spot{box-shadow:0 0 0 2px var(--amber), 0 0 0 6px var(--amber-soft) !important; border-radius:3px; z-index:20}
+
+  /* ── caption + transport ────────────────────────────── */
+  .caption{background:var(--panel); border:1px solid var(--line); border-top:none; padding:18px 22px 8px}
+  .ch-eyebrow{font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--green); font-weight:700; margin:0 0 4px}
+  .ch-title{font-size:18px; font-weight:600; margin:0 0 6px; letter-spacing:.01em}
+  .ch-body{font-size:14.5px; max-width:68ch; margin:0; color:var(--ink)}
+  .ch-tip{font-size:12.5px; color:var(--muted); max-width:68ch; margin:8px 0 0}
+  .ch-tip b{color:var(--ink); font-weight:600}
+  .capfade{transition:opacity .25s}
+  .capfade.out{opacity:0}
+
+  .transport{background:var(--panel); border:1px solid var(--line); border-top:1px solid var(--line); border-radius:0 0 10px 10px;
+     padding:14px 22px 16px; display:flex; align-items:center; gap:14px; flex-wrap:wrap}
+  .btn{appearance:none; border:1px solid var(--line); background:transparent; color:var(--ink); cursor:pointer;
+     border-radius:999px; width:38px; height:38px; display:grid; place-items:center; font-size:15px; transition:background .2s}
+  .btn:hover{background:var(--green-soft)}
+  .btn:focus-visible{outline:2px solid var(--green); outline-offset:2px}
+  .btn.play{width:48px; height:48px; background:var(--green); color:var(--green-ink); border-color:var(--green); font-size:18px}
+  .prog{flex:1; min-width:180px; display:flex; align-items:center; gap:5px}
+  .seg{flex:1; height:5px; background:var(--line); border-radius:99px; overflow:hidden; cursor:pointer}
+  .seg .fill{height:100%; width:0%; background:var(--green)}
+  .seg.done .fill{width:100%}
+  .seg:focus-visible{outline:2px solid var(--green); outline-offset:2px}
+  .kbd{font-size:11px; color:var(--muted); white-space:nowrap}
+  .kbd b{border:1px solid var(--line); border-radius:4px; padding:0 5px; font-weight:500; color:var(--ink)}
+
+  /* chapter list */
+  details.toc{margin-top:18px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:4px 18px}
+  details.toc summary{cursor:pointer; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); padding:10px 0; user-select:none}
+  .toc ol{margin:0 0 12px; padding-left:22px; columns:2; column-gap:36px; font-size:13.5px}
+  .toc li{margin:3px 0; break-inside:avoid}
+  .toc a{color:var(--ink); text-decoration:none; cursor:pointer}
+  .toc a:hover{color:var(--green); text-decoration:underline}
+  .toc li.cur a{color:var(--green); font-weight:600}
+
+  footer{margin-top:22px; font-size:12px; color:var(--muted); max-width:75ch}
+
+  @media (max-width:640px){
+    .toc ol{columns:1}
+    .transport{gap:10px}
+    .lab{width:132px; min-width:132px}
+  }
+  @media (prefers-reduced-motion: reduce){
+    .bar,.cursor,.ghostband,.pop,.diamond,.mslabel,.seg .fill,.capfade{transition:none !important}
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">Formation Group &middot; Training</p>
+      <h1>The project gantt, explained</h1>
+    </div>
+    <div class="counter">Chapter <b id="cNum">1</b> / <span id="cTot">12</span></div>
+  </header>
+
+  <div class="stagewrap">
+    <div class="stagescroll">
+      <div class="stage" id="stage">
+        <div class="toolbar">
+          <span class="tb on" id="tbDays">Days</span><span class="tb" id="tbWeeks">Weeks</span>
+          <span class="tbspacer"></span>
+          <span class="tb amberchip" id="tbNoBase">Baseline ! &#9662;</span>
+          <span class="tb" id="tbBase">Baseline (1) &#9662;</span>
+          <span class="tb" id="tbIPdf">Internal PDF</span>
+          <span class="tb" id="tbCPdf">Client PDF</span>
+          <span class="tb dark" id="tbSave">Save timeline + forecast</span>
+        </div>
+
+        <div class="chart" id="chart">
+          <div class="cash" id="cash">
+            <div class="lab"><div class="nm">Cash flow / week</div><div class="sub">revenue by source</div></div>
+            <div class="weeks" id="weeks"></div>
+          </div>
+
+          <div class="dhead">
+            <div class="lab"><div class="nm">March 2026</div></div>
+            <div class="days" id="days"></div>
+          </div>
+
+          <div id="rows"></div>
+
+          <div class="todayline" id="todayline"></div>
+          <div class="pop" id="pop">
+            <h4>Work period allocation</h4>
+            <div class="pr"><span>Labour</span><span class="pv">60&nbsp;%</span></div>
+            <div class="pr"><span>Materials</span><span class="pv">100&nbsp;%</span></div>
+            <div class="pr"><span>Subcontractor</span><span class="pv">0&nbsp;%</span></div>
+            <div class="hint">Each discipline totals 100% across its work periods - edit one and the rest auto-balance.</div>
+          </div>
+          <div class="cursor" id="cursor"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="caption">
+      <div class="capfade" id="cap">
+        <p class="ch-eyebrow" id="capEyebrow">Chapter 1</p>
+        <h2 class="ch-title" id="capTitle"></h2>
+        <p class="ch-body" id="capBody"></p>
+        <p class="ch-tip" id="capTip"></p>
+      </div>
+    </div>
+
+    <div class="transport">
+      <button class="btn" id="btnPrev" aria-label="Previous chapter">&#9664;</button>
+      <button class="btn play" id="btnPlay" aria-label="Play">&#9654;</button>
+      <button class="btn" id="btnNext" aria-label="Next chapter">&#9654;&#9654;</button>
+      <button class="btn" id="btnVo" aria-label="Voiceover on" aria-pressed="true" title="Voiceover (M)">&#128266;</button>
+      <div class="prog" id="prog" role="group" aria-label="Chapters"></div>
+      <span class="kbd"><b>space</b> play &middot; <b>&#8592;</b><b>&#8594;</b> chapters &middot; <b>m</b> voice</span>
+    </div>
+  </div>
+
+  <details class="toc">
+    <summary>All chapters</summary>
+    <ol id="toc"></ol>
+  </details>
+
+  <footer>
+    This walkthrough animates a mock of the real gantt so nothing here touches live project data.
+    Everything shown works the same on an actual job: open any project and hit <b>Gantt</b> to follow along.
+    The voiceover uses your computer&#39;s built-in voice - it sounds best in Edge or Chrome, and the
+    speaker button (or <b>M</b>) turns it off.
+  </footer>
+</div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id)
+  const stage = $('stage')
+
+  // ── build the grid ────────────────────────────────────
+  const DOW = ['M','T','W','T','F']
+  const daysEl = $('days')
+  for (let i=0;i<20;i++){
+    const d = document.createElement('div')
+    d.className = 'day' + (i%5===0 && i>0 ? ' wk':'') + (i===6 ? ' today':'')
+    d.textContent = DOW[i%5] + ' ' + (2+i+Math.floor(i/5)*2)  // skip weekends in the date count
+    daysEl.appendChild(d)
+  }
+
+  // cash weeks
+  const CASH = {
+    base: [
+      {m:'6.1k', l:'9.4k', s:'0',    t:'$15.5k', inv:false},
+      {m:'12.8k',l:'11.2k',s:'8.4k', t:'$32.4k', inv:'INV $47.9k'},
+      {m:'4.2k', l:'9.8k', s:'6.2k', t:'$20.2k', inv:false},
+      {m:'8.1k', l:'12.4k',s:'3.1k', t:'$23.6k', inv:'INV $43.8k'},
+    ],
+    shifted: [
+      {m:'0',    l:'0',    s:'0',    t:'$0',     inv:false},
+      {m:'6.1k', l:'9.4k', s:'0',    t:'$15.5k', inv:false},
+      {m:'12.8k',l:'11.2k',s:'8.4k', t:'$32.4k', inv:'INV $47.9k'},
+      {m:'4.2k', l:'9.8k', s:'6.2k', t:'$20.2k', inv:false},
+    ],
+    pavlate: [
+      {m:'6.1k', l:'9.4k', s:'0',    t:'$15.5k', inv:false},
+      {m:'12.8k',l:'11.2k',s:'8.4k', t:'$32.4k', inv:'INV $47.9k'},
+      {m:'2.4k', l:'7.1k', s:'6.2k', t:'$15.7k', inv:false},
+      {m:'9.9k', l:'15.1k',s:'3.1k', t:'$28.1k', inv:'INV $43.8k'},
+    ],
+  }
+  const weeksEl = $('weeks')
+  for (let w=0;w<4;w++){
+    const el = document.createElement('div')
+    el.className='week'
+    el.innerHTML = '<div class="inv"></div>'+
+      '<div class="wr"><span>M</span><span class="vm"></span></div>'+
+      '<div class="wr"><span>L</span><span class="vl"></span></div>'+
+      '<div class="wr"><span>S</span><span class="vs"></span></div>'+
+      '<div class="wr tot"><span>Wk</span><b class="vt"></b></div>'
+    weeksEl.appendChild(el)
+  }
+  function setCash(key){
+    CASH[key].forEach((v,i)=>{
+      const w = weeksEl.children[i]
+      w.querySelector('.vm').textContent = v.m
+      w.querySelector('.vl').textContent = v.l
+      w.querySelector('.vs').textContent = v.s
+      w.querySelector('.vt').textContent = v.t
+      w.dataset.inv = v.inv ? '1' : '0'
+      w.querySelector('.inv').textContent = v.inv || ''
+    })
+  }
+
+  // rows: [id, label, budget, kind, colour]
+  const ROWS = [
+    ['proj','Sandpiper Residence','2 Mar - 20 Mar &middot; 15 working days<span class="slip"> &middot; +5d vs baseline</span>','proj', 'var(--green)'],
+    ['ex','Excavation &amp; site prep','$14,200','cat','var(--exca)'],
+    ['rw','Retaining walls','$86,400','parent','var(--walls)'],
+    ['rwM','Materials','','type','#9db7cc'],
+    ['rwL','Labour','','type','var(--walls)'],
+    ['rwS','Subcontractor','','type','#4d6b8a'],
+    ['pav','Paving','$43,600','cat','var(--pav)'],
+    ['ms','Milestones','','ms',''],
+  ]
+  const rowsEl = $('rows'), barEls = {}, ghostEls = {}
+  ROWS.forEach(([id,name,sub,kind,col])=>{
+    const r = document.createElement('div')
+    r.className = 'crow' + (kind==='proj' ? ' rowproj':'')
+    r.id = 'row-'+id
+    const lab = document.createElement('div')
+    lab.className = 'lab' + (kind==='type' ? ' indent':'')
+    lab.innerHTML = '<div class="nm">'+name+'</div>' + (sub?'<div class="sub">'+sub+'</div>':'')
+    const track = document.createElement('div')
+    track.className='track'
+    track.style.height = kind==='type' ? '24px' : kind==='ms' ? '26px' : '30px'
+    if (kind==='ms'){
+      track.innerHTML = '<div class="diamond" style="--s:9.5"></div><div class="mslabel" style="--s:9.5">Walls complete &middot; $25k claim</div>'
+    } else {
+      const g = document.createElement('div'); g.className='ghostband'; track.appendChild(g); ghostEls[id]=g
+      const b = document.createElement('div')
+      b.className = 'bar' + (kind==='parent' ? ' rollup':'')
+      b.style.background = col
+      if (kind==='cat'||kind==='proj') b.innerHTML = '<span class="t">'+(kind==='proj'?'Whole project':'')+'</span>'
+      track.appendChild(b); barEls[id]=b
+    }
+    r.appendChild(lab); r.appendChild(track); rowsEl.appendChild(r)
+  })
+
+  // bar layouts (startDay, lengthDays); null = hidden
+  const L = {
+    full:   {proj:[0,15], ex:[0,3], rw:[2,8], rwM:[2,3], rwL:[3,6], rwS:[6,4], pav:[9,6]},
+    empty:  {proj:null, ex:null, rw:null, rwM:null, rwL:null, rwS:null, pav:null},
+    draw0:  {proj:null, ex:[0,1], rw:null, rwM:null, rwL:null, rwS:null, pav:null},
+    draw1:  {proj:null, ex:[0,3], rw:null, rwM:null, rwL:null, rwS:null, pav:null},
+    nosplit:{proj:null, ex:[0,3], rw:[2,8], rwM:null, rwL:null, rwS:null, pav:[9,6]},
+    catmove:{proj:[0,15], ex:[0,3], rw:[4,8], rwM:[4,3], rwL:[5,6], rwS:[8,4], pav:[9,6]},
+    jobmove:{proj:[5,15], ex:[5,3], rw:[7,8], rwM:[7,3], rwL:[8,6], rwS:[11,4], pav:[14,6]},
+    pavlate:{proj:[0,17], ex:[0,3], rw:[2,8], rwM:[2,3], rwL:[3,6], rwS:[6,4], pav:[11,6]},
+  }
+  function setBars(key){
+    const conf = L[key]
+    for (const id in barEls){
+      const b = barEls[id], v = conf[id]
+      if (!v){ b.classList.add('hidden'); continue }
+      b.classList.remove('hidden')
+      b.style.setProperty('--s', v[0]); b.style.setProperty('--l', v[1])
+    }
+    // ghost bands always show the "full" plan
+    for (const id in ghostEls){
+      const v = L.full[id]
+      if (v){ ghostEls[id].style.setProperty('--s',v[0]); ghostEls[id].style.setProperty('--l',v[1]) }
+    }
+  }
+
+  function cursorAt(rowId, day){
+    const c = $('cursor')
+    if (rowId==null){ stage.dataset.cursor='0'; return }
+    const row = $('row-'+rowId), chart = $('chart')
+    const track = row.querySelector('.track')
+    const x = track.offsetLeft + track.offsetWidth * (day/20)
+    const y = row.offsetTop + row.offsetHeight/2 + chart.offsetTop
+    c.style.left = (x + chart.offsetLeft) + 'px'
+    c.style.top = y + 'px'
+    stage.dataset.cursor='1'
+  }
+
+  let spotEls = []
+  function spot(ids){
+    spotEls.forEach(e=>e.classList.remove('spot')); spotEls=[]
+    ;(ids||[]).forEach(id=>{ const e=$(id); if(e){ e.classList.add('spot'); spotEls.push(e) } })
+  }
+
+  // ── chapters ──────────────────────────────────────────
+  // steps: array of {at:ms, do:fn} to sequence the animation inside a chapter
+  const CH = [
+    { t:'One page runs the whole job', dur:11000,
+      body:'This is the project gantt. It is the schedule for the job AND the money forecast in one - the same bars that tell the crew when each scope runs also tell the office what revenue lands each week. Everything in this walkthrough animates a mock job, so nothing here can break anything.',
+      tip:'Open it from any project: <b>Project &rarr; Gantt</b>.',
+      setup(){ setBars('full'); setCash('base'); stage.dataset.ghost='0'; stage.dataset.diamond='1'; stage.dataset.pop='0'; stage.dataset.slip='0'; stage.dataset.nobase='0'; spot(); cursorAt(null) } },
+
+    { t:'Move a bar, move the money', dur:12000,
+      body:'The chart and the cash-flow strip up top are the same data. Watch: Paving slips two days into the following week, and the weekly revenue moves with it - week 3 drops, week 4 picks it up. That is the whole idea. When a foreman or the office drags the schedule, the company\'s revenue forecast updates itself.',
+      tip:'No separate forecasting step. Saving the timeline IS updating the forecast.',
+      setup(){ setBars('full'); setCash('base'); stage.dataset.diamond='1'; spot(['cash']) },
+      steps:[ {at:2500, do(){ setBars('pavlate'); setCash('pavlate') }},
+              {at:8000, do(){ setBars('full'); setCash('base') }} ] },
+
+    { t:'Rows come from the estimate', dur:11000,
+      body:'You never type the row list. When an estimate is accepted, every category on it becomes a row here automatically, carrying its budget across - Excavation $14,200, Retaining walls $86,400, Paving $43,600. Accepted variations join the list as their own VMO rows. Re-price the estimate and the budgets refresh.',
+      tip:'Reorder rows with the grab handle on the far left of each name.',
+      setup(){ setBars('empty'); setCash('base'); stage.dataset.diamond='0'; spot([]) },
+      steps:[ {at:1500, do(){ setBars('nosplit'); spot(['row-ex','row-rw','row-pav']) }} ] },
+
+    { t:'Reading the grid', dur:11000,
+      body:'Days view is the default: one column per working day, Monday to Friday - weekends simply do not exist here, so bars never need to dodge them. The heavy black line is the Friday-to-Monday week boundary, the red line is today, and Victorian public holidays show as hatched columns you can see at a glance.',
+      tip:'Switch to <b>Weeks</b> view for long jobs - one column per week, same bars.',
+      setup(){ setBars('nosplit'); setCash('base'); spot(['tbDays']); cursorAt(null) },
+      steps:[ {at:3000, do(){ spot(['todayline']) }} ] },
+
+    { t:'Drawing a bar', dur:10000,
+      body:'Click an empty cell on a row and drag across the days - the bar draws as you go. That is all scheduling is: paint when the work happens. Drag a bar to move it, or grab either end to stretch and shrink it.',
+      tip:'Clicking an existing bar opens its details instead of drawing a new one.',
+      setup(){ setBars('empty'); setCash('base'); spot([]); cursorAt('ex',0.5) },
+      steps:[ {at:1200, do(){ setBars('draw0') }},
+              {at:2000, do(){ setBars('draw1'); cursorAt('ex',3) }},
+              {at:4500, do(){ setBars('nosplit'); cursorAt(null) }} ] },
+
+    { t:'Materials, Labour, Sub - the split', dur:12000,
+      body:'Every category splits into three lines: Materials, Labour and Subcontractor. That is deliberate - materials land before the crew starts, and the subbie comes later, so each gets its own bar. The category row itself becomes a thin summary band spanning all three. You can nest further subtasks under any line.',
+      tip:'The subbie line\'s start date is what feeds the cockpit\'s "book the subbie" reminders.',
+      setup(){ setBars('nosplit'); setCash('base'); spot([]) },
+      steps:[ {at:1500, do(){ setBars('full'); spot(['row-rwM','row-rwL','row-rwS']) }} ] },
+
+    { t:'Allocating the budget', dur:12000,
+      body:'Click a bar to open its work period allocation. Each discipline spreads its budget across its work periods as percentages, and they always balance to exactly 100% - you can never quietly lose or invent cost. Revenue then follows the cost: the forecast claims each week in proportion to the work planned that week.',
+      tip:'Labour hours are derived from the labour dollars automatically.',
+      setup(){ setBars('full'); setCash('base'); stage.dataset.pop='1'; spot([]); cursorAt('rwL',5) } },
+
+    { t:'Moving a whole category', dur:11000,
+      body:'Rain pushed the walls back? Grab the thin summary band above a split category and drag - every bar underneath it slides together, materials, labour, subbie and all, keeping their gaps. No re-drawing each line one at a time.',
+      setup(){ stage.dataset.pop='0'; setBars('full'); setCash('base'); spot(['row-rw']); cursorAt('rw',5) },
+      steps:[ {at:2000, do(){ setBars('catmove'); cursorAt('rw',7) }},
+              {at:7500, do(){ setBars('full'); cursorAt(null); spot([]) }} ] },
+
+    { t:'The project bar - move the whole job', dur:13000,
+      body:'The dark green bar at the very top is the entire job. When a start date slips - client not ready, permit late - drag it once and every category, line and subtask shifts together, and the cash-flow forecast moves week for week with it. The shift buttons next to it do the same by exact day counts.',
+      tip:'Shift first, then set the baseline - in that order, before the job starts.',
+      setup(){ setBars('full'); setCash('base'); spot(['row-proj']); cursorAt('proj',7) },
+      steps:[ {at:2500, do(){ setBars('jobmove'); setCash('shifted'); cursorAt('proj',12) }},
+              {at:9000, do(){ setBars('full'); setCash('base'); cursorAt(null); spot([]) }} ] },
+
+    { t:'The cash-flow strip and invoicing', dur:12000,
+      body:'Along the top, each week shows its planned revenue split by source - M, L and S - plus the week total. The yellow INV badge is the invoice cycle: the first invoice lands on the second Friday after work starts, then every fortnight. So before a job even begins you can see what you will be invoicing, and when.',
+      tip:'Milestone $ claims add into their week\'s total too.',
+      setup(){ setBars('full'); setCash('base'); spot(['cash']); stage.dataset.diamond='1' } },
+
+    { t:'The baseline - lock the plan', dur:14000,
+      body:'Before a job starts, set a baseline: a frozen copy of the plan. From then on the pale blue bands show where each scope was SUPPOSED to be, slip shows in days against it, and the foreman\'s delivery score counts timeline creep against that original plan. Moving to Active without one now prompts you - and an Active job missing one shows an amber warning here and on the projects list.',
+      tip:'While a job is still in planning you can re-set it. Once Active, the original is frozen for good - that is what makes creep honest.',
+      setup(){ setBars('full'); setCash('base'); stage.dataset.ghost='1'; stage.dataset.nobase='0'; spot(['tbBase']) },
+      steps:[ {at:4000, do(){ setBars('catmove'); stage.dataset.slip='1'; spot(['row-proj']) }},
+              {at:10500, do(){ setBars('full'); stage.dataset.slip='0'; spot([]) }} ] },
+
+    { t:'Milestones, PDFs and saving', dur:14000,
+      body:'Diamonds mark milestones - optionally with a $ claim that joins the forecast. When you are done, Save writes the timeline and rebuilds the revenue forecast in one action (it also autosaves as you work). Internal PDF prints the full picture with a $ toggle; Client PDF prints a clean high-level programme with no financials. And the foremen see this exact chart in their site cockpit - minus the revenue - so when they adjust the schedule on site, your forecast updates too.',
+      tip:'That is the loop: estimate &rarr; gantt &rarr; forecast &rarr; site - one set of bars drives all of it.',
+      setup(){ setBars('full'); setCash('base'); stage.dataset.ghost='0'; stage.dataset.diamond='1'; spot(['tbIPdf','tbCPdf','tbSave']) } },
+  ]
+
+  // ── voiceover (device text-to-speech - no audio files, works offline) ─────
+  const VO_KEY = 'gw_vo'
+  const voSupported = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window
+  let voEnabled = voSupported && (localStorage.getItem(VO_KEY) ?? '1') === '1'
+  let voVoice = null, voActive = false
+
+  function pickVoice(){
+    if (!voSupported) return null
+    const score = v => {
+      const n = (v.name||'').toLowerCase(), l = (v.lang||'').toLowerCase()
+      if (!l.startsWith('en')) return -1
+      let s = 0
+      if (l.startsWith('en-au')) s += 40          // Australian English first
+      if (n.includes('natural')) s += 30          // Edge neural voices sound far better
+      if (n.includes('google')) s += 6
+      if (l.startsWith('en-gb')) s += 5
+      return s
+    }
+    const vs = speechSynthesis.getVoices().map(v=>[score(v),v]).filter(x=>x[0]>=0).sort((a,b)=>b[0]-a[0])
+    return vs.length ? vs[0][1] : null
+  }
+  if (voSupported){
+    voVoice = pickVoice()
+    speechSynthesis.onvoiceschanged = ()=>{ voVoice = pickVoice(); voUI() }
+  }
+
+  const plain = h => { const d=document.createElement('div'); d.innerHTML=h; return d.textContent||'' }
+  const voText = c => plain(c.body) + (c.tip ? ' Tip: ' + plain(c.tip) : '')
+  const voEst = c => Math.max(c.dur, Math.round(voText(c).length * 72))   // ~14 chars/sec spoken
+
+  function speak(c, onDone){
+    stopSpeech()
+    voActive = true
+    // Sentence-sized utterances dodge Chrome's long-utterance cutoff bug.
+    const parts = voText(c).match(/[^.!?]+[.!?]+\s*|[^.!?]+$/g) || [voText(c)]
+    let left = parts.length
+    parts.forEach(p => {
+      const u = new SpeechSynthesisUtterance(p.trim())
+      if (voVoice) u.voice = voVoice
+      u.rate = 1; u.pitch = 1
+      u.onend = u.onerror = ()=>{ if (--left === 0 && voActive){ voActive = false; onDone() } }
+      speechSynthesis.speak(u)
+    })
+  }
+  function stopSpeech(){ if (!voSupported) return; voActive = false; try{ speechSynthesis.cancel() }catch(e){} }
+
+  // ── player ────────────────────────────────────────────
+  let cur = 0, playing = false, timer = null, stepTimers = []
+  const progEl = $('prog'), tocEl = $('toc')
+  $('cTot').textContent = CH.length
+  const chapterDur = i => (voEnabled && voSupported) ? voEst(CH[i]) : CH[i].dur
+
+  CH.forEach((c,i)=>{
+    const s = document.createElement('div')
+    s.className='seg'; s.tabIndex=0; s.role='button'
+    s.setAttribute('aria-label','Chapter '+(i+1)+': '+c.t)
+    s.innerHTML='<div class="fill"></div>'
+    s.addEventListener('click',()=>go(i,true))
+    s.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(i,true) } })
+    progEl.appendChild(s)
+    const li = document.createElement('li')
+    li.innerHTML='<a>'+c.t+'</a>'
+    li.querySelector('a').addEventListener('click',()=>go(i,true))
+    tocEl.appendChild(li)
+  })
+
+  function clearSteps(){ stepTimers.forEach(clearTimeout); stepTimers=[] }
+
+  function render(i){
+    const c = CH[i]
+    const cap = $('cap')
+    cap.classList.add('out')
+    setTimeout(()=>{
+      $('capEyebrow').textContent = 'Chapter '+(i+1)
+      $('capTitle').textContent = c.t
+      $('capBody').innerHTML = c.body
+      $('capTip').innerHTML = c.tip ? 'Tip &middot; '+c.tip : ''
+      cap.classList.remove('out')
+    }, 200)
+    $('cNum').textContent = i+1
+    clearSteps()
+    c.setup()
+    ;(c.steps||[]).forEach(st=> stepTimers.push(setTimeout(st.do, st.at)))
+    // progress fills
+    ;[...progEl.children].forEach((s,j)=>{
+      s.classList.toggle('done', j<i)
+      const f = s.querySelector('.fill')
+      f.style.transition='none'; f.style.width = j<i ? '100%' : '0%'
+      if (j===i && playing){
+        const d = chapterDur(i)
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{
+          f.style.transition = 'width '+d+'ms linear'; f.style.width='100%'
+        }))
+      }
+    })
+    ;[...tocEl.children].forEach((li,j)=>li.classList.toggle('cur', j===i))
+  }
+
+  function go(i, stop){
+    cur = Math.max(0, Math.min(CH.length-1, i))
+    if (stop) pause()
+    render(cur)
+    schedule()
+  }
+  // Generation token: every (re)schedule or pause invalidates all older timers and speech
+  // callbacks, so a stale failsafe from a skipped chapter can never advance the player.
+  let gen = 0, failTimer = null
+  function clearTimers(){ if (timer) clearTimeout(timer); if (failTimer) clearTimeout(failTimer); timer = failTimer = null }
+  function schedule(){
+    const g = ++gen
+    clearTimers()
+    stopSpeech()
+    if (!playing) return
+    const adv = ()=>{
+      if (g !== gen || !playing) return
+      if (cur < CH.length-1) { cur++; render(cur); schedule() }
+      else pause(true)
+    }
+    if (voEnabled && voSupported){
+      // Narrated mode: the chapter runs as long as the narration takes, with a
+      // failsafe timer in case speech stalls (some browsers silently drop it).
+      speak(CH[cur], ()=>{ if (g === gen) timer = setTimeout(adv, 650) })
+      failTimer = setTimeout(adv, voEst(CH[cur]) + 9000)
+    } else {
+      timer = setTimeout(adv, CH[cur].dur)
+    }
+  }
+  function play(){
+    if (cur===CH.length-1 && !playing) cur = 0
+    playing = true
+    $('btnPlay').innerHTML='&#10074;&#10074;'
+    $('btnPlay').setAttribute('aria-label','Pause')
+    render(cur); schedule()
+  }
+  function pause(ended){
+    playing = false
+    gen++
+    clearTimers()
+    stopSpeech()
+    $('btnPlay').innerHTML='&#9654;'
+    $('btnPlay').setAttribute('aria-label','Play')
+    if (!ended){
+      const f = progEl.children[cur].querySelector('.fill')
+      const w = getComputedStyle(f).width
+      f.style.transition='none'; f.style.width=w
+    }
+  }
+  $('btnPlay').addEventListener('click',()=> playing ? pause() : play())
+  $('btnPrev').addEventListener('click',()=> go(cur-1,true))
+  $('btnNext').addEventListener('click',()=> go(cur+1,true))
+
+  const btnVo = $('btnVo')
+  function voUI(){
+    btnVo.innerHTML = voEnabled ? '&#128266;' : '&#128263;'
+    btnVo.setAttribute('aria-pressed', voEnabled ? 'true' : 'false')
+    btnVo.setAttribute('aria-label', voEnabled ? 'Voiceover on' : 'Voiceover off')
+    btnVo.title = (voEnabled ? (voVoice ? 'Voiceover: '+voVoice.name : 'Voiceover on') : 'Voiceover off') + ' (M)'
+  }
+  if (!voSupported) btnVo.style.display = 'none'
+  voUI()
+  btnVo.addEventListener('click', ()=>{
+    voEnabled = voSupported && !voEnabled
+    try{ localStorage.setItem(VO_KEY, voEnabled ? '1' : '0') }catch(e){}
+    voUI()
+    if (playing){ render(cur); schedule() }   // restart the chapter in the new mode
+    else stopSpeech()
+  })
+
+  document.addEventListener('keydown',e=>{
+    if (e.target.closest('input,textarea')) return
+    if (e.key===' '){ e.preventDefault(); playing?pause():play() }
+    if (e.key==='ArrowLeft') go(cur-1,true)
+    if (e.key==='ArrowRight') go(cur+1,true)
+    if (e.key==='m'||e.key==='M') btnVo.click()
+  })
+
+  render(0)
+})()
+</script>
