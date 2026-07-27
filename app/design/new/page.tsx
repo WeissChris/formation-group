@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { upsertProposal } from '@/lib/storageAsync'
@@ -11,6 +11,7 @@ import type { DesignProposal, ProposalContentBlock, ProposalPhase } from '@/type
 import { Trash2 } from 'lucide-react'
 import ProposalPreview from '@/components/ProposalPreview'
 import ContentBlockEditor from '@/components/ContentBlockEditor'
+import { getProposalSamples, sampleUrl, formatSize, type ProposalSample } from '@/lib/proposalSamples'
 
 export default function NewProposalPage() {
   const router = useRouter()
@@ -67,6 +68,13 @@ The following outlines our proposed design process and associated fees.`
   const [preview, setPreview] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [contentBlocks, setContentBlocks] = useState<ProposalContentBlock[]>(DEFAULT_CONTENT_BLOCKS)
+  // Sample design packages (our shared 2D/3D examples): ALL ticked by default so a fresh proposal
+  // carries them without a return trip to the editor - untick per proposal as needed.
+  const [samples, setSamples] = useState<ProposalSample[]>([])
+  const [sampleIds, setSampleIds] = useState<string[]>([])
+  useEffect(() => {
+    getProposalSamples().then(list => { setSamples(list); setSampleIds(list.map(s => s.id)) })
+  }, [])
 
   const set = (k: string, v: string | boolean) => setForm(f => ({ ...f, [k]: v }))
   const updatePhase = (i: number, patch: Partial<ProposalPhase>) =>
@@ -110,6 +118,7 @@ The following outlines our proposed design process and associated fees.`
       processVideoUrl: form.processVideoUrl || undefined,
       createdAt: new Date().toISOString(),
       contentBlocks: contentBlocks.length > 0 ? contentBlocks : undefined,
+      sampleIds: sampleIds.length > 0 ? sampleIds : undefined,
     }
     return syncLegacyPhaseFields(base, phases)
   }
@@ -165,6 +174,9 @@ The following outlines our proposed design process and associated fees.`
             welcomeVideoUrl={form.welcomeVideoUrl}
             processVideoUrl={form.processVideoUrl}
             contentBlocks={contentBlocks}
+            samples={samples
+              .filter(s => sampleIds.includes(s.id))
+              .map(s => ({ id: s.id, title: s.title, blurb: s.blurb, url: sampleUrl(s.path), size: formatSize(s.sizeBytes) }))}
           />
         </div>
       </div>
@@ -376,6 +388,28 @@ The following outlines our proposed design process and associated fees.`
               />
             </div>
           </div>
+
+          <div className="h-px bg-fg-border" />
+
+          {/* Sample packages: ticked = shown on this proposal. All on by default. */}
+          {samples.length > 0 && (
+            <div>
+              <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1.5">Sample packages (shown on the proposal)</label>
+              <div className="space-y-1">
+                {samples.map(s => {
+                  const on = sampleIds.includes(s.id)
+                  return (
+                    <label key={s.id} className="flex items-center gap-2 text-sm font-light text-fg-heading cursor-pointer">
+                      <input type="checkbox" checked={on} className="w-3.5 h-3.5 accent-fg-dark"
+                        onChange={e => setSampleIds(cur => e.target.checked ? [...cur, s.id] : cur.filter(x => x !== s.id))} />
+                      {s.title}
+                      {s.sizeBytes ? <span className="text-2xs text-fg-muted">({formatSize(s.sizeBytes)})</span> : null}
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="h-px bg-fg-border" />
 
