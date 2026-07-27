@@ -6,6 +6,7 @@ import {
   generateForemanPin,
   isLegacyForemanPin,
   toISODate,
+  clientDisplayName,
 } from './utils'
 
 describe('getFinancialYear (AU Jul-Jun)', () => {
@@ -126,5 +127,36 @@ describe('generateForemanPin', () => {
     const seen = new Set<string>()
     for (let i = 0; i < 50; i++) seen.add(generateForemanPin())
     expect(seen.size).toBe(50)
+  })
+})
+
+describe('clientDisplayName', () => {
+  it('collapses a shared surname', () => {
+    expect(clientDisplayName('Paul Manohar', 'Jacqui Manohar')).toBe('Paul & Jacqui Manohar')
+  })
+
+  it('keeps both full names when the surnames differ', () => {
+    expect(clientDisplayName('Paul Manohar', 'Jacqui Smith')).toBe('Paul Manohar & Jacqui Smith')
+  })
+
+  it('collapses multi-word surnames as a whole tail', () => {
+    expect(clientDisplayName('Paul van der Berg', 'Jacqui van der Berg')).toBe('Paul & Jacqui van der Berg')
+    // Different multi-word tails do not collapse.
+    expect(clientDisplayName('Paul van der Berg', 'Jacqui der Berg')).toBe('Paul van der Berg & Jacqui der Berg')
+  })
+
+  it('compares surnames case-insensitively, keeping the first spelling', () => {
+    expect(clientDisplayName('Paul MANOHAR', 'Jacqui Manohar')).toBe('Paul & Jacqui MANOHAR')
+  })
+
+  it('leaves first-name-only pairs alone', () => {
+    expect(clientDisplayName('Paul', 'Jacqui')).toBe('Paul & Jacqui')
+    expect(clientDisplayName('Paul', 'Jacqui Manohar')).toBe('Paul & Jacqui Manohar')
+  })
+
+  it('handles a single or missing name', () => {
+    expect(clientDisplayName('Paul Manohar')).toBe('Paul Manohar')
+    expect(clientDisplayName('', 'Jacqui Manohar')).toBe('Jacqui Manohar')
+    expect(clientDisplayName('')).toBe('')
   })
 })

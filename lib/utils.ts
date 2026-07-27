@@ -141,12 +141,23 @@ export function extractLastName(clientName: string): string {
 }
 
 // Combine one or two client names for display (titles, hero, header).
-// "John Smith" + "Jane Smith" → "John Smith & Jane Smith"; second name optional.
+// A shared surname collapses: "Paul Manohar" + "Jacqui Manohar" → "Paul & Jacqui Manohar".
+// Different surnames keep both in full: "Paul Manohar" + "Jacqui Smith" → "Paul Manohar & Jacqui Smith".
+// The comparison uses everything after the first word, so "van der Berg" style surnames collapse too.
 export function clientDisplayName(name1: string, name2?: string): string {
   const a = (name1 || '').trim()
   const b = (name2 || '').trim()
-  if (a && b) return `${a} & ${b}`
-  return a || b
+  if (!(a && b)) return a || b
+  const partsA = a.split(/\s+/)
+  const partsB = b.split(/\s+/)
+  if (partsA.length > 1 && partsB.length > 1) {
+    const tailA = partsA.slice(1).join(' ')
+    const tailB = partsB.slice(1).join(' ')
+    if (tailA.toLowerCase() === tailB.toLowerCase()) {
+      return `${partsA[0]} & ${partsB[0]} ${tailA}`
+    }
+  }
+  return `${a} & ${b}`
 }
 
 // Build the "Hi ___," greeting names from one or two client names, using the FIRST word of each.
