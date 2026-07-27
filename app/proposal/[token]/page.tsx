@@ -673,8 +673,10 @@ export default function ProposalAcceptancePage() {
                   )
                 })()}
 
+                {/* Block slots anchor AFTER their phase (a "between 2 & 3" block on a 2-phase
+                    proposal used to render nowhere - now it simply follows the final phase). */}
                 {i === 0 && <BlocksAtPosition blocks={blocks} position="between_phase1_2" />}
-                {i === 1 && phases.length > 2 && <BlocksAtPosition blocks={blocks} position="between_phase2_3" />}
+                {i === 1 && <BlocksAtPosition blocks={blocks} position="between_phase2_3" />}
               </div>
             </section>
           )

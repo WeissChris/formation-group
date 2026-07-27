@@ -16,9 +16,12 @@ interface Props {
 // Note: 'before_phases' and 'after_phases' are intentionally not offered — those slots only ever
 // duplicated the dedicated Welcome / Our Design Process videos, so they were removed. Legacy
 // blocks in those positions are simply no longer rendered.
+// Each slot anchors AFTER its phase (the stored values keep the legacy "between" names): a block
+// after Phase 2 renders whether or not a Phase 3 exists, so 2-phase proposals aren't left with a
+// slot that renders nowhere.
 const POSITIONS: { value: ProposalContentBlock['position']; label: string }[] = [
-  { value: 'between_phase1_2', label: 'Between Phase 1 & 2' },
-  { value: 'between_phase2_3', label: 'Between Phase 2 & 3' },
+  { value: 'between_phase1_2', label: 'After Phase 1' },
+  { value: 'between_phase2_3', label: 'After Phase 2' },
 ]
 
 function VideoPreview({ url }: { url: string }) {
@@ -39,11 +42,11 @@ function VideoPreview({ url }: { url: string }) {
 }
 
 export default function ContentBlockEditor({ blocks, onChange, phaseCount }: Props) {
-  /** The phase index this position needs (slot "between N & N+1" needs phase N+1 to exist). */
+  /** The phase this slot anchors after - warn when the proposal doesn't have that phase at all. */
   const missingPhase = (position: ProposalContentBlock['position']): number | null => {
     if (phaseCount == null) return null
-    if (position === 'between_phase1_2' && phaseCount < 2) return 2
-    if (position === 'between_phase2_3' && phaseCount < 3) return 3
+    if (position === 'between_phase1_2' && phaseCount < 1) return 1
+    if (position === 'between_phase2_3' && phaseCount < 2) return 2
     return null
   }
   const [addingType, setAddingType] = useState<'video' | 'text' | null>(null)

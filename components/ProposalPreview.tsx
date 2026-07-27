@@ -387,10 +387,10 @@ export default function ProposalPreview({
                 </div>
               )}
             </div>
-            {/* Between-phase content blocks - same guards as the public page (a "Between Phase 2 & 3"
-                block on a 2-phase proposal renders NOWHERE, so the preview must not show it either). */}
+            {/* Content blocks anchor AFTER their phase, same rules as the public page - so a
+                "between 2 & 3" block on a 2-phase proposal follows the final phase. */}
             {i === 0 && blocksAt('between_phase1_2')}
-            {i === 1 && phases.length > 2 && blocksAt('between_phase2_3')}
+            {i === 1 && blocksAt('between_phase2_3')}
           </Fragment>
         )
       })}
