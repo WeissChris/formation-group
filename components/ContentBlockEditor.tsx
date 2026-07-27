@@ -8,6 +8,9 @@ import { Plus, X, ChevronUp, ChevronDown, Video, FileText } from 'lucide-react'
 interface Props {
   blocks: ProposalContentBlock[]
   onChange: (blocks: ProposalContentBlock[]) => void
+  /** How many phases the proposal has - warns when a block's slot doesn't exist (e.g. "Between
+   *  Phase 2 & 3" on a 2-phase proposal renders nowhere, in the preview OR for the client). */
+  phaseCount?: number
 }
 
 // Note: 'before_phases' and 'after_phases' are intentionally not offered — those slots only ever
@@ -35,7 +38,14 @@ function VideoPreview({ url }: { url: string }) {
   )
 }
 
-export default function ContentBlockEditor({ blocks, onChange }: Props) {
+export default function ContentBlockEditor({ blocks, onChange, phaseCount }: Props) {
+  /** The phase index this position needs (slot "between N & N+1" needs phase N+1 to exist). */
+  const missingPhase = (position: ProposalContentBlock['position']): number | null => {
+    if (phaseCount == null) return null
+    if (position === 'between_phase1_2' && phaseCount < 2) return 2
+    if (position === 'between_phase2_3' && phaseCount < 3) return 3
+    return null
+  }
   const [addingType, setAddingType] = useState<'video' | 'text' | null>(null)
 
   const addBlock = (type: 'video' | 'text') => {
@@ -135,6 +145,13 @@ export default function ContentBlockEditor({ blocks, onChange }: Props) {
             >
               {POSITIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
+            {missingPhase(block.position) != null && (
+              <p className="text-xs font-light text-amber-500 mt-1.5">
+                This proposal has {phaseCount === 1 ? 'only 1 phase' : `only ${phaseCount} phases`}, so this
+                slot doesn&apos;t exist - the block won&apos;t appear anywhere. Move it to an earlier position
+                or add Phase {missingPhase(block.position)}.
+              </p>
+            )}
           </div>
 
           {/* Content */}

@@ -1,6 +1,6 @@
-import type { CSSProperties } from 'react'
+import { Fragment, type CSSProperties } from 'react'
 import { formatCurrency, clientDisplayName, clientGreetingNames } from '@/lib/utils'
-import type { ProposalPhase } from '@/types'
+import type { ProposalPhase, ProposalContentBlock } from '@/types'
 import { defaultPhaseDescription, defaultPhaseOutcome, phasesTotal, revisionsSummary, scopeLines, scopeLineKind, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 import { DEFAULT_SAMPLES_BLURB } from '@/lib/proposalSamples'
 
@@ -22,6 +22,9 @@ interface Props {
   validUntil: string
   welcomeVideoUrl?: string
   processVideoUrl?: string
+  /** Extra text/video/image blocks slotted between phases - rendered with the SAME position rules
+   *  as the public client page, so the preview shows exactly what the client will (and won't) see. */
+  contentBlocks?: ProposalContentBlock[]
   // When set (internal editor only), the phase title / description / outcome / deliverables become
   // inline-editable in place. The public client view never passes this, so it stays read-only.
   editable?: boolean
@@ -81,6 +84,32 @@ function ProposalVideo({ url, heading, caption }: { url?: string; heading: strin
           {caption}
         </p>
       )}
+    </div>
+  )
+}
+
+/** One between-phase content block, styled to sit as its own section in the preview flow. */
+function PreviewContentBlock({ block }: { block: ProposalContentBlock }) {
+  if (block.type === 'video') {
+    return <ProposalVideo url={block.content} heading={block.caption || 'Video'} />
+  }
+  if (block.type === 'image_url') {
+    return (
+      <div className="border-t p-8" style={{ borderColor: '#e5e7eb' }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={block.content} alt={block.caption ?? ''} className="w-full object-cover" />
+        {block.caption && (
+          <p className="text-xs font-light leading-relaxed mt-3 italic" style={{ color: '#6b6b6b' }}>{block.caption}</p>
+        )}
+      </div>
+    )
+  }
+  return (
+    <div className="border-t p-8" style={{ borderColor: '#e5e7eb' }}>
+      {block.caption && (
+        <h3 className="font-light mb-3" style={{ fontSize: 20, color: '#1a1a1a' }}>{block.caption}</h3>
+      )}
+      <p className="text-sm font-light leading-relaxed whitespace-pre-wrap" style={{ color: '#2d2d2d' }}>{block.content}</p>
     </div>
   )
 }
@@ -176,10 +205,13 @@ export default function ProposalPreview({
   validUntil,
   welcomeVideoUrl,
   processVideoUrl,
+  contentBlocks,
   editable,
   onPhaseChange,
   onSamplesBlurbChange,
 }: Props) {
+  const blocksAt = (position: ProposalContentBlock['position']) =>
+    (contentBlocks ?? []).filter(b => b.position === position).map(b => <PreviewContentBlock key={b.id} block={b} />)
   const total = phasesTotal(phases)
 
   const defaultIntro = `Thank you for the opportunity to meet on site and discuss your project.\n\nFrom our initial consultation, it's clear there is a strong opportunity to reshape the landscape into a highly resolved, functional, and visually cohesive environment.\n\nThe following outlines our proposed design process and associated fees.`
@@ -331,29 +363,35 @@ export default function ProposalPreview({
           </div>
         ) : null
         return (
-          <div key={phase.id} className="border-t p-8" style={{ borderColor: BORDER }}>
-            <h3 className="font-light mb-3" style={{ fontSize: 20, color: HEADING }}>
-              Phase {i + 1} – <Editable text={phase.title} editable={editable} onCommit={t => onPhaseChange?.(i, { title: t })} />
-            </h3>
+          <Fragment key={phase.id}>
+            <div className="border-t p-8" style={{ borderColor: BORDER }}>
+              <h3 className="font-light mb-3" style={{ fontSize: 20, color: HEADING }}>
+                Phase {i + 1} – <Editable text={phase.title} editable={editable} onCommit={t => onPhaseChange?.(i, { title: t })} />
+              </h3>
 
-            {(description || editable) && (
-              <p className="text-xs font-light leading-relaxed mb-6" style={{ color: BODY }}>
-                <Editable text={description} editable={editable} onCommit={t => onPhaseChange?.(i, { description: t })} />
-              </p>
-            )}
+              {(description || editable) && (
+                <p className="text-xs font-light leading-relaxed mb-6" style={{ color: BODY }}>
+                  <Editable text={description} editable={editable} onCommit={t => onPhaseChange?.(i, { description: t })} />
+                </p>
+              )}
 
-            {wide ? (
-              <div className="space-y-6">
-                {outcomeBlock}
-                {deliverablesBox}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-6">
-                <div>{deliverablesBox}</div>
-                {outcomeBlock}
-              </div>
-            )}
-          </div>
+              {wide ? (
+                <div className="space-y-6">
+                  {outcomeBlock}
+                  {deliverablesBox}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-6">
+                  <div>{deliverablesBox}</div>
+                  {outcomeBlock}
+                </div>
+              )}
+            </div>
+            {/* Between-phase content blocks - same guards as the public page (a "Between Phase 2 & 3"
+                block on a 2-phase proposal renders NOWHERE, so the preview must not show it either). */}
+            {i === 0 && blocksAt('between_phase1_2')}
+            {i === 1 && phases.length > 2 && blocksAt('between_phase2_3')}
+          </Fragment>
         )
       })}
 

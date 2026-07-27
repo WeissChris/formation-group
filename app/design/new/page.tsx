@@ -164,6 +164,7 @@ The following outlines our proposed design process and associated fees.`
             validUntil={form.validUntil}
             welcomeVideoUrl={form.welcomeVideoUrl}
             processVideoUrl={form.processVideoUrl}
+            contentBlocks={contentBlocks}
           />
         </div>
       </div>
@@ -379,7 +380,7 @@ The following outlines our proposed design process and associated fees.`
           <div className="h-px bg-fg-border" />
 
           {/* Content blocks */}
-          <ContentBlockEditor blocks={contentBlocks} onChange={setContentBlocks} />
+          <ContentBlockEditor blocks={contentBlocks} onChange={setContentBlocks} phaseCount={phases.length} />
 
           {/* Total */}
           {totalFee > 0 && (

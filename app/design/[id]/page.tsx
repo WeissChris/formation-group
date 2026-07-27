@@ -830,7 +830,7 @@ export default function ProposalDetailPage() {
           <p className="text-xs font-light text-fg-muted leading-relaxed">
             Add videos or text blocks that appear in the client-facing proposal. Use this to embed project videos, welcome messages, or notes about your process.
           </p>
-          <ContentBlockEditor blocks={contentBlocks} onChange={setContentBlocks} />
+          <ContentBlockEditor blocks={contentBlocks} onChange={setContentBlocks} phaseCount={getProposalPhases(proposal).length} />
           <div className="flex items-center gap-3 pt-2">
             <button
               onClick={handleSaveBlocks}
@@ -863,6 +863,7 @@ export default function ProposalDetailPage() {
             validUntil={proposal.validUntil}
             welcomeVideoUrl={proposal.welcomeVideoUrl}
             processVideoUrl={proposal.processVideoUrl}
+            contentBlocks={contentBlocks}
             editable
             onPhaseChange={(i, patch) => { setPhaseField(i, patch); syncPhasesRemote() }}
           />
