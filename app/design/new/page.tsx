@@ -44,6 +44,7 @@ The following outlines our proposed design process and associated fees.`
     clientName: '',
     clientName2: '',
     careOf: '',
+    emailGreetingName: '',
     revisionsIncluded: String(DEFAULT_REVISIONS_INCLUDED),
     revisionsNote: DEFAULT_REVISIONS_NOTE,
     clientEmail: '',
@@ -90,6 +91,7 @@ The following outlines our proposed design process and associated fees.`
       clientName: form.clientName,
       clientName2: form.clientName2 || undefined,
       careOf: form.careOf.trim() || undefined,
+      emailGreetingName: form.emailGreetingName.trim() || undefined,
       revisionsIncluded: form.revisionsIncluded.trim() === '' ? undefined : Math.max(0, parseInt(form.revisionsIncluded, 10) || 0),
       revisionsNote: form.revisionsNote.trim() || undefined,
       clientEmail: form.clientEmail || undefined,
@@ -189,6 +191,9 @@ The following outlines our proposed design process and associated fees.`
               <Field label="Second Client (optional)" value={form.clientName2} onChange={v => set('clientName2', v)} placeholder="e.g. Jane Smith" />
             </div>
             <Field label="C/o (optional - architect / agent acting for the client)" value={form.careOf} onChange={v => set('careOf', v)} placeholder="e.g. Jane Doe, Doe Architects" />
+            {/* When the delivery email goes to the architect/agent, greet THEM - not the client the
+                proposal is for. Overrides the auto "Hi [client]," in the email only. */}
+            <Field label="Email greeting name (optional - who the email says hi to)" value={form.emailGreetingName} onChange={v => set('emailGreetingName', v)} placeholder="e.g. Ben - blank greets the client" />
             <div className="grid grid-cols-2 gap-4">
               <Field label="Client Email" value={form.clientEmail} onChange={v => set('clientEmail', v)} error={errors.clientEmail} placeholder="client@example.com" type="email" />
               <Field label="Client Phone" value={form.clientPhone} onChange={v => set('clientPhone', v)} placeholder="0400 000 000" />
