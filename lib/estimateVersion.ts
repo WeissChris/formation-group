@@ -62,3 +62,30 @@ export function buildNextVersion(
     opc: source.opc ? JSON.parse(JSON.stringify(source.opc)) as Estimate['opc'] : undefined,
   }
 }
+
+/**
+ * Copy line items into another estimate of the family: fresh ids (nested labour-breakdown ids
+ * re-minted), retargeted estimateId, re-enabled. Used to pull scope a client deleted in one
+ * version back into the current one - quote file references carry across untouched (they are
+ * plain Storage paths, so the copy still opens the original file).
+ */
+export function copyLineItemsInto(
+  items: Estimate['lineItems'], targetEstimateId: string, genId: () => string,
+): Estimate['lineItems'] {
+  return items.map(li => ({
+    ...li,
+    id: genId(),
+    estimateId: targetEstimateId,
+    enabled: true,
+    labourBreakdown: li.labourBreakdown?.map(b => ({ ...b, id: genId() })),
+  }))
+}
+
+const lineKey = (li: { category?: string; description?: string }) =>
+  `${(li.category || '').trim().toLowerCase()}::${(li.description || '').trim().toLowerCase()}`
+
+/** True when `items` already carries an equivalent line (same category + description, loosely). */
+export function lineExistsIn(items: Estimate['lineItems'], candidate: Estimate['lineItems'][number]): boolean {
+  const key = lineKey(candidate)
+  return items.some(li => li.enabled !== false && lineKey(li) === key)
+}

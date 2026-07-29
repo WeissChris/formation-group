@@ -14,7 +14,7 @@ import { getAllLibraryItems, getCategories, defaultMarkupForType, TARGET_MARGINS
 import { upsertLibraryItem, deleteLibraryItemAsync, upsertEstimateTemplate, getEstimateTemplates } from '@/lib/storageAsync'
 import { getXeroAccounts, loadCachedXeroAccounts, type XeroAccountOption } from '@/lib/xero'
 import { loadXccDefaults, recordXccDefault, resolveXccDefault } from '@/lib/xcc'
-import { versionFamily, versionGroupIdOf, buildNextVersion } from '@/lib/estimateVersion'
+import { versionFamily, versionGroupIdOf, buildNextVersion, copyLineItemsInto, lineExistsIn } from '@/lib/estimateVersion'
 import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData, EstimateTemplate } from '@/types'
 import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, ChevronRight, GitBranch, Copy, Eye, EyeOff, Check, Star, GripVertical } from 'lucide-react'
 import TakeoffTab from '@/components/TakeoffTab'
@@ -955,6 +955,7 @@ export default function EstimateBuilderPage() {
       if (!found) { router.push('/estimates'); return }
       const est = found
       setEstimate(est)
+      setHasSiblingVersions(versionFamily(loadEstimates(), est).length > 1)
       // Load parent estimate if this is a variation
       if (est.parentEstimateId) {
         let parent = loadEstimates().find(e => e.id === est.parentEstimateId)
@@ -1295,6 +1296,31 @@ export default function EstimateBuilderPage() {
     }
     void upsertEstimateTemplate(template)
     window.alert(`Template "${name.trim()}" saved - pick it under New Estimate > Start from template.`)
+  }
+
+  // Pull scope from an earlier version: a client who deletes something in v2 and wants it back in v3
+  // shouldn't force a re-type. The picker lists a sibling version's active lines grouped by category,
+  // marks the ones this version already carries, and copies the selection in with fresh ids.
+  const [hasSiblingVersions, setHasSiblingVersions] = useState(false)
+  const [versionPicker, setVersionPicker] = useState<{ siblings: Estimate[]; sourceId: string; selected: Set<string> } | null>(null)
+  const openVersionPicker = () => {
+    if (!estimate) return
+    const siblings = versionFamily(loadEstimates(), estimate)
+      .filter(e => e.id !== estimate.id)
+      .sort((a, b) => (b.version || 0) - (a.version || 0))
+    if (siblings.length === 0) return
+    setVersionPicker({ siblings, sourceId: siblings[0].id, selected: new Set() })
+  }
+  const versionPickerAdd = () => {
+    if (!estimate || !versionPicker) return
+    const source = versionPicker.siblings.find(s => s.id === versionPicker.sourceId)
+    if (!source) return
+    const picked = source.lineItems.filter(li => versionPicker.selected.has(li.id))
+    if (picked.length === 0) return
+    const copies = copyLineItemsInto(picked, estimate.id, generateId)
+    setEstimate(prev => prev ? { ...prev, lineItems: [...prev.lineItems, ...copies], updatedAt: new Date().toISOString() } : prev)
+    setHasUnsavedChanges(true)
+    setVersionPicker(null)
   }
 
   // Clone this estimate into a fresh draft version (v2, v3, ...) under the same version family, so a
@@ -1884,6 +1910,15 @@ export default function EstimateBuilderPage() {
               >
                 <GitBranch className="w-3 h-3" /> New Version
               </button>
+              {hasSiblingVersions && (
+                <button
+                  onClick={openVersionPicker}
+                  title="Browse an earlier version and copy line items back into this one (e.g. scope the client deleted and now wants again)"
+                  className="flex items-center gap-2 px-3 py-1.5 border border-fg-border text-fg-muted text-xs font-light tracking-architectural uppercase hover:text-fg-heading transition-colors"
+                >
+                  <Copy className="w-3 h-3" /> Copy from earlier version
+                </button>
+              )}
             </>
           )}
           <select
@@ -2288,6 +2323,79 @@ export default function EstimateBuilderPage() {
           onClose={() => setShowTemplateModal(false)}
         />
       )}
+
+      {/* Copy-from-earlier-version picker: scope the client deleted then wants back, without re-typing. */}
+      {versionPicker && (() => {
+        const source = versionPicker.siblings.find(s => s.id === versionPicker.sourceId) ?? versionPicker.siblings[0]
+        const rows = source.lineItems.filter(li => li.enabled !== false)
+        const cats = Array.from(new Set(rows.map(li => li.category || 'Uncategorised')))
+        const toggle = (liId: string) => setVersionPicker(vp => {
+          if (!vp) return vp
+          const next = new Set(vp.selected)
+          if (next.has(liId)) next.delete(liId); else next.add(liId)
+          return { ...vp, selected: next }
+        })
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setVersionPicker(null)} />
+            <div className="relative bg-fg-bg border border-fg-border shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
+              <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-fg-border shrink-0">
+                <p className="text-sm font-light text-fg-heading">
+                  Copy line items into v{estimate.version}
+                </p>
+                <div className="flex items-center gap-3">
+                  <select
+                    value={versionPicker.sourceId}
+                    onChange={e => setVersionPicker(vp => vp ? { ...vp, sourceId: e.target.value, selected: new Set() } : vp)}
+                    className="px-2 py-1 bg-transparent border border-fg-border text-fg-heading text-xs font-light outline-none"
+                  >
+                    {versionPicker.siblings.map(s => (
+                      <option key={s.id} value={s.id}>v{s.version}{s.status === 'accepted' ? ' (accepted)' : ''}</option>
+                    ))}
+                  </select>
+                  <button onClick={() => setVersionPicker(null)} className="text-fg-muted hover:text-fg-heading">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-y-auto flex-1 px-5 py-3">
+                {cats.map(cat => (
+                  <div key={cat} className="mb-4">
+                    <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-1.5">{cat}</p>
+                    <div className="space-y-1">
+                      {rows.filter(li => (li.category || 'Uncategorised') === cat).map(li => {
+                        const already = lineExistsIn(estimate.lineItems, li)
+                        return (
+                          <label key={li.id} className={`flex items-center gap-2.5 text-sm font-light cursor-pointer ${already ? 'opacity-50' : ''}`}>
+                            <input type="checkbox" checked={versionPicker.selected.has(li.id)} onChange={() => toggle(li.id)}
+                              className="w-3.5 h-3.5 accent-fg-dark shrink-0" />
+                            <span className="flex-1 min-w-0 truncate text-fg-heading">{li.description || '(no description)'}</span>
+                            {already && (
+                              <span className="text-2xs text-fg-muted border border-fg-border px-1.5 py-0.5 shrink-0">already in v{estimate.version}</span>
+                            )}
+                            <span className="text-xs text-fg-muted tabular-nums shrink-0">{formatCurrency(li.total || 0)}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+                {rows.length === 0 && <p className="text-sm font-light text-fg-muted py-8 text-center">This version has no active line items.</p>}
+              </div>
+              <div className="flex items-center justify-between px-5 py-3 border-t border-fg-border shrink-0">
+                <p className="text-2xs font-light text-fg-muted">Copies keep their pricing and quote files. Adjust after adding if prices have moved.</p>
+                <button
+                  onClick={versionPickerAdd}
+                  disabled={versionPicker.selected.size === 0}
+                  className="px-4 py-1.5 bg-fg-dark text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-fg-darker transition-colors disabled:opacity-40"
+                >
+                  Add {versionPicker.selected.size || ''} selected
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       <ScrollToTopButton />
     </div>

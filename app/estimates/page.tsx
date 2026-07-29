@@ -25,6 +25,15 @@ export default function EstimatesPage() {
   const [estimates, setEstimates] = useState<Estimate[]>([])
   const [filter, setFilter] = useState<FilterStatus>('all')
   const [search, setSearch] = useState('')
+  // Version groups showing their older versions. Collapsed by default: one row per job (the
+  // accepted version, else the newest), with earlier versions behind a toggle so a 3-version
+  // quote doesn't take three full rows.
+  const [openVersionGroups, setOpenVersionGroups] = useState<Set<string>>(new Set())
+  const toggleVersionGroup = (key: string) => setOpenVersionGroups(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  })
   const router = useRouter()
 
   useEffect(() => {
@@ -243,15 +252,22 @@ export default function EstimatesPage() {
               <div key={groupKey}>
                 
                 <div className="divide-y divide-fg-border border-t border-b border-fg-border">
-                  {baseEstimates
-                    .sort((a, b) => b.version - a.version)
-                    .map(est => {
+                  {(() => {
+                    // One full row per job: the accepted version wins, else the newest. Older
+                    // versions collapse behind a toggle on that row.
+                    const sorted = [...baseEstimates].sort((a, b) => b.version - a.version)
+                    const primary = sorted.find(e => e.status === 'accepted') ?? sorted[0]
+                    const older = sorted.filter(e => e.id !== primary.id)
+                    const expanded = openVersionGroups.has(groupKey)
+                    const visibleRows = expanded ? [primary, ...older] : [primary]
+                    return visibleRows.map(est => {
+                      const isPrimary = est.id === primary.id
                       const totals = getEstimateTotals(est)
                       // Use project name as primary display — it's always standardised
                       const displayName = est.projectName || est.name || `v${est.version}`
                       const variations = allVariations.filter(v => v.parentEstimateId === est.id)
                       return (
-                        <div key={est.id}>
+                        <div key={est.id} className={isPrimary ? '' : 'pl-6 bg-fg-card/10'}>
                           <Link
                             href={`/estimates/${est.id}`}
                             className="flex items-center justify-between py-4 hover:bg-fg-card/40 -mx-2 px-2 transition-colors group"
@@ -263,11 +279,22 @@ export default function EstimatesPage() {
                                   {est.name && (
                                     <span className="text-xs text-fg-muted ml-2 font-light">v{est.version}</span>
                                   )}
+                                  {!est.name && sorted.length > 1 && (
+                                    <span className="text-xs text-fg-muted ml-2 font-light">v{est.version}</span>
+                                  )}
                                 </p>
                                 <p className="text-xs font-light text-[#8A8580] mt-0.5">
                                   {new Date(est.updatedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
                                   {est.notes && ` · ${est.notes}`}
                                 </p>
+                                {isPrimary && older.length > 0 && (
+                                  <button
+                                    onClick={e => { e.preventDefault(); e.stopPropagation(); toggleVersionGroup(groupKey) }}
+                                    className="mt-1 text-2xs font-light tracking-wide uppercase text-fg-muted border border-fg-border px-1.5 py-0.5 hover:text-fg-heading hover:border-fg-heading transition-colors"
+                                  >
+                                    {expanded ? '▾ Hide' : '▸ Show'} {older.length} earlier version{older.length === 1 ? '' : 's'}
+                                  </button>
+                                )}
                               </div>
                             </div>
                             <div className="flex items-center gap-6">
@@ -344,7 +371,8 @@ export default function EstimatesPage() {
                           })}
                         </div>
                       )
-                    })}
+                    })
+                  })()}
                 </div>
               </div>
             )

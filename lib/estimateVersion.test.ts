@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { versionFamily, versionGroupIdOf, buildNextVersion } from './estimateVersion'
+import { versionFamily, versionGroupIdOf, buildNextVersion, copyLineItemsInto, lineExistsIn } from './estimateVersion'
 import type { Estimate } from '@/types'
 
 let n = 0
@@ -74,5 +74,51 @@ describe('buildNextVersion', () => {
     const v2 = base({ id: 'b', versionGroupId: 'g', version: 2 })
     const v3 = buildNextVersion(v2, [v1, v2], 'c', gid, '2026-07-09T00:00:00Z')
     expect(v3.version).toBe(3)
+  })
+})
+
+describe('copyLineItemsInto', () => {
+  let seq = 0
+  const gid = () => `n${++seq}`
+  const li = (over: Record<string, unknown> = {}) => ({
+    id: 'old', estimateId: 'v1', displayOrder: '1', category: 'Paving', description: 'Bluestone',
+    type: 'Material' as const, units: 10, uom: 'm2', unitCost: 50, total: 500, markupPercent: 45,
+    revenue: 725, crewType: 'Formation' as const, ...over,
+  })
+
+  it('re-mints ids, retargets the estimate and re-enables', () => {
+    seq = 0
+    const out = copyLineItemsInto([li({ enabled: false, labourBreakdown: [{ id: 'lb1', label: 'x', hours: 4 }] })], 'v3', gid)
+    expect(out[0].id).toBe('n1')
+    expect(out[0].estimateId).toBe('v3')
+    expect(out[0].enabled).toBe(true)
+    expect(out[0].labourBreakdown![0].id).toBe('n2')
+    expect(out[0].labourBreakdown![0].hours).toBe(4)
+    expect(out[0].total).toBe(500)
+    expect(out[0].quoteFilePath).toBeUndefined()
+  })
+
+  it('carries quote file references across untouched', () => {
+    const out = copyLineItemsInto([li({ quoteFileName: 'q.pdf', quoteFilePath: 'estimates/v1/old/q.pdf' })], 'v3', gid)
+    expect(out[0].quoteFilePath).toBe('estimates/v1/old/q.pdf')
+  })
+})
+
+describe('lineExistsIn', () => {
+  const li = (category: string, description: string, enabled = true) => ({
+    id: 'x', estimateId: 'e', displayOrder: '1', category, description,
+    type: 'Material' as const, units: 1, uom: 'EA', unitCost: 1, total: 1, markupPercent: 0,
+    revenue: 1, crewType: 'Formation' as const, enabled,
+  })
+
+  it('matches on category + description, case and whitespace insensitive', () => {
+    expect(lineExistsIn([li('Paving', 'Bluestone 400x400')], li('paving', ' bluestone 400x400 '))).toBe(true)
+  })
+  it('does not match across categories or different descriptions', () => {
+    expect(lineExistsIn([li('Decking', 'Bluestone 400x400')], li('Paving', 'Bluestone 400x400'))).toBe(false)
+    expect(lineExistsIn([li('Paving', 'Bluestone 300x300')], li('Paving', 'Bluestone 400x400'))).toBe(false)
+  })
+  it('ignores disabled lines - re-adding something turned off counts as missing', () => {
+    expect(lineExistsIn([li('Paving', 'Bluestone', false)], li('Paving', 'Bluestone'))).toBe(false)
   })
 })
