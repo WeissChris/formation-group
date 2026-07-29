@@ -247,8 +247,12 @@ function popoverPosition(rect: DOMRect | undefined, width: number, estHeight = 3
   const margin = 8
   const left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin))
   let top = rect.bottom + 4
+  // Prefer below the anchor; if it would overflow the bottom, flip above; if it fits neither way
+  // (a popover taller than the space), pin to the top margin and let the popover scroll internally
+  // (see maxHeight/overflow on the container) so the close button and controls stay reachable.
   if (top + estHeight > window.innerHeight - margin) {
-    top = Math.max(margin, rect.top - estHeight - 4)
+    const above = rect.top - estHeight - 4
+    top = above >= margin ? above : margin
   }
   return { top, left }
 }
@@ -433,10 +437,21 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
 
   const { top, left } = popoverPosition(anchorRef.current?.getBoundingClientRect(), 288)
 
+  // Escape always closes, wherever the popover landed on screen.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   return (
+    <>
+      {/* Click-anywhere-outside backdrop - guarantees the popover is always dismissable even when it
+          opens low or off to the side. Transparent so the gantt stays visible behind it. */}
+      <div className="fixed inset-0 z-40" onClick={onClose} />
     <div
-      className="fixed z-50 bg-fg-bg border border-fg-border shadow-xl p-4 w-72"
-      style={{ top, left }}
+      className="fixed z-50 bg-fg-bg border border-fg-border shadow-xl p-4 w-72 overflow-y-auto"
+      style={{ top, left, maxHeight: 'calc(100vh - 16px)' }}
     >
       <div className="flex items-center justify-between mb-1">
         <span className="text-[10px] font-light tracking-architectural uppercase text-fg-muted">Work period allocation</span>
@@ -576,6 +591,7 @@ function SegmentPopover({ seg, siblingSegs, labourBudget, materialsBudget, subBu
         </div>
       </div>
     </div>
+    </>
   )
 }
 
@@ -604,10 +620,18 @@ function MilestonePopover({ milestone, onUpdate, onDelete, onClose, anchorRef, s
 
   const { top, left } = popoverPosition(anchorRef.current?.getBoundingClientRect(), 256, 300)
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
     <div
-      className="fixed z-50 bg-fg-bg border border-fg-border shadow-xl p-4 w-64"
-      style={{ top, left }}
+      className="fixed z-50 bg-fg-bg border border-fg-border shadow-xl p-4 w-64 overflow-y-auto"
+      style={{ top, left, maxHeight: 'calc(100vh - 16px)' }}
     >
       <div className="flex items-center justify-between mb-3">
         <span className="text-[10px] font-light tracking-architectural uppercase text-fg-muted">Milestone</span>
@@ -648,6 +672,7 @@ function MilestonePopover({ milestone, onUpdate, onDelete, onClose, anchorRef, s
         </div>
       </div>
     </div>
+    </>
   )
 }
 
