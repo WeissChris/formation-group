@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { loadEstimates, loadProposals, saveEstimate, loadTakeoffAsync, loadEstimateTemplates } from '@/lib/storage'
 import { uploadAttachment, openAttachment, safeFileName } from '@/lib/attachments'
 import { upsertEstimate, upsertProject, getEstimates, getTakeoff, upsertSubcontractor } from '@/lib/storageAsync'
-import { formatCurrency, generateId } from '@/lib/utils'
+import { formatCurrency, generateId, autoTitlePatch } from '@/lib/utils'
 import { calculateLineItemRevenue, readLineItemRevenue, getMarginSummary, getEstimateTotals, getEstimateContract, activeLineItems, estimateLabourHours, lineContractValue, itemsContractValue, STD_LABOUR_RATE } from '@/lib/estimateCalculations'
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getFinalQty, getRawQty } from '@/lib/takeoffGeometry'
@@ -1703,7 +1703,10 @@ export default function EstimateBuilderPage() {
             <input
               type="text"
               value={estimate.clientName || ''}
-              onChange={e => updateEstimate({ clientName: e.target.value })}
+              onChange={e => {
+                const patch = { clientName: e.target.value }
+                updateEstimate({ ...patch, ...(autoTitlePatch(estimate, patch) ?? {}) })
+              }}
               placeholder="e.g. Mark Alter"
               className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors placeholder-[#8A8580]"
             />
@@ -1713,7 +1716,10 @@ export default function EstimateBuilderPage() {
             <input
               type="text"
               value={estimate.projectAddress || ''}
-              onChange={e => updateEstimate({ projectAddress: e.target.value })}
+              onChange={e => {
+                const patch = { projectAddress: e.target.value }
+                updateEstimate({ ...patch, ...(autoTitlePatch(estimate, patch) ?? {}) })
+              }}
               placeholder="e.g. 26 Halstead Road, North Caulfield"
               className="w-full px-3 py-2 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors placeholder-[#8A8580]"
             />

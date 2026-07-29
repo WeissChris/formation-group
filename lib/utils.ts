@@ -170,6 +170,35 @@ export function clientGreetingNames(name1: string, name2?: string): string {
   return a || b || 'there'
 }
 
+/**
+ * Auto-title a hand-created estimate the standard way ("Malvern East – Joseph Daggian") once
+ * both client and address are known. Returns the extra patch to merge into a clientName/
+ * projectAddress edit, or null when there is nothing to do.
+ *
+ * A hand-typed title (e.g. the scope, "Rear garden works") is preserved into the estimate's `name`
+ * on first retitle - the OPC/Quote documents read `name || projectName`, so the client-facing docs
+ * keep the scope title while the dashboard gains the identifying one. Once the title is the
+ * auto-generated form, later client/address edits simply regenerate it.
+ */
+export function autoTitlePatch(
+  est: { projectName?: string; name?: string; clientName?: string; projectAddress?: string },
+  patch: { clientName?: string; projectAddress?: string },
+): { projectName: string; name?: string } | null {
+  const nextClient = (patch.clientName ?? est.clientName ?? '').trim()
+  const nextAddress = (patch.projectAddress ?? est.projectAddress ?? '').trim()
+  if (!nextClient || !nextAddress) return null
+  const generated = generateProjectName(nextAddress, nextClient)
+  const current = (est.projectName ?? '').trim()
+  if (!generated || generated === current) return null
+  // Was the current title auto-generated from the PREVIOUS client/address? If not, it's hand-typed.
+  const prevGenerated = generateProjectName((est.projectAddress ?? '').trim(), (est.clientName ?? '').trim())
+  const handTyped = !!current && current !== prevGenerated
+  return {
+    projectName: generated,
+    ...(handTyped && !(est.name ?? '').trim() ? { name: current } : {}),
+  }
+}
+
 // Generate standardised project name
 export function generateProjectName(address: string, clientName: string): string {
   const suburb = extractSuburb(address)

@@ -7,6 +7,7 @@ import {
   isLegacyForemanPin,
   toISODate,
   clientDisplayName,
+  autoTitlePatch,
 } from './utils'
 
 describe('getFinancialYear (AU Jul-Jun)', () => {
@@ -158,5 +159,50 @@ describe('clientDisplayName', () => {
     expect(clientDisplayName('Paul Manohar')).toBe('Paul Manohar')
     expect(clientDisplayName('', 'Jacqui Manohar')).toBe('Jacqui Manohar')
     expect(clientDisplayName('')).toBe('')
+  })
+})
+
+describe('autoTitlePatch', () => {
+  const DASH = '–'
+
+  it('retitles a scope-named estimate once client and address are both known', () => {
+    const p = autoTitlePatch(
+      { projectName: 'Rear garden works', clientName: 'Joseph Daggian', projectAddress: '' },
+      { projectAddress: '1a Dene Ave, Malvern East' },
+    )
+    expect(p).toEqual({ projectName: `Malvern East ${DASH} Joseph Daggian`, name: 'Rear garden works' })
+  })
+
+  it('does nothing until both fields are present', () => {
+    expect(autoTitlePatch({ projectName: 'Rear garden works' }, { clientName: 'Joseph Daggian' })).toBeNull()
+    expect(autoTitlePatch({ projectName: 'Rear garden works' }, { projectAddress: '1a Dene Ave, Malvern East' })).toBeNull()
+  })
+
+  it('regenerates without re-stashing when the title is already auto-generated', () => {
+    const est = {
+      projectName: `Malvern East ${DASH} Joseph Daggian`,
+      name: 'Rear garden works',
+      clientName: 'Joseph Daggian',
+      projectAddress: '1a Dene Ave, Malvern East',
+    }
+    const p = autoTitlePatch(est, { clientName: 'Joe Daggian' })
+    expect(p).toEqual({ projectName: `Malvern East ${DASH} Joe Daggian` })
+  })
+
+  it('is a no-op when the generated title matches the current one', () => {
+    const est = {
+      projectName: `Malvern East ${DASH} Joseph Daggian`,
+      clientName: 'Joseph Daggian',
+      projectAddress: '1a Dene Ave, Malvern East',
+    }
+    expect(autoTitlePatch(est, { clientName: 'Joseph Daggian' })).toBeNull()
+  })
+
+  it('never overwrites an existing document name when stashing', () => {
+    const p = autoTitlePatch(
+      { projectName: 'Rear garden works', name: 'Stage 1', clientName: 'Joseph Daggian', projectAddress: '' },
+      { projectAddress: '1a Dene Ave, Malvern East' },
+    )
+    expect(p).toEqual({ projectName: `Malvern East ${DASH} Joseph Daggian` })
   })
 })
