@@ -13,7 +13,7 @@ import {
   saveWeeklyRevenue,
   loadProgressClaims,
 } from '@/lib/storage'
-import { upsertGanttEntries, replaceGanttRevenueRemote, getProjects, upsertProject, upsertGanttMilestones, getAllGanttMilestones, getAllGanttEntries, upsertGanttBaselinesRemote } from '@/lib/storageAsync'
+import { upsertGanttEntries, replaceGanttRevenueRemote, getProjects, upsertProject, upsertGanttMilestones, getAllGanttMilestones, getAllGanttEntries, upsertGanttBaselinesRemote, getGanttBaselinesRemote } from '@/lib/storageAsync'
 import { saveProject } from '@/lib/storage'
 import {
   formatCurrency,
@@ -794,11 +794,26 @@ export default function GanttPage() {
   })
   const [loadedBaselineId, setLoadedBaselineId] = useState<string | null>(null)
   const [baselineMenuOpen, setBaselineMenuOpen] = useState(false)
-  // Heal: baselines were localStorage-only until the remote write path was unblocked (the table's RLS
-  // policy was missing), so projects baselined before the fix have no remote row and the foreman
-  // report can't see them. Mirror the local list up once on mount; the helper no-ops in site mode.
+  // Reconcile with the remote row on mount. Once a remote row EXISTS it is the authority - adopt it
+  // here (so a baseline deleted or re-set on another machine sticks everywhere, instead of this
+  // machine's stale localStorage copy resurrecting it and clobbering the new anchor). Only when the
+  // project has NO remote row at all does the local list seed it - the original heal for baselines
+  // set before the table's RLS fix, when writes were silently dropped.
   useEffect(() => {
-    if (baselines.length) void upsertGanttBaselinesRemote(id, baselines)
+    let cancelled = false
+    ;(async () => {
+      const remote = await getGanttBaselinesRemote(id)
+      if (cancelled) return
+      if (remote === null) {
+        if (baselines.length) void upsertGanttBaselinesRemote(id, baselines)
+      } else {
+        const list = remote as BaselineSnap[]
+        setBaselines(list)
+        setLoadedBaselineId(prev => (prev && !list.some(b => b.id === prev) ? null : prev))
+        try { localStorage.setItem(`fg_gantt_baselines_${id}`, JSON.stringify(list)) } catch { /* ignore */ }
+      }
+    })()
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
   // The baseline used for slip comparison + the ghost overlay: the loaded one, else the most recent.

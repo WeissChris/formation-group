@@ -1187,7 +1187,7 @@ export default function ProjectDetailPage() {
         const parsed = JSON.parse(localStorage.getItem(key) || '[]')
         if (Array.isArray(parsed)) localList = parsed
       } catch { /* ignore */ }
-      const remoteList = await getGanttBaselinesRemote(project.id)
+      const remoteList = (await getGanttBaselinesRemote(project.id)) ?? []   // null = no remote row yet
 
       if (remoteList.length > 0) {
         // Already anchored elsewhere - adopt it locally rather than starting a competing list.

@@ -944,12 +944,17 @@ export async function upsertGanttBaselinesRemote(projectId: string, baselines: u
  * A project's baseline list from Supabase. The local key is per-browser, so "no local baselines"
  * does NOT mean none was ever set — a second device would otherwise re-write index 0 and wash the
  * creep anchor away. Check here before capturing an original baseline.
+ *
+ * Returns NULL when the project has no remote row at all (never synced — safe to seed from local),
+ * versus [] when the row exists with an empty list (a deliberate deletion that must stick on every
+ * device — do NOT push a stale local copy back up).
  */
-export async function getGanttBaselinesRemote(projectId: string): Promise<unknown[]> {
-  if (!isSupabaseConfigured() || !supabase) return []
+export async function getGanttBaselinesRemote(projectId: string): Promise<unknown[] | null> {
+  if (!isSupabaseConfigured() || !supabase) return null
   const { data } = await supabase.from('fg_gantt_baselines')
     .select('baselines').eq('project_id', projectId).maybeSingle()
-  const list = data?.baselines
+  if (!data) return null
+  const list = data.baselines
   return Array.isArray(list) ? list : []
 }
 
