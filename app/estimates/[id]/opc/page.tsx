@@ -482,9 +482,12 @@ export default function OpcPage() {
   const projName = estimate.name || estimate.projectName || 'client'
   const validUntil = new Date(docDate.getTime() + 30 * 86400000)
   const validUntilLabel = validUntil.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
+  // Document number: editable on the cover, defaulting to the estimate version zero-padded - so
+  // v3's OPC reads "03" and a re-issue can be bumped by hand without minting a new version.
+  const docNumber = (opc.docNumber ?? '').trim() || String(estimate.version).padStart(2, '0')
   const quoteNumber = `FG-${estimate.projectId
-    ? `${estimate.projectId.slice(-4).toUpperCase()}-${String(estimate.version).padStart(2, '0')}`
-    : estimate.id.slice(-6).toUpperCase()}`
+    ? `${estimate.projectId.slice(-4).toUpperCase()}-${docNumber}`
+    : `${estimate.id.slice(-6).toUpperCase()}-${docNumber}`}`
   // Flip OPC <-> Quote. Swap the intro too, but only if it's still the source mode's auto default
   // (so a hand-written intro is never overwritten).
   const setDocType = (next: 'opc' | 'quote') => {
@@ -575,17 +578,27 @@ export default function OpcPage() {
           <p className="text-white/60 text-xs tracking-[0.25em] uppercase mb-3">{isQuote ? 'Quotation' : 'Preliminary Pricing'}</p>
           {!isQuote && (
             <h1 className="text-white font-light leading-tight mb-4" style={{ fontSize: 'clamp(32px, 4.5vw, 52px)', letterSpacing: '0.01em' }}>
-              Opinion of Probable Cost
+              Opinion of Probable Cost<span className="text-white/50"> &mdash; {docNumber}</span>
             </h1>
           )}
           <p className={`text-white/90 font-light text-xl mb-1 ${isQuote ? 'mt-1' : ''}`}>{clientName}</p>
           {clientAddress && <p className="text-white/70 font-light text-base">{clientAddress}</p>}
-          <input
-            type="date"
-            value={opc.date ?? ''}
-            onChange={e => mutate({ date: e.target.value })}
-            className="print:hidden mt-3 bg-transparent text-white/60 text-sm font-light border border-white/20 px-2 py-0.5 rounded-none outline-none [color-scheme:dark]"
-          />
+          <div className="print:hidden mt-3 flex items-center gap-2">
+            <input
+              type="date"
+              value={opc.date ?? ''}
+              onChange={e => mutate({ date: e.target.value })}
+              className="bg-transparent text-white/60 text-sm font-light border border-white/20 px-2 py-0.5 rounded-none outline-none [color-scheme:dark]"
+            />
+            <input
+              value={opc.docNumber ?? ''}
+              onChange={e => mutate({ docNumber: e.target.value })}
+              placeholder={String(estimate.version).padStart(2, '0')}
+              title="Document number - blank uses the estimate version"
+              className="w-16 bg-transparent text-white/60 text-sm font-light border border-white/20 px-2 py-0.5 rounded-none outline-none placeholder:text-white/30"
+            />
+            <span className="text-white/40 text-xs font-light">doc no.</span>
+          </div>
           <p className="hidden print:block text-white/60 text-sm font-light mt-3">{dateLabel}</p>
           {isQuote && (
             <p className="text-white/60 text-sm font-light mt-1">Quote no. {quoteNumber} &middot; Valid until {validUntilLabel}</p>

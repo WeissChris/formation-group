@@ -84,10 +84,13 @@ export default function QuotePage() {
 
   const today = new Date()
   const validUntil = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
-  // Use estimate ID for uniqueness when no project is linked, project ID + version otherwise
+  // Use estimate ID for uniqueness when no project is linked, project ID + doc number otherwise.
+  // The doc number is the OPC/Quote document's editable number, defaulting to the version - the
+  // same value the OPC cover shows, so the two documents always agree.
+  const docNumber = (estimate.opc?.docNumber ?? '').trim() || estimate.version.toString().padStart(2, '0')
   const quoteRef = estimate.projectId
-    ? `${estimate.projectId.slice(-4).toUpperCase()}-${estimate.version.toString().padStart(2, '0')}`
-    : `${estimate.id.slice(-6).toUpperCase()}`
+    ? `${estimate.projectId.slice(-4).toUpperCase()}-${docNumber}`
+    : `${estimate.id.slice(-6).toUpperCase()}-${docNumber}`
   const quoteNumber = `FG-${quoteRef}`
 
   return (

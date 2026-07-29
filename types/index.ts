@@ -240,6 +240,7 @@ export interface EstimateOpc {
   valueManagement?: OpcValueOption[]  // value-engineering options with a cost saving each + a total
   upgrades?: OpcUpgradeOption[]       // optional upgrades with an added cost each + a total
   docType?: 'opc' | 'quote'           // render the SAME document as an OPC or a formal Quote (default opc)
+  docNumber?: string                  // document number shown on the cover / quote no.; defaults to the estimate version zero-padded ("03")
 }
 
 /** A value-management (value-engineering) option: an alternative that reduces the cost, with the
