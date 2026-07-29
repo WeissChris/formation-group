@@ -504,16 +504,20 @@ export default function OpcPage() {
         .opc-prose:empty::before { content: attr(data-placeholder); color: #9ca3af; }
         .opc-prose ul { list-style: disc; padding-left: 1.4em; margin: 0.25em 0; }
         .opc-prose ol { list-style: decimal; padding-left: 1.4em; margin: 0.25em 0; }
-        /* Zero the page margin so the browser has no room to print its own header/footer
-           (the page URL, date and document title it injects into the margins). The cover is
-           full-bleed by design; body pages get their breathing room from padding on the
-           content wrapper below (.opc-body) instead. */
-        @page { margin: 0; }
+        /* The cover keeps a zero margin (full-bleed hero, and no room for the browser's own
+           header/footer text on page 1). Every OTHER page gets real margins - previously they
+           were zero too, and because .opc-body's padding only exists at the start and end of the
+           whole flow, page 2+ content started at the literal paper edge. Trade-off: with margins
+           present the browser CAN draw its URL/date header on later pages again if the print
+           dialog's "Headers and footers" option is ticked - untick it once and it stays off. */
+        @page { margin: 14mm 12mm 12mm; }
+        @page :first { margin: 0; }
         @media print {
           .opc-cover { height: 29.6cm; break-after: page; }
           .opc-avoid-break { break-inside: avoid; }
           .opc-prose:empty::before { content: ''; }
-          .opc-body { padding: 1.6cm 1.6cm 1.4cm; }
+          /* Horizontal gutter = 12mm page margin + 4mm padding, matching the old 16mm feel. */
+          .opc-body { padding: 0.2cm 0.4cm; }
         }
       `}</style>
 
