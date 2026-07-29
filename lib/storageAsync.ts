@@ -434,6 +434,19 @@ export async function upsertEstimate(estimate: Estimate): Promise<void> {
         saveEstimate(fresh)
       }
     }
+    // Version-family identity is server-authoritative: once a group id exists remotely (set at
+    // version creation or by the migration 43/45 repairs), a save must never null it or swap it -
+    // stripped or stale local copies were wiping the link and splitting families apart. A local
+    // copy may only INTRODUCE a group id while the remote has none (a new version's first push).
+    if (!fresh.parentEstimateId) {
+      const { data: r } = await supabase.from('fg_estimates')
+        .select('version_group_id').eq('id', fresh.id).maybeSingle()
+      const remoteGid = (r?.version_group_id as string | null) ?? null
+      if (remoteGid && fresh.versionGroupId !== remoteGid) {
+        fresh = { ...fresh, versionGroupId: remoteGid }
+        saveEstimate(fresh)
+      }
+    }
     await safeUpsert('fg_estimates', {
       id: fresh.id,
       project_id: fresh.projectId || null,   // '' would violate the FK to fg_projects
