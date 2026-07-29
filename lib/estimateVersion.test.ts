@@ -40,6 +40,16 @@ describe('versionFamily', () => {
     const v = base({ id: 'v', versionGroupId: 'g', parentEstimateId: 'a', status: 'variation' })
     expect(versionFamily([a, v], a).map(e => e.id)).toEqual(['a'])
   })
+  it('finds the anchor row even when its own copy lacks versionGroupId', () => {
+    // v1 is the anchor: v2/v3 carry versionGroupId = v1.id, but v1's own copy predates the
+    // persisted link (pre-migration-42 localStorage). Its id IS the group id - it must be family.
+    const v1 = base({ id: 'v1' })
+    const v2 = base({ id: 'v2', versionGroupId: 'v1', version: 2 })
+    const v3 = base({ id: 'v3', versionGroupId: 'v1', version: 3 })
+    expect(versionFamily([v1, v2, v3], v3).map(e => e.id).sort()).toEqual(['v1', 'v2', 'v3'])
+    // And browsing FROM the unlinked anchor finds its children too.
+    expect(versionFamily([v1, v2, v3], v1).map(e => e.id).sort()).toEqual(['v1', 'v2', 'v3'])
+  })
 })
 
 describe('buildNextVersion', () => {

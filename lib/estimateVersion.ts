@@ -5,11 +5,15 @@
 
 import type { Estimate } from '@/types'
 
-/** All base estimates (no variation parent) that belong to the same version family as `est`. */
+/** All base estimates (no variation parent) that belong to the same version family as `est`.
+ *  Group identity is compared via versionGroupIdOf on BOTH sides (a row's group id defaults to its
+ *  own id), so the family's ANCHOR row - v1, whose group id IS its id - is found even when its own
+ *  copy hasn't picked up the persisted versionGroupId yet (pre-migration-42 localStorage). */
 export function versionFamily(all: Estimate[], est: Estimate): Estimate[] {
+  const gid = est.versionGroupId || est.id
   return all.filter(e => !e.parentEstimateId && (
     e.id === est.id ||
-    (!!est.versionGroupId && e.versionGroupId === est.versionGroupId) ||
+    (e.versionGroupId || e.id) === gid ||
     (!!est.projectId && e.projectId === est.projectId)
   ))
 }
