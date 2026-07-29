@@ -955,7 +955,6 @@ export default function EstimateBuilderPage() {
       if (!found) { router.push('/estimates'); return }
       const est = found
       setEstimate(est)
-      setHasSiblingVersions(versionFamily(loadEstimates(), est).length > 1)
       // Load parent estimate if this is a variation
       if (est.parentEstimateId) {
         let parent = loadEstimates().find(e => e.id === est.parentEstimateId)
@@ -1301,7 +1300,6 @@ export default function EstimateBuilderPage() {
   // Pull scope from an earlier version: a client who deletes something in v2 and wants it back in v3
   // shouldn't force a re-type. The picker lists a sibling version's active lines grouped by category,
   // marks the ones this version already carries, and copies the selection in with fresh ids.
-  const [hasSiblingVersions, setHasSiblingVersions] = useState(false)
   const [versionPicker, setVersionPicker] = useState<{ siblings: Estimate[]; sourceId: string; selected: Set<string> } | null>(null)
   const openVersionPicker = () => {
     if (!estimate) return
@@ -1910,7 +1908,9 @@ export default function EstimateBuilderPage() {
               >
                 <GitBranch className="w-3 h-3" /> New Version
               </button>
-              {hasSiblingVersions && (
+              {/* Same source of truth as the version switcher above, so the two can never disagree
+                  (a load-time snapshot went stale when sync adopted rows after mount). */}
+              {versionSiblings.length > 1 && (
                 <button
                   onClick={openVersionPicker}
                   title="Browse an earlier version and copy line items back into this one (e.g. scope the client deleted and now wants again)"
