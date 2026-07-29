@@ -285,6 +285,11 @@ export default function EstimatesPage() {
                                 </p>
                                 <p className="text-xs font-light text-[#8A8580] mt-0.5">
                                   {new Date(est.updatedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                  {/* A hand-created estimate's title is often the SCOPE ("Rear garden
+                                      works"), so surface who and where from the estimate's own fields -
+                                      proposal-born rows carry the client in the title already. */}
+                                  {est.clientName && !(est.projectName || '').toLowerCase().includes(est.clientName.trim().toLowerCase()) && ` · ${est.clientName}`}
+                                  {est.projectAddress && ` · ${est.projectAddress}`}
                                   {est.notes && ` · ${est.notes}`}
                                 </p>
                                 {isPrimary && older.length > 0 && (
