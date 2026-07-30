@@ -14,7 +14,7 @@ import Link from 'next/link'
 import { loadEstimates, loadProjects, loadProposals, saveEstimate, loadOpcSnippets } from '@/lib/storage'
 import { getEstimates, upsertEstimate, getOpcSnippets, upsertOpcSnippet, deleteOpcSnippetAsync } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
-import { activeLineItems, getEstimateContract, itemsContractValue } from '@/lib/estimateCalculations'
+import { activeLineItems, getEstimateContract, itemsContractValue, optionCategories } from '@/lib/estimateCalculations'
 import type { Estimate, EstimateOpc, OpcRow, OpcSnippet } from '@/types'
 import { Printer, ArrowLeft, X, Plus, ChevronDown, Bold, Italic, List } from 'lucide-react'
 import SpellCheckButton from '@/components/SpellCheckButton'
@@ -68,6 +68,31 @@ function reconcileRows(saved: OpcRow[] | undefined, categories: string[], seeds:
     if (!seen.has(c)) rows.push({ id: generateId(), title: c, categories: [c], scope: seeds[c] ?? '' })
   }
   return rows
+}
+
+/** Fold the estimate's flagged option categories into a saved OPC option list. Auto-seeded entries
+ *  (categoryRef set) track their category's priced value and drop out when the flag is removed;
+ *  hand-written entries (no categoryRef) are always kept untouched. Titles/notes on seeded entries
+ *  stay editable - only the dollar value is refreshed from the estimate. */
+function reconcileOptions<T extends { categoryRef?: string }>(
+  saved: T[] | undefined,
+  flagged: { category: string; value: number }[],
+  makeEntry: (category: string, value: number) => T,
+  withValue: (entry: T, value: number) => T,
+): T[] {
+  const out: T[] = []
+  const seen = new Set<string>()
+  for (const e of saved ?? []) {
+    if (!e.categoryRef) { out.push(e); continue }
+    const match = flagged.find(f => f.category === e.categoryRef)
+    if (!match) continue // flag removed in the estimate, so the auto entry goes with it
+    seen.add(match.category)
+    out.push(withValue(e, Math.round(match.value)))
+  }
+  for (const f of flagged) {
+    if (!seen.has(f.category)) out.push(makeEntry(f.category, Math.round(f.value)))
+  }
+  return out
 }
 
 // ── Rich prose (bold / italics / dot points) ──────────────────────────────────────
@@ -288,8 +313,14 @@ export default function OpcPage() {
         poolSubtotalExGst: found.opc?.poolSubtotalExGst ?? null,
         exclusions: found.opc?.exclusions ?? DEFAULT_EXCLUSIONS,
         excludedItems: found.opc?.excludedItems ?? [],
-        valueManagement: found.opc?.valueManagement ?? [],
-        upgrades: found.opc?.upgrades ?? [],
+        valueManagement: reconcileOptions(
+          found.opc?.valueManagement, optionCategories(found, 'value_management'),
+          (category, value) => ({ id: generateId(), title: category, note: '', saving: value, categoryRef: category }),
+          (e, value) => ({ ...e, saving: value })),
+        upgrades: reconcileOptions(
+          found.opc?.upgrades, optionCategories(found, 'upgrade'),
+          (category, value) => ({ id: generateId(), title: category, note: '', amount: value, categoryRef: category }),
+          (e, value) => ({ ...e, amount: value })),
         docType,
       })
 
@@ -831,11 +862,18 @@ export default function OpcPage() {
           <div className="space-y-2 mb-4">
             {valueManagement.map(v => (
               <div key={v.id} className="relative group flex items-start gap-4 px-4 py-3" style={{ backgroundColor: BG_WARM }}>
-                <button
-                  onClick={() => mutate(prev => ({ valueManagement: (prev.valueManagement ?? []).filter(x => x.id !== v.id) }))}
-                  title="Remove" className="print:hidden absolute top-2 right-2 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <X className="w-3 h-3" />
-                </button>
+                {v.categoryRef ? (
+                  <span title="Priced from the estimate - unflag the category there to remove"
+                    className="print:hidden absolute top-2 right-2 text-2xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                    from estimate
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => mutate(prev => ({ valueManagement: (prev.valueManagement ?? []).filter(x => x.id !== v.id) }))}
+                    title="Remove" className="print:hidden absolute top-2 right-2 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
                 <div className="flex-1 min-w-0 pr-6">
                   <input
                     value={v.title}
@@ -856,6 +894,11 @@ export default function OpcPage() {
                   <p className="text-2xs tracking-widest uppercase mb-0.5" style={{ color: MUTED }}>Saving</p>
                   <div className="flex items-baseline justify-end gap-0.5">
                     <span className="text-sm font-normal" style={{ color: GREEN }}>-$</span>
+                    {v.categoryRef ? (
+                      <span title="Priced from the estimate category" className="print:hidden inline-block w-20 text-right text-sm font-normal tabular-nums" style={{ color: GREEN }}>
+                        {(v.saving || 0).toLocaleString('en-AU')}
+                      </span>
+                    ) : (
                     <input
                       type="number" inputMode="decimal" value={v.saving || ''}
                       onChange={e => { const n = Math.max(0, Number(e.target.value) || 0); mutate(prev => ({ valueManagement: (prev.valueManagement ?? []).map(x => x.id === v.id ? { ...x, saving: n } : x) })) }}
@@ -863,6 +906,7 @@ export default function OpcPage() {
                       className="print:hidden w-20 text-right text-sm font-normal bg-transparent border-b border-gray-300 focus:border-gray-500 outline-none tabular-nums"
                       style={{ color: GREEN }}
                     />
+                    )}
                     <span className="hidden print:inline text-sm font-normal tabular-nums" style={{ color: GREEN }}>{(v.saving || 0).toLocaleString('en-AU')}</span>
                   </div>
                   <p className="text-2xs font-light mt-0.5" style={{ color: MUTED }}>ex GST</p>
@@ -908,11 +952,18 @@ export default function OpcPage() {
           <div className="space-y-2 mb-4">
             {upgrades.map(u => (
               <div key={u.id} className="relative group flex items-start gap-4 px-4 py-3" style={{ backgroundColor: BG_WARM }}>
-                <button
-                  onClick={() => mutate(prev => ({ upgrades: (prev.upgrades ?? []).filter(x => x.id !== u.id) }))}
-                  title="Remove" className="print:hidden absolute top-2 right-2 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <X className="w-3 h-3" />
-                </button>
+                {u.categoryRef ? (
+                  <span title="Priced from the estimate - unflag the category there to remove"
+                    className="print:hidden absolute top-2 right-2 text-2xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                    from estimate
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => mutate(prev => ({ upgrades: (prev.upgrades ?? []).filter(x => x.id !== u.id) }))}
+                    title="Remove" className="print:hidden absolute top-2 right-2 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
                 <div className="flex-1 min-w-0 pr-6">
                   <input
                     value={u.title}
@@ -933,6 +984,11 @@ export default function OpcPage() {
                   <p className="text-2xs tracking-widest uppercase mb-0.5" style={{ color: MUTED }}>Add</p>
                   <div className="flex items-baseline justify-end gap-0.5">
                     <span className="text-sm font-normal" style={{ color: HEADING }}>+$</span>
+                    {u.categoryRef ? (
+                      <span title="Priced from the estimate category" className="print:hidden inline-block w-20 text-right text-sm font-normal tabular-nums" style={{ color: HEADING }}>
+                        {(u.amount || 0).toLocaleString('en-AU')}
+                      </span>
+                    ) : (
                     <input
                       type="number" inputMode="decimal" value={u.amount || ''}
                       onChange={e => { const n = Math.max(0, Number(e.target.value) || 0); mutate(prev => ({ upgrades: (prev.upgrades ?? []).map(x => x.id === u.id ? { ...x, amount: n } : x) })) }}
@@ -940,6 +996,7 @@ export default function OpcPage() {
                       className="print:hidden w-20 text-right text-sm font-normal bg-transparent border-b border-gray-300 focus:border-gray-500 outline-none tabular-nums"
                       style={{ color: HEADING }}
                     />
+                    )}
                     <span className="hidden print:inline text-sm font-normal tabular-nums" style={{ color: HEADING }}>{(u.amount || 0).toLocaleString('en-AU')}</span>
                   </div>
                   <p className="text-2xs font-light mt-0.5" style={{ color: MUTED }}>ex GST</p>

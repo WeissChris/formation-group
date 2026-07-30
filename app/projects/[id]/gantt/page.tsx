@@ -23,7 +23,7 @@ import {
   toISODate,
   SHORT_MONTH_NAMES,
 } from '@/lib/utils'
-import { readLineItemRevenue, getEstimateContract, lineContractValue, emptyCostBreakdown, splitByShares, STD_LABOUR_RATE, type CostBreakdown } from '@/lib/estimateCalculations'
+import { readLineItemRevenue, getEstimateContract, lineContractValue, emptyCostBreakdown, splitByShares, activeLineItems, STD_LABOUR_RATE, type CostBreakdown } from '@/lib/estimateCalculations'
 import { normalizedPcts, rebalancedPcts, datedPeriodCount } from '@/lib/ganttAllocation'
 import { labourWorkingDays, workingDaysBetween } from '@/lib/ganttSchedule'
 import { vicPublicHolidayName } from '@/lib/publicHolidays'
@@ -274,7 +274,9 @@ function extractCategories(estimate: Estimate): CategorySummary[] {
   // line's own cost), so the Gantt's budgeted revenue sums to the ex-GST contract, matching the baseline.
   const contract = getEstimateContract(estimate)
   const map: Record<string, CategorySummary> = {}
-  for (const item of estimate.lineItems.filter(i => i.enabled !== false)) {
+  // activeLineItems also excludes upgrade / value-management categories - unaccepted options are
+  // not schedulable work and must not appear as gantt rows or feed the forecast.
+  for (const item of activeLineItems(estimate)) {
     // Each (category, sub-category) is its own Gantt posting so a sub-category's cost + labour can be
     // scheduled independently. No sub-category → the category itself (unchanged for existing estimates).
     // A labour line with an activity breakdown fans out into one posting PER ACTIVITY, its cost and

@@ -1369,7 +1369,7 @@ export default function EstimateBuilderPage() {
     // Re-entry guard: a fast double-click would otherwise run this twice and create two projects.
     // The ref blocks synchronously (state updates are async and wouldn't stop the second click in time).
     if (convertingRef.current) return
-    const missingQuotes = estimate.lineItems.filter(i => (i.type === 'Subcontractor' || i.crewType === 'Subcontractor') && i.enabled !== false && !i.quoteFileName)
+    const missingQuotes = activeLineItems(estimate).filter(i => (i.type === 'Subcontractor' || i.crewType === 'Subcontractor') && !i.quoteFileName)
     if (missingQuotes.length > 0) {
       const proceed = confirm(`${missingQuotes.length} subcontractor line${missingQuotes.length !== 1 ? 's have' : ' has'} no quote attached:\n\n${missingQuotes.map(i => `• ${i.description || 'Untitled'}`).join('\n')}\n\nYou shouldn't go to contract without their quotes. Convert anyway?`)
       if (!proceed) return
@@ -1380,7 +1380,7 @@ export default function EstimateBuilderPage() {
     setIsConverting(true)
     try {
     const totals = getEstimateTotals(estimate)
-    const categories = Array.from(new Set(estimate.lineItems.filter(i => i.enabled !== false).map(i => i.category).filter(Boolean)))
+    const categories = Array.from(new Set(activeLineItems(estimate).map(i => i.category).filter(Boolean)))
 
     // Derive project name and client name — prefer linked proposal if available
     const projectName = estimate.projectName || estimate.name || 'New Project'
@@ -1395,7 +1395,7 @@ export default function EstimateBuilderPage() {
     // bare line subtotal.
     const contract = getEstimateContract(estimate)
     const categoryMap: Record<string, { revenue: number; cost: number }> = {}
-    estimate.lineItems.filter(li => li.enabled !== false).forEach(li => {
+    activeLineItems(estimate).forEach(li => {
       const cat = li.category || 'General'
       if (!categoryMap[cat]) categoryMap[cat] = { revenue: 0, cost: 0 }
       categoryMap[cat].revenue += lineContractValue(li, contract)
@@ -1451,7 +1451,7 @@ export default function EstimateBuilderPage() {
 
     // Seed subcontractor packages: lines sharing a quote file group into one package (a quote covers a
     // trade); un-quoted subbie lines each get their own. Quoted value = our cost for that work.
-    const subbieLines = estimate.lineItems.filter(i => (i.type === 'Subcontractor' || i.crewType === 'Subcontractor') && i.enabled !== false)
+    const subbieLines = activeLineItems(estimate).filter(i => (i.type === 'Subcontractor' || i.crewType === 'Subcontractor'))
     const subbieGroups = new Map<string, EstimateLineItem[]>()
     subbieLines.forEach(li => {
       const key = li.quoteFileName ? `q:${li.quoteFileName}` : `l:${li.id}`
@@ -1631,6 +1631,19 @@ export default function EstimateBuilderPage() {
     } : prev)
   }
 
+  // Classify a category as an optional upgrade / value-management saving (or back to scope).
+  // Flagged categories leave activeLineItems, so every contract-facing total updates in one move.
+  const setCategoryKind = (category: string, kind: 'upgrade' | 'value_management' | undefined) => {
+    setEstimate(prev => {
+      if (!prev) return prev
+      const next = { ...(prev.categoryKind || {}) }
+      if (kind) next[category] = kind
+      else delete next[category]
+      return { ...prev, categoryKind: Object.keys(next).length ? next : undefined, updatedAt: new Date().toISOString() }
+    })
+    setHasUnsavedChanges(true)
+  }
+
   const moveCategoryDown = (category: string) => {
     if (!estimate) return
     const cats = Array.from(new Set(estimate.lineItems.map(i => i.category)))
@@ -1710,7 +1723,7 @@ export default function EstimateBuilderPage() {
   const parentSubcategories = parentEstimate ? parentEstimate.lineItems.map(i => (i.subcategory || '').trim()).filter(Boolean) : []
   const allCategories = Array.from(new Set([...getCategories(), ...parentCategories, ...categories]))
   // Subcontractor pricing must carry a quote before going to contract (active lines only).
-  const subbieMissingQuotes = estimate.lineItems.filter(i => (i.type === 'Subcontractor' || i.crewType === 'Subcontractor') && i.enabled !== false && !i.quoteFileName)
+  const subbieMissingQuotes = activeLineItems(estimate).filter(i => (i.type === 'Subcontractor' || i.crewType === 'Subcontractor') && !i.quoteFileName)
   // Distinct sub-categories already used (+ the parent's for variations) — fed to a shared <datalist>
   // so each row can pick an existing one (avoids typos splitting a sub-category into two Gantt postings).
   const allSubcategories = Array.from(
@@ -2160,6 +2173,8 @@ export default function EstimateBuilderPage() {
                       hidden={catHidden}
                       complete={!!estimate.categoryComplete?.[category]}
                       onToggleComplete={() => toggleCategoryComplete(category)}
+                      kind={estimate.categoryKind?.[category]}
+                      onKindChange={k => setCategoryKind(category, k)}
                       collapsed={isCollapsed}
                       isFirst={catIdx === 0}
                       isLast={catIdx === categories.length - 1}
@@ -2460,6 +2475,8 @@ function CategoryHeaderRow({
   hidden,
   complete,
   onToggleComplete,
+  kind,
+  onKindChange,
   collapsed,
   isFirst,
   isLast,
@@ -2482,6 +2499,8 @@ function CategoryHeaderRow({
   hidden: boolean
   complete: boolean
   onToggleComplete: () => void
+  kind?: 'upgrade' | 'value_management'
+  onKindChange: (kind: 'upgrade' | 'value_management' | undefined) => void
   collapsed: boolean
   isFirst: boolean
   isLast: boolean
@@ -2502,7 +2521,7 @@ function CategoryHeaderRow({
 
   return (
     <tr
-      className={`${complete ? 'bg-green-50' : 'bg-fg-card/30'} border-b border-fg-border group/cat ${hidden ? 'opacity-50' : ''} ${
+      className={`${kind === 'upgrade' ? 'bg-amber-50' : kind === 'value_management' ? 'bg-blue-50' : complete ? 'bg-green-50' : 'bg-fg-card/30'} border-b border-fg-border group/cat ${hidden ? 'opacity-50' : ''} ${
         dragOver ? 'border-t-2 border-t-fg-heading' : 'border-t border-t-fg-border'}`}
       onDragOver={e => { e.preventDefault(); setDragOver(true) }}
       onDragLeave={() => setDragOver(false)}
@@ -2562,6 +2581,27 @@ function CategoryHeaderRow({
           )}
           {collapsed && (
             <span className="text-2xs text-fg-muted/60 tabular-nums">· {itemCount} item{itemCount === 1 ? '' : 's'}</span>
+          )}
+          {/* Classify the category: normal scope, an optional UPGRADE, or a VALUE MANAGEMENT saving.
+              Flagged categories stay fully priced but leave the contract totals / gantt / BOQ and
+              feed the OPC's Upgrades / Value Management sections instead. */}
+          <select
+            value={kind ?? ''}
+            onChange={e => onKindChange((e.target.value || undefined) as 'upgrade' | 'value_management' | undefined)}
+            title="Scope = in the contract. Upgrade / Value option = priced but OUTSIDE the totals; shows in the OPC's options sections."
+            className={`ml-1 text-2xs bg-transparent border rounded-none outline-none appearance-none px-1 transition-colors ${
+              kind === 'upgrade' ? 'border-amber-400/60 text-amber-700'
+              : kind === 'value_management' ? 'border-blue-400/60 text-blue-700'
+              : 'border-transparent text-fg-muted/50 hover:border-fg-border opacity-0 group-hover/cat:opacity-100'}`}
+          >
+            <option value="">Scope</option>
+            <option value="upgrade">Upgrade</option>
+            <option value="value_management">Value option</option>
+          </select>
+          {kind && (
+            <span className={`text-2xs font-light ${kind === 'upgrade' ? 'text-amber-700/70' : 'text-blue-700/70'}`}>
+              not in contract total
+            </span>
           )}
         </div>
       </td>

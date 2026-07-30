@@ -1306,7 +1306,7 @@ function Materials({ projectId, materials, refresh, estimate }: { projectId: str
 
   // Seed rows from the BOQ's Material lines (allowance pre-filled from the budget), skipping any
   // already listed. Only offered when the estimate actually has material lines not yet pulled.
-  const boqRows = estimate ? materialRowsFromLines(estimate.lineItems, rows, generateId) : []
+  const boqRows = estimate ? materialRowsFromLines(activeLineItems(estimate), rows, generateId) : []
   const pullFromBoq = () => { if (boqRows.length) edit([...rows, ...boqRows]) }
 
   const unconfirmed = unconfirmedMaterials(rows).length

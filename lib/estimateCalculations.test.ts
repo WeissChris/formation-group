@@ -8,6 +8,9 @@ import {
   variationContractValue,
   blendedTargetMargin,
   splitByShares,
+  activeLineItems,
+  optionLineItems,
+  optionCategories,
 } from './estimateCalculations'
 import type { Estimate, EstimateLineItem } from '@/types'
 
@@ -277,5 +280,41 @@ describe('splitByShares', () => {
   })
   it('returns [] for no weights', () => {
     expect(splitByShares(100, [])).toEqual([])
+  })
+})
+
+describe('option categories (upgrade / value management)', () => {
+  const est = () => estimate([
+    line({ id: 'a', category: 'Paving', total: 1000, revenue: 1400 }),
+    line({ id: 'b', category: 'Spa surround', total: 500, revenue: 700 }),
+    line({ id: 'c', category: 'Cheaper pavers', total: 200, revenue: 280 }),
+    line({ id: 'd', category: 'Spa surround', total: 100, revenue: 140, enabled: false }),
+  ], {
+    categoryKind: { 'Spa surround': 'upgrade', 'Cheaper pavers': 'value_management' },
+    projectMarkups: [{ id: 'm', description: 'Overhead', percent: 10 }],
+  })
+
+  it('activeLineItems excludes flagged categories, so the contract ignores them', () => {
+    expect(activeLineItems(est()).map(i => i.id)).toEqual(['a'])
+    expect(getEstimateContract(est()).lineRevenue).toBe(1400)
+  })
+
+  it('activeLineItems is unchanged when no categories are flagged', () => {
+    const plain = estimate([line({ id: 'a' }), line({ id: 'b', enabled: false })])
+    expect(activeLineItems(plain).map(i => i.id)).toEqual(['a'])
+  })
+
+  it('optionLineItems selects enabled lines of one kind only', () => {
+    expect(optionLineItems(est(), 'upgrade').map(i => i.id)).toEqual(['b'])
+    expect(optionLineItems(est(), 'value_management').map(i => i.id)).toEqual(['c'])
+  })
+
+  it('optionCategories prices each option: revenue + project markups on its own cost', () => {
+    const [up] = optionCategories(est(), 'upgrade')
+    expect(up.category).toBe('Spa surround')
+    expect(up.value).toBe(700 + 500 * 0.10)   // 750 - the disabled line does not count
+    expect(up.cost).toBe(500)
+    const [vm] = optionCategories(est(), 'value_management')
+    expect(vm.value).toBe(280 + 200 * 0.10)   // 300
   })
 })

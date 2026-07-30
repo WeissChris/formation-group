@@ -29,8 +29,35 @@ export function readLineItemRevenue(item: EstimateLineItem): number {
  * estimate for reference — a previous option, an alternative — but is excluded from every total,
  * margin, the contract value, and the Gantt. Items with no `enabled` field are on (back-compat).
  */
+/** The lines that make up the CONTRACT: enabled, and not in an upgrade / value-management
+ *  category (those are priced options OUTSIDE the job until their flag is cleared). Every
+ *  contract-facing reader - totals, OPC table, quote breakdown, BOQ, gantt seeding, scorecard
+ *  allowances - goes through here, so a flagged category leaves all of them in one move. */
 export function activeLineItems(estimate: Estimate): EstimateLineItem[] {
-  return estimate.lineItems.filter(i => i.enabled !== false)
+  const kinds = estimate.categoryKind
+  if (!kinds || Object.keys(kinds).length === 0) return estimate.lineItems.filter(i => i.enabled !== false)
+  return estimate.lineItems.filter(i => i.enabled !== false && !kinds[i.category || ''])
+}
+
+/** The enabled lines of the estimate's option categories of one kind (upgrade / value_management). */
+export function optionLineItems(estimate: Estimate, kind: 'upgrade' | 'value_management'): EstimateLineItem[] {
+  const kinds = estimate.categoryKind ?? {}
+  return estimate.lineItems.filter(i => i.enabled !== false && kinds[i.category || ''] === kind)
+}
+
+/** The option categories of one kind, each with its client-facing value: line revenue plus the
+ *  project markups on its own cost. Options sit outside the rounded contract, so no rounding
+ *  correction applies - this is the "+$X" (upgrade) or "saves $X" (value option) figure. */
+export function optionCategories(estimate: Estimate, kind: 'upgrade' | 'value_management'): { category: string; value: number; cost: number }[] {
+  const items = optionLineItems(estimate, kind)
+  const markupPct = projectMarkupPct(estimate)
+  const cats = Array.from(new Set(items.map(i => i.category || 'Option')))
+  return cats.map(category => {
+    const rows = items.filter(i => (i.category || 'Option') === category)
+    const revenue = rows.reduce((s, i) => s + readLineItemRevenue(i), 0)
+    const cost = rows.reduce((s, i) => s + (i.total || 0), 0)
+    return { category, value: revenue + cost * (markupPct / 100), cost }
+  })
 }
 
 /** Standard field-labour rate ($/hr). Labour is always priced at this rate, so labour hours

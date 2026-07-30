@@ -190,7 +190,12 @@ export interface Estimate {
   roundingMode?: 'none' | 'ten' | 'hundred' | 'thousand'
   notes?: string
   categoryNotes?: Record<string, string>
-  categoryComplete?: Record<string, boolean>   // per-category "done" tick - what's still to finish
+  categoryComplete?: Record<string, boolean>
+  /** Optional per-category classification: 'upgrade' (extra the client can add) or
+   *  'value_management' (a saving option). Flagged categories are priced normally but sit OUTSIDE
+   *  the contract totals / gantt / BOQ (activeLineItems excludes them) until the flag is cleared,
+   *  and they feed the OPC's Upgrades / Value Management sections. Absent key = normal scope. */
+  categoryKind?: Record<string, 'upgrade' | 'value_management'>   // categories flagged as priced options - excluded from the contract total, fed to the OPC's option sections
   createdAt: string
   updatedAt: string
   sentAt?: string
@@ -251,6 +256,7 @@ export interface OpcValueOption {
   title: string      // e.g. "Substitute crazy paving for standard pavers"
   note?: string      // prose detail (HTML, same as the OPC scope fields)
   saving: number     // dollars saved ex GST
+  categoryRef?: string // estimate category this option was auto-seeded from (categoryKind flag); manual entries have none
 }
 
 /** The mirror of a value-management option: an optional extra the client can add, with the cost it
@@ -260,6 +266,7 @@ export interface OpcUpgradeOption {
   title: string      // e.g. "Upgrade to full automatic irrigation"
   note?: string      // prose detail (HTML, same as the OPC scope fields)
   amount: number     // extra cost ex GST
+  categoryRef?: string // estimate category this option was auto-seeded from (categoryKind flag); manual entries have none
 }
 
 /** Reusable OPC scope-of-works prose block (the snippet library). */
