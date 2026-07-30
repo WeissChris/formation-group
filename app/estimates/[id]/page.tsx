@@ -607,6 +607,27 @@ function LineItemRow({
             <option value={item.xeroCategory}>{item.xeroCategory}</option>
           )}
         </select>
+        {/* Product link on Material lines - flows to the cockpit BOQ + Materials tab so the
+            foreman sees exactly what was allowed for and where to buy it. */}
+        {item.type === 'Material' && (
+          <div className="mt-0.5 flex items-center gap-1.5 text-2xs px-1.5">
+            <input
+              type="url"
+              value={item.productUrl ?? ''}
+              onChange={e => update({ productUrl: e.target.value || undefined })}
+              placeholder="Product link (https://...)"
+              title="Supplier / product page - the foreman sees this on the BOQ and Materials tabs"
+              className="flex-1 min-w-0 max-w-[240px] bg-transparent border border-transparent hover:border-fg-border focus:border-fg-heading text-2xs text-fg-muted rounded-none outline-none transition-colors placeholder-fg-muted/40"
+            />
+            {item.productUrl && (
+              <a
+                href={/^https?:\/\//i.test(item.productUrl) ? item.productUrl : `https://${item.productUrl}`}
+                target="_blank" rel="noopener noreferrer"
+                className="text-fg-muted/60 hover:text-fg-heading transition-colors whitespace-nowrap"
+              >open &#8599;</a>
+            )}
+          </div>
+        )}
         {(item.type === 'Subcontractor' || item.crewType === 'Subcontractor') && (
           <div className="mt-0.5 flex items-center gap-1.5 text-2xs px-1.5">
             <label className={`cursor-pointer inline-flex items-center gap-1 ${item.quoteFileName ? 'text-fg-muted' : 'text-amber-600'}`} title={item.quoteFileName ? 'Replace quote' : 'A subcontractor quote is required before going to contract'}>

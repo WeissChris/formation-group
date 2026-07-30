@@ -12,6 +12,7 @@ export interface SiteMaterial {
   id: string
   type: string        // what the material is (e.g. "Bluestone paving 400x400")
   source: string      // where it can be sourced from (supplier / yard)
+  link?: string       // supplier/product page URL - seeded from the estimate line's productUrl
   allowance: number   // dollars ALLOWED for it (seeded from the estimate, editable)
   actual: number      // dollars actually spent / quoted - 0 until the foreman fills it in
   notes: string       // free text - lead times, sizes, who to ask for
@@ -51,7 +52,7 @@ export function materialTotals(materials: SiteMaterial[]): { allowance: number; 
 
 /** A row is "real" (worth keeping/flagging) once the foreman has put anything in it. */
 export function isMaterialFilled(m: SiteMaterial): boolean {
-  return !!(m.type.trim() || m.source.trim() || m.allowance > 0 || m.actual > 0
+  return !!(m.type.trim() || m.source.trim() || (m.link ?? '').trim() || m.allowance > 0 || m.actual > 0
     || m.notes.trim() || m.quotes.length)
 }
 
@@ -67,6 +68,7 @@ export interface MaterialSourceLine {
   type?: string
   crewType?: string
   category?: string       // kept so a pulled row can be traced back to its BOQ section
+  productUrl?: string     // supplier/product page from the estimate line
   enabled?: boolean
 }
 
@@ -81,6 +83,7 @@ export function materialRowsFromLines(
   const have = new Set(existing.map(m => m.type.trim().toLowerCase()).filter(Boolean))
   const agg = new Map<string, number>()   // description -> summed cost
   const cat = new Map<string, string>()   // description -> first category it appeared under
+  const url = new Map<string, string>()   // description -> first product link seen
   const order: string[] = []
   for (const li of lines) {
     if (li.enabled === false) continue
@@ -88,10 +91,11 @@ export function materialRowsFromLines(
     const desc = (li.description || '').trim()
     if (!desc || have.has(desc.toLowerCase())) continue
     if (!agg.has(desc)) { order.push(desc); if (li.category) cat.set(desc, li.category) }
+    if (li.productUrl && !url.has(desc)) url.set(desc, li.productUrl)
     agg.set(desc, (agg.get(desc) || 0) + (Number(li.total) || 0))
   }
   return order.map(desc => ({
-    id: genId(), type: desc, source: '', allowance: agg.get(desc) || 0,
+    id: genId(), type: desc, source: '', link: url.get(desc), allowance: agg.get(desc) || 0,
     actual: 0, notes: '', quotes: [], category: cat.get(desc), confirmed: false,
   }))
 }
@@ -128,6 +132,7 @@ export function sanitizeMaterials(raw: unknown): SiteMaterial[] {
         id: typeof o.id === 'string' && o.id ? o.id : '',
         type: typeof o.type === 'string' ? o.type : '',
         source: typeof o.source === 'string' ? o.source : '',
+        link: typeof o.link === 'string' && o.link.trim() ? o.link.slice(0, 500) : undefined,
         allowance: Number(o.allowance) || 0,
         actual: Number(o.actual) || 0,
         notes: typeof o.notes === 'string' ? o.notes.slice(0, 2000) : '',

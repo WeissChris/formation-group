@@ -106,6 +106,13 @@ describe('sanitizeMaterials', () => {
   it('defaults the new fields on legacy rows saved before they existed', () => {
     const out = sanitizeMaterials([{ id: 'a', type: 'Sand', source: '', allowance: 100, confirmed: false }])
     expect(out[0]).toMatchObject({ actual: 0, notes: '', quotes: [] })
+    expect(out[0].link).toBeUndefined()
+  })
+  it('keeps the product link through a save round-trip', () => {
+    const out = sanitizeMaterials([{ id: 'a', type: 'Sand', link: 'https://supplier.com/sand' }])
+    expect(out[0].link).toBe('https://supplier.com/sand')
+    // A link alone keeps the row alive.
+    expect(sanitizeMaterials([{ id: 'b', type: '', link: 'https://x.com' }])).toHaveLength(1)
   })
   it('returns [] for non-arrays', () => {
     expect(sanitizeMaterials(null)).toEqual([])
@@ -130,6 +137,16 @@ describe('materialRowsFromLines', () => {
     seq = 0
     const out = materialRowsFromLines([{ description: 'Bluestone', type: 'Material', total: 100, category: 'Paving' }], [], gid)
     expect(out[0].category).toBe('Paving')
+  })
+  it('carries the product link through, first one wins across aggregated lines', () => {
+    seq = 0
+    const out = materialRowsFromLines([
+      { description: 'Bluestone', type: 'Material', total: 100, productUrl: 'https://supplier.com/bluestone' },
+      { description: 'Bluestone', type: 'Material', total: 50, productUrl: 'https://other.com/x' },
+      { description: 'Cement', type: 'Material', total: 30 },
+    ], [], gid)
+    expect(out[0].link).toBe('https://supplier.com/bluestone')
+    expect(out[1].link).toBeUndefined()
   })
   it('skips materials already listed (case-insensitive) and disabled lines', () => {
     const out = materialRowsFromLines(

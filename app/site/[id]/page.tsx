@@ -1226,6 +1226,12 @@ function Boq({ projectId, projectName, address }: { projectId: string; projectNa
                           <span className="inline-block w-4 font-medium">{typeTag(r.type)}</span>
                           {r.units ? `${Number(r.units).toLocaleString('en-AU')} ${r.uom || ''}`.trim() : ''}
                           {r.units && r.unitCost ? ` @ ${money(r.unitCost)}` : ''}
+                          {/* Product page from the estimate line - buy exactly what was priced. */}
+                          {r.productUrl && (
+                            <a href={/^https?:\/\//i.test(r.productUrl) ? r.productUrl : `https://${r.productUrl}`}
+                              target="_blank" rel="noopener noreferrer"
+                              className="ml-2 underline text-fg-heading">product &#8599;</a>
+                          )}
                         </p>
                       </div>
                       <span className="text-sm tabular-nums shrink-0">{money(r.total || 0)}</span>
@@ -1342,6 +1348,18 @@ function Materials({ projectId, materials, refresh, estimate }: { projectId: str
                   <input value={r.source} onChange={e => update(r.id, { source: e.target.value })}
                     placeholder="Source / supplier"
                     className="w-full text-xs text-fg-muted bg-transparent border-b border-fg-border/60 focus:border-fg-heading outline-none py-1" />
+                  {/* Product page link - seeded from the estimate line so the crew buy exactly
+                      what was allowed for; editable if a better supplier link turns up. */}
+                  <div className="flex items-center gap-2">
+                    <input value={r.link ?? ''} onChange={e => update(r.id, { link: e.target.value || undefined })}
+                      placeholder="Product link (https://...)" inputMode="url"
+                      className="flex-1 min-w-0 text-xs text-fg-muted bg-transparent border-b border-fg-border/60 focus:border-fg-heading outline-none py-1" />
+                    {(r.link ?? '').trim() && (
+                      <a href={/^https?:\/\//i.test(r.link!) ? r.link : `https://${r.link}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="text-xs underline text-fg-heading shrink-0">View &#8599;</a>
+                    )}
+                  </div>
                   <div className="flex items-center gap-4 flex-wrap">
                     <label className="text-xs text-fg-muted flex items-center gap-1">
                       Allowed $

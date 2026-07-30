@@ -160,6 +160,7 @@ export interface EstimateLineItem {
   quoteFileName?: string // subcontractor quote attached to this line (required before contract for Subcontractor lines)
   quoteFileData?: string // LEGACY base64 data URI - new uploads use quoteFilePath (Storage bucket)
   quoteFilePath?: string // path in the private 'attachments' Storage bucket
+  productUrl?: string    // supplier/product page for Material lines - flows to the cockpit BOQ + Materials
   xeroCategory?: string
   notes?: string
 }
