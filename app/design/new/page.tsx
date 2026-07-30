@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { upsertProposal } from '@/lib/storageAsync'
-import { syncLegacyPhaseFields, phasesTotal, makeBlankPhase, DEFAULT_PHASE_TITLES, defaultPhaseDescription, defaultPhaseOutcome, DEFAULT_REVISIONS_INCLUDED, DEFAULT_REVISIONS_NOTE } from '@/lib/proposalPhases'
+import { syncLegacyPhaseFields, phasesTotal, makeBlankPhase, DEFAULT_PHASE_TITLES, defaultPhaseDescription, defaultPhaseOutcome, DEFAULT_REVISIONS_INCLUDED, DEFAULT_REVISIONS_NOTE, DEFAULT_PROGRAM_TEXT } from '@/lib/proposalPhases'
 import { requestSendProposal, sendErrorMessage } from '@/lib/emailClient'
 import { formatCurrency, generateId } from '@/lib/utils'
 import type { DesignProposal, ProposalContentBlock, ProposalPhase } from '@/types'
@@ -53,6 +53,7 @@ The following outlines our proposed design process and associated fees.`
     ccEmails: '',
     projectAddress: '',
     introText: DEFAULT_INTRO_TEXT,
+    programText: DEFAULT_PROGRAM_TEXT,
     emailMessage: '',
     validUntil: defaultValidUntil.toISOString().split('T')[0],
     notes: '',
@@ -108,6 +109,9 @@ The following outlines our proposed design process and associated fees.`
       projectAddress: form.projectAddress,
       status,
       introText: form.introText || undefined,
+      // Blank = "use the standard wording" everywhere the program renders, so an untouched field
+      // stays undefined and future updates to the default wording flow through to it.
+      programText: form.programText.trim() && form.programText !== DEFAULT_PROGRAM_TEXT ? form.programText : undefined,
       emailMessage: form.emailMessage || undefined,
       // legacy phase1/2/3 fields are filled by syncLegacyPhaseFields from the phases array
       phase1Fee: 0, phase1Scope: '', phase2Fee: 0, phase2Scope: '',
@@ -169,6 +173,7 @@ The following outlines our proposed design process and associated fees.`
             revisionsNote={form.revisionsNote}
             projectAddress={form.projectAddress}
             introText={form.introText}
+            programText={form.programText}
             phases={phases}
             validUntil={form.validUntil}
             welcomeVideoUrl={form.welcomeVideoUrl}
@@ -255,6 +260,23 @@ The following outlines our proposed design process and associated fees.`
                 onChange={e => set('introText', e.target.value)}
                 rows={5}
                 placeholder="Thank you for the opportunity to meet on site and discuss your project..."
+                className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-none placeholder-fg-muted/40 leading-relaxed"
+              />
+            </div>
+          </div>
+
+          <div className="h-px bg-fg-border" />
+
+          {/* Program (timeline) — the "Program" box near the end of the proposal. Previously only
+              editable after saving a draft and reopening in Edit mode. */}
+          <div className="space-y-4">
+            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Program (timeline)</p>
+            <p className="text-xs font-light text-fg-muted/60 -mt-2">The &quot;Program&quot; box near the end of the proposal - how long each phase takes. Prefilled with the standard wording; edit per job.</p>
+            <div>
+              <textarea
+                value={form.programText}
+                onChange={e => set('programText', e.target.value)}
+                rows={6}
                 className="w-full px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-none placeholder-fg-muted/40 leading-relaxed"
               />
             </div>

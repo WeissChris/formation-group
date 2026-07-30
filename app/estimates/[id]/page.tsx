@@ -15,6 +15,8 @@ import { upsertLibraryItem, deleteLibraryItemAsync, upsertEstimateTemplate, getE
 import { getXeroAccounts, loadCachedXeroAccounts, type XeroAccountOption } from '@/lib/xero'
 import { loadXccDefaults, recordXccDefault, resolveXccDefault } from '@/lib/xcc'
 import { versionFamily, versionGroupIdOf, buildNextVersion, copyLineItemsInto, lineExistsIn } from '@/lib/estimateVersion'
+import { planFolderOf, migrateEstimatePlans } from '@/lib/estimatePlans'
+import EstimatePlansTab from '@/components/EstimatePlansTab'
 import type { Estimate, EstimateLineItem, LibraryItem, TakeoffData, EstimateTemplate } from '@/types'
 import { Plus, Trash2, X, Search, Save, ExternalLink, ChevronUp, ChevronDown, ChevronRight, GitBranch, Copy, Eye, EyeOff, Check, Star, GripVertical } from 'lucide-react'
 import TakeoffTab from '@/components/TakeoffTab'
@@ -882,7 +884,7 @@ export default function EstimateBuilderPage() {
   const [newCategoryName, setNewCategoryName] = useState('')
   const [addingCategory, setAddingCategory] = useState(false)
   const [parentEstimate, setParentEstimate] = useState<Estimate | null>(null)
-  const [activeTab, setActiveTab] = useState<'estimate' | 'takeoff'>('estimate')
+  const [activeTab, setActiveTab] = useState<'estimate' | 'takeoff' | 'plans'>('estimate')
   const [takeoffData, setTakeoffData] = useState<TakeoffData | null>(null)
   // Default collapsed; remember the user's choice so it stops resetting to open on every load.
   const [takeoffSummaryOpen, setTakeoffSummaryOpen] = useState(false)
@@ -1468,6 +1470,18 @@ export default function EstimateBuilderPage() {
     await upsertEstimate(updated)
     setEstimate(updated)
 
+    // Hand the quote's plan set to the project - the foreman cockpit's Plans tab lists the
+    // project folder, so the drawings are on site the moment the job exists. Best-effort: a
+    // failed move must not block the conversion, but it must not be silent either (the office
+    // Plans tab keeps showing the family folder... which is now the project's, so warn).
+    const planFamily = versionGroupIdOf(estimate)
+    if (!(await migrateEstimatePlans(planFamily, newProject.id))) {
+      const check = await fetch(`/api/estimate-plans?folder=${encodeURIComponent(planFamily)}`).then(r => r.json()).catch(() => null)
+      if (check?.files?.length) {
+        window.alert('The project was created, but some plan files could not be moved across to it. Open the estimate\'s Plans tab and re-upload them to the project.')
+      }
+    }
+
     router.push(`/projects/${newProject.id}`)
     } finally {
       // Reset even though we navigate away — if anything above threw, the button must work again.
@@ -1948,7 +1962,7 @@ export default function EstimateBuilderPage() {
 
       {/* Tab bar */}
       <div className="flex items-center gap-0 border-b border-fg-border mb-6">
-        {(['estimate', 'takeoff'] as const).map(tab => (
+        {(['estimate', 'takeoff', 'plans'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -1958,7 +1972,7 @@ export default function EstimateBuilderPage() {
                 : 'text-fg-muted border-transparent hover:text-fg-heading'
             }`}
           >
-            {tab === 'estimate' ? 'Line Items' : 'Takeoff'}
+            {tab === 'estimate' ? 'Line Items' : tab === 'takeoff' ? 'Takeoff' : 'Plans'}
           </button>
         ))}
       </div>
@@ -1970,6 +1984,12 @@ export default function EstimateBuilderPage() {
           lineItems={estimate.lineItems}
           onUpdateLineItemQty={handleUpdateLineItemQty}
         />
+      )}
+
+      {/* Plans tab — drawings for the quote; they follow the job to the foreman cockpit if won.
+          Folder = the version family anchor (v1/v2/v3 share one set), or the project once converted. */}
+      {activeTab === 'plans' && (
+        <EstimatePlansTab folder={planFolderOf(estimate)} converted={!!estimate.projectId} />
       )}
 
       {/* Takeoff quantities summary — price against measured quantities without leaving Line Items */}
