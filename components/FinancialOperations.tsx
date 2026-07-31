@@ -909,6 +909,37 @@ function InvoicesSubTab({
     alert(`Draft invoice created in Xero${updated.xeroInvoiceNumber ? ` (${updated.xeroInvoiceNumber})` : ''}. Review and approve it in Xero.`)
   }
 
+  /** Open the tax-invoice PDF (exactly what the send attaches) in a new tab. The tab is opened
+   *  synchronously so popup blockers do not eat it, then pointed at the rendered blob. */
+  const handlePreviewPdf = async (claim: ProgressClaim) => {
+    const win = window.open('', '_blank')
+    const proj = loadProjects().find(p => p.id === projectId)
+    const resp = await fetch('/api/claims/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        clientName,
+        invoiceNumber: claim.invoiceNumber,
+        description: claim.description || undefined,
+        projectAddress: proj?.address || undefined,
+        lines: claimEmailLines(claim),
+        subtotalEx: claim.subtotalEx,
+        gst: claim.gst,
+        total: claim.total,
+        comments: claim.comments || undefined,
+      }),
+    }).catch(() => null)
+    if (!resp || !resp.ok) {
+      win?.close()
+      alert('Could not build the invoice preview.')
+      return
+    }
+    const url = URL.createObjectURL(await resp.blob())
+    if (win) win.location.href = url
+    else window.open(url, '_blank', 'noopener,noreferrer')
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
+
   // ── Send-to-client dialog ── recipient prefilled from the project, covering message editable.
   const [sendModal, setSendModal] = useState<{ claim: ProgressClaim; to: string; message: string } | null>(null)
 
@@ -1004,6 +1035,13 @@ function InvoicesSubTab({
               className="w-full px-3 py-2 mb-5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-y"
             />
             <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => void handlePreviewPdf(sendModal.claim)}
+                disabled={sendingClientId !== null}
+                className="mr-auto text-xs font-light tracking-wide uppercase text-fg-muted border border-fg-border px-3 py-1.5 hover:text-fg-heading hover:border-fg-heading transition-colors disabled:opacity-50"
+              >
+                Preview PDF
+              </button>
               <button
                 onClick={() => setSendModal(null)}
                 disabled={sendingClientId !== null}
@@ -1122,6 +1160,13 @@ function InvoicesSubTab({
                                 {sendingXeroId === claim.id ? 'Sending…' : 'Send to Xero'}
                               </button>
                             )}
+                            <button
+                              onClick={() => void handlePreviewPdf(claim)}
+                              title="Preview the tax invoice PDF exactly as the client receives it"
+                              className="text-2xs font-light tracking-wide uppercase text-fg-muted border border-fg-border px-2 py-0.5 hover:text-fg-heading hover:border-fg-heading transition-colors whitespace-nowrap"
+                            >
+                              Preview
+                            </button>
                             <button
                               onClick={() => openSendModal(claim)}
                               disabled={sendingClientId === claim.id}
