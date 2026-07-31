@@ -628,9 +628,12 @@ function LineItemRow({
             )}
           </div>
         )}
-        {(item.type === 'Subcontractor' || item.crewType === 'Subcontractor') && (
+        {/* Quote attach: REQUIRED on subcontractor lines (amber until attached), optional on
+            Material lines (a supplier/paving order quote the foreman can open from the BOQ). */}
+        {(item.type === 'Subcontractor' || item.crewType === 'Subcontractor' || item.type === 'Material') && (
           <div className="mt-0.5 flex items-center gap-1.5 text-2xs px-1.5">
-            <label className={`cursor-pointer inline-flex items-center gap-1 ${item.quoteFileName ? 'text-fg-muted' : 'text-amber-600'}`} title={item.quoteFileName ? 'Replace quote' : 'A subcontractor quote is required before going to contract'}>
+            <label className={`cursor-pointer inline-flex items-center gap-1 ${item.quoteFileName ? 'text-fg-muted' : (item.type === 'Material' ? 'text-fg-muted/50 hover:text-fg-muted' : 'text-amber-600')}`}
+              title={item.quoteFileName ? 'Replace quote' : item.type === 'Material' ? 'Attach the supplier / order quote - the foreman sees it on the BOQ' : 'A subcontractor quote is required before going to contract'}>
               <input type="file" accept=".pdf,.doc,.docx,.xlsx,.jpg,.jpeg,.png" className="hidden"
                 onChange={async e => {
                   const file = e.target.files?.[0]; if (!file) return
@@ -640,7 +643,7 @@ function LineItemRow({
                   if (!path) { window.alert('Quote upload failed - check your connection and try again.'); return }
                   update({ quoteFileName: file.name, quoteFilePath: path, quoteFileData: undefined })
                 }} />
-              {item.quoteFileName ? `📎 ${item.quoteFileName}` : '⚠ Attach quote'}
+              {item.quoteFileName ? `📎 ${item.quoteFileName}` : item.type === 'Material' ? '📎 attach quote' : '⚠ Attach quote'}
             </label>
             {item.quoteFileName && (item.quoteFilePath || item.quoteFileData) && (
               <button

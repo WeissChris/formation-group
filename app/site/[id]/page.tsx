@@ -1232,6 +1232,11 @@ function Boq({ projectId, projectName, address }: { projectId: string; projectNa
                               target="_blank" rel="noopener noreferrer"
                               className="ml-2 underline text-fg-heading">product &#8599;</a>
                           )}
+                          {/* Supplier / order quote attached on the estimate line (e.g. the paving order) */}
+                          {r.quoteFilePath && (
+                            <button onClick={() => void openAttachment(r.quoteFilePath!)}
+                              className="ml-2 underline text-fg-heading">quote &#8599;</button>
+                          )}
                         </p>
                       </div>
                       <span className="text-sm tabular-nums shrink-0">{money(r.total || 0)}</span>
