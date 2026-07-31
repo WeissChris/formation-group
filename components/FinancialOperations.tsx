@@ -9,7 +9,7 @@ import {
 } from '@/lib/storage'
 import { upsertEstimate, upsertProgressClaim, deleteProgressClaimAsync } from '@/lib/storageAsync'
 import { createXeroDraftInvoice } from '@/lib/xero'
-import { formatCurrency, generateId } from '@/lib/utils'
+import { formatCurrency, formatCurrencyCents, generateId } from '@/lib/utils'
 import { getEstimateTotals, getEstimateContract, readLineItemRevenue, activeLineItems, lineContractValue, variationContractValue } from '@/lib/estimateCalculations'
 import { variationStage, isAwaitingOffice, type VariationStage } from '@/lib/variationStatus'
 import type { ProgressPaymentStage, Estimate, WeeklyActual, ProgressClaim, ProgressClaimLineItem, EntityType } from '@/types'
@@ -123,12 +123,16 @@ function ClaimInput({ value, placeholder, className, onCommit }: {
   className?: string
   onCommit: (v: number) => void
 }) {
-  const [local, setLocal] = useState(value === 0 ? '' : String(value))
+  // Display at most 2 decimals - a % derived from a $ claim (or vice versa) carries float tails
+  // like 7.1824015... that are noise in a table cell. The stored value keeps full precision.
+  const show = (v: number) => v === 0 ? '' : String(Math.round(v * 100) / 100)
+  const [local, setLocal] = useState(show(value))
   const focusedRef = useRef(false)
 
   useEffect(() => {
     if (focusedRef.current) return // don't yank text out from under the user
-    setLocal(value === 0 ? '' : String(value))
+    setLocal(show(value))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])
 
   return (
@@ -329,11 +333,13 @@ function ProgressClaimBuilder({
   const variationItems = lineItems.filter(l => l.type === 'variation')
 
   // Inclusion is automatic: item is included if claimAmount > 0
-  const subtotalEx = lineItems
+  // Round to cents at each step: claim amounts can carry sub-cent float tails (a % claim of an
+  // odd contract value), and GST at exactly 10% of a .25 subtotal lands on half a cent.
+  const subtotalEx = Math.round((lineItems
     .filter(l => l.claimAmount > 0)
-    .reduce((s, l) => s + l.claimAmount, 0) + roundingAdjustment
-  const gst = subtotalEx * 0.10
-  const total = subtotalEx + gst
+    .reduce((s, l) => s + l.claimAmount, 0) + roundingAdjustment) * 100) / 100
+  const gst = Math.round(subtotalEx * 10) / 100
+  const total = Math.round((subtotalEx + gst) * 100) / 100
 
   const categoriesTotal = categoryItems.filter(l => l.claimAmount > 0).reduce((s, l) => s + l.claimAmount, 0)
   const variationsTotal = variationItems.filter(l => l.claimAmount > 0).reduce((s, l) => s + l.claimAmount, 0)
@@ -417,7 +423,7 @@ function ProgressClaimBuilder({
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-xs font-light tracking-architectural uppercase text-fg-muted">Cost Categories</h2>
               <div className="flex items-center gap-3">
-                <span className="text-xs font-light text-fg-heading tabular-nums">Total (Ex): {formatCurrency(categoriesTotal)}</span>
+                <span className="text-xs font-light text-fg-heading tabular-nums">Total (Ex): {formatCurrencyCents(categoriesTotal)}</span>
                 <button
                   onClick={() => { setGroupingMode(g => !g); setSelectedIds(new Set()); setPendingGroupName('') }}
                   className={`text-2xs font-light tracking-wide uppercase px-2.5 py-1 border transition-colors ${groupingMode ? 'bg-fg-dark text-white/80 border-fg-dark' : 'border-fg-border text-fg-muted hover:text-fg-heading'}`}
@@ -578,7 +584,7 @@ function ProgressClaimBuilder({
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-xs font-light tracking-architectural uppercase text-fg-muted">Variations</h2>
               <span className="text-xs font-light text-fg-heading tabular-nums">
-                Total (Ex): {formatCurrency(variationsTotal)}
+                Total (Ex): {formatCurrencyCents(variationsTotal)}
               </span>
             </div>
             <div className="overflow-x-auto">
@@ -614,14 +620,7 @@ function ProgressClaimBuilder({
                         <td className="py-2 px-2 whitespace-nowrap">
                           <div className="flex items-center gap-1">
                             <span className="text-xs text-fg-muted">$</span>
-                            <input
-                              type="number"
-                              value={item.claimAmount || ''}
-                              onChange={e => updateLineItem(globalIdx, { claimAmount: parseFloat(e.target.value) || 0 })}
-                              placeholder="0.00"
-                              step="0.01"
-                              className="w-24 px-2 py-1 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading transition-colors tabular-nums"
-                            />
+                            <ClaimInput value={item.claimAmount} placeholder="0.00" className="w-24" onCommit={v => updateLineItem(globalIdx, { claimAmount: v, claimPercent: item.remaining > 0 ? (v / item.remaining) * 100 : 0 })} />
                             <button
                               onClick={() => fillRemaining(globalIdx)}
                               title="Fill remaining amount"
@@ -682,11 +681,11 @@ function ProgressClaimBuilder({
           <div className="flex flex-col items-end gap-2 text-sm font-light">
             <div className="flex items-center justify-between w-full max-w-xs">
               <span className="text-fg-muted text-xs">Subtotal (Ex GST)</span>
-              <span className="text-fg-heading tabular-nums">{formatCurrency(subtotalEx)}</span>
+              <span className="text-fg-heading tabular-nums">{formatCurrencyCents(subtotalEx)}</span>
             </div>
             <div className="flex items-center justify-between w-full max-w-xs">
               <span className="text-fg-muted text-xs">GST (10%)</span>
-              <span className="text-fg-heading tabular-nums">{formatCurrency(gst)}</span>
+              <span className="text-fg-heading tabular-nums">{formatCurrencyCents(gst)}</span>
             </div>
             <div className="flex items-center justify-between w-full max-w-xs">
               <span className="text-fg-muted text-xs flex items-center gap-2">
@@ -699,11 +698,11 @@ function ProgressClaimBuilder({
                   className="w-20 px-2 py-0.5 bg-transparent border border-fg-border text-fg-heading text-xs font-light rounded-none outline-none focus:border-fg-heading transition-colors tabular-nums"
                 />
               </span>
-              <span className="text-fg-muted tabular-nums text-xs">{formatCurrency(roundingAdjustment)}</span>
+              <span className="text-fg-muted tabular-nums text-xs">{formatCurrencyCents(roundingAdjustment)}</span>
             </div>
             <div className="flex items-center justify-between w-full max-w-xs border-t border-fg-border pt-2">
               <span className="text-fg-heading text-2xs uppercase tracking-architectural">Total (Inc GST)</span>
-              <span className="text-fg-heading tabular-nums font-medium">{formatCurrency(total)}</span>
+              <span className="text-fg-heading tabular-nums font-medium">{formatCurrencyCents(total)}</span>
             </div>
           </div>
         </div>

@@ -27,6 +27,16 @@ export function formatCurrency(value: number): string {
   }).format(value)
 }
 
+/** Currency with cents - for invoice/claim totals, where the cents are real money. */
+export function formatCurrencyCents(value: number): string {
+  return new Intl.NumberFormat('en-AU', {
+    style: 'currency',
+    currency: 'AUD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
 // Get financial year (Jul-Jun)
 export function getFinancialYear(date: Date): string {
   const month = date.getMonth()
