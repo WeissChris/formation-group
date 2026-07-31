@@ -256,6 +256,7 @@ export interface EstimateOpc {
   docType?: 'opc' | 'quote'           // render the SAME document as an OPC or a formal Quote (default opc)
   docNumber?: string                  // document number shown on the cover / quote no.; defaults to the estimate version zero-padded ("03")
   heroImage?: string                  // cover image public path (/proposal-hero-N.jpg); default hero 8
+  dividerImage?: string               // optional full-width band between the scope section and the cost summary; a /public hero path or an attachments-bucket path
 }
 
 /** A value-management (value-engineering) option: an alternative that reduces the cost, with the
@@ -266,6 +267,7 @@ export interface OpcValueOption {
   note?: string      // prose detail (HTML, same as the OPC scope fields)
   saving: number     // dollars saved ex GST
   categoryRef?: string // estimate category this option was auto-seeded from (categoryKind flag); manual entries have none
+  images?: OpcRowImage[] // photos rendered inside the card, same treatment as scope cards
 }
 
 /** The mirror of a value-management option: an optional extra the client can add, with the cost it
@@ -276,6 +278,7 @@ export interface OpcUpgradeOption {
   note?: string      // prose detail (HTML, same as the OPC scope fields)
   amount: number     // extra cost ex GST
   categoryRef?: string // estimate category this option was auto-seeded from (categoryKind flag); manual entries have none
+  images?: OpcRowImage[] // photos rendered inside the card, same treatment as scope cards
 }
 
 /** Reusable OPC scope-of-works prose block (the snippet library). */

@@ -15,7 +15,7 @@ import { loadEstimates, loadProjects, loadProposals, saveEstimate, loadOpcSnippe
 import { getEstimates, upsertEstimate, getOpcSnippets, upsertOpcSnippet, deleteOpcSnippetAsync } from '@/lib/storageAsync'
 import { formatCurrency, generateId } from '@/lib/utils'
 import { activeLineItems, getEstimateContract, itemsContractValue, optionCategories } from '@/lib/estimateCalculations'
-import type { Estimate, EstimateOpc, OpcRow, OpcSnippet } from '@/types'
+import type { Estimate, EstimateOpc, OpcRow, OpcRowImage, OpcSnippet } from '@/types'
 import { Printer, ArrowLeft, X, Plus, ChevronDown, Bold, Italic, List, ImagePlus } from 'lucide-react'
 import { uploadAttachment, attachmentUrl, deleteAttachment, safeFileName } from '@/lib/attachments'
 import SpellCheckButton from '@/components/SpellCheckButton'
@@ -28,6 +28,8 @@ const BG_WARM = '#F0EEEB'
 const HERO_IMAGE = '/proposal-hero-8.jpg'
 // The shared proposal hero set - the cover picker cycles these.
 const HERO_IMAGES = Array.from({ length: 9 }, (_, i) => `/proposal-hero-${i + 1}.jpg`)
+// First image the "add divider image" button drops in (different from the default cover).
+const DEFAULT_DIVIDER = '/proposal-hero-3.jpg'
 
 // Company contact details for the closing block + repeating page footer. Only non-empty lines
 // render, so phone/email can be filled in once confirmed without touching the layout.
@@ -362,7 +364,13 @@ export default function OpcPage() {
   // whole array with stale data, silently dropping a row or resetting a price.
   // Resolve a signed URL for every card photo path not yet resolved (load + after an upload
   // synced from another device). Signed URLs last an hour - plenty for an editing session.
-  const rowImagePaths = (opc?.rows ?? []).flatMap(r => (r.images ?? []).map(im => im.path)).join('|')
+  // Covers all three card lists plus an uploaded (non-/public) divider image.
+  const rowImagePaths = [
+    ...(opc?.rows ?? []).flatMap(r => (r.images ?? []).map(im => im.path)),
+    ...(opc?.upgrades ?? []).flatMap(u => (u.images ?? []).map(im => im.path)),
+    ...(opc?.valueManagement ?? []).flatMap(v => (v.images ?? []).map(im => im.path)),
+    ...(opc?.dividerImage && !opc.dividerImage.startsWith('/') ? [opc.dividerImage] : []),
+  ].join('|')
   useEffect(() => {
     const paths = rowImagePaths ? rowImagePaths.split('|') : []
     for (const p of paths) {
@@ -422,20 +430,69 @@ export default function OpcPage() {
   const setRow = (rowId: string, patch: Partial<OpcRow>) =>
     mutate(prev => ({ rows: (prev.rows ?? []).map(r => r.id === rowId ? { ...r, ...patch } : r) }))
 
-  // ── Scope-card photos ── files go to the attachments bucket; the row stores the path only.
-  const addRowImage = async (rowId: string, file: File) => {
+  // ── Card photos (scope rows + upgrade / value-management cards) ── files go to the attachments
+  // bucket; the card stores {path, caption?} only. One generic set of handlers keyed by which list
+  // the card lives in, so all three card types behave identically.
+  type ImgList = 'rows' | 'upgrades' | 'valueManagement'
+  const patchImages = (list: ImgList, itemId: string, fn: (ims: OpcRowImage[]) => OpcRowImage[]) =>
+    mutate(prev => {
+      const arr = (prev[list] ?? []) as { id: string; images?: OpcRowImage[] }[]
+      return { [list]: arr.map(it => it.id === itemId ? { ...it, images: fn(it.images ?? []) } : it) } as Partial<EstimateOpc>
+    })
+  const addCardImage = async (list: ImgList, itemId: string, file: File) => {
     const path = await uploadAttachment(`opc/${id}/${Date.now()}-${safeFileName(file.name)}`, file)
     if (!path) { window.alert('Photo upload failed - check the connection and try again.'); return }
     const url = await attachmentUrl(path)
     if (url) setImgUrls(prev => ({ ...prev, [path]: url }))
-    mutate(prev => ({ rows: (prev.rows ?? []).map(r => r.id === rowId ? { ...r, images: [...(r.images ?? []), { path }] } : r) }))
+    patchImages(list, itemId, ims => [...ims, { path }])
   }
-  const removeRowImage = (rowId: string, path: string) => {
-    mutate(prev => ({ rows: (prev.rows ?? []).map(r => r.id === rowId ? { ...r, images: (r.images ?? []).filter(im => im.path !== path) } : r) }))
+  const removeCardImage = (list: ImgList, itemId: string, path: string) => {
+    patchImages(list, itemId, ims => ims.filter(im => im.path !== path))
     void deleteAttachment(path)
   }
-  const setRowImageCaption = (rowId: string, path: string, caption: string) =>
-    mutate(prev => ({ rows: (prev.rows ?? []).map(r => r.id === rowId ? { ...r, images: (r.images ?? []).map(im => im.path === path ? { ...im, caption } : im) } : r) }))
+  const setCardImageCaption = (list: ImgList, itemId: string, path: string, caption: string) =>
+    patchImages(list, itemId, ims => ims.map(im => im.path === path ? { ...im, caption } : im))
+  const addDividerImage = async (file: File) => {
+    const path = await uploadAttachment(`opc/${id}/divider-${Date.now()}-${safeFileName(file.name)}`, file)
+    if (!path) { window.alert('Photo upload failed - check the connection and try again.'); return }
+    const url = await attachmentUrl(path)
+    if (url) setImgUrls(prev => ({ ...prev, [path]: url }))
+    mutate({ dividerImage: path })
+  }
+
+  // Plain render helpers (NOT components - an inline component type would remount per render and
+  // drop caption-input focus on every keystroke).
+  const renderCardPhotos = (list: ImgList, itemId: string, images: OpcRowImage[] | undefined) =>
+    (images ?? []).length === 0 ? null : (
+      <div className="mt-3 flex flex-wrap gap-2">
+        {(images ?? []).map(im => (
+          <figure key={im.path} className="relative group/img flex-1 min-w-[150px] max-w-[250px]">
+            {imgUrls[im.path]
+              /* eslint-disable-next-line @next/next/no-img-element */
+              ? <img src={imgUrls[im.path]} alt={im.caption || ''} className="w-full h-36 object-cover rounded" />
+              : <div className="w-full h-36 rounded bg-white/60" />}
+            <button onClick={() => removeCardImage(list, itemId, im.path)} title="Remove photo"
+              className="print:hidden absolute top-1 right-1 bg-black/40 text-white rounded-full p-0.5 opacity-0 group-hover/img:opacity-100 transition-opacity">
+              <X className="w-3 h-3" />
+            </button>
+            <input
+              value={im.caption ?? ''}
+              onChange={e => setCardImageCaption(list, itemId, im.path, e.target.value)}
+              placeholder="caption"
+              className="print:hidden mt-1 w-full text-2xs text-gray-500 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-gray-400 outline-none"
+            />
+            {im.caption && <figcaption className="hidden print:block mt-1 text-2xs" style={{ color: MUTED }}>{im.caption}</figcaption>}
+          </figure>
+        ))}
+      </div>
+    )
+  const renderPhotoButton = (list: ImgList, itemId: string) => (
+    <label className="cursor-pointer flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 border border-gray-200 px-1.5 py-0.5 transition-colors" title="Add photos to this card">
+      <ImagePlus className="w-3 h-3" /> photo
+      <input type="file" accept="image/*" multiple className="hidden"
+        onChange={e => { Array.from(e.target.files ?? []).forEach(f => void addCardImage(list, itemId, f)); e.target.value = '' }} />
+    </label>
+  )
 
   /** Merge a row into a target: categories combine, scope text concatenates, source row goes. */
   const mergeInto = (sourceId: string, targetId: string) => {
@@ -739,35 +796,9 @@ export default function OpcPage() {
                   </div>
                   {/* Card photos - flow with the card (no fixed frames, so any scope length works).
                       They wrap into a row of up to ~3; the whole card still avoids page breaks. */}
-                  {(row.images ?? []).length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {(row.images ?? []).map(im => (
-                        <figure key={im.path} className="relative group/img flex-1 min-w-[150px] max-w-[250px]">
-                          {imgUrls[im.path]
-                            /* eslint-disable-next-line @next/next/no-img-element */
-                            ? <img src={imgUrls[im.path]} alt={im.caption || ''} className="w-full h-36 object-cover rounded" />
-                            : <div className="w-full h-36 rounded bg-white/60" />}
-                          <button onClick={() => removeRowImage(row.id, im.path)} title="Remove photo"
-                            className="print:hidden absolute top-1 right-1 bg-black/40 text-white rounded-full p-0.5 opacity-0 group-hover/img:opacity-100 transition-opacity">
-                            <X className="w-3 h-3" />
-                          </button>
-                          <input
-                            value={im.caption ?? ''}
-                            onChange={e => setRowImageCaption(row.id, im.path, e.target.value)}
-                            placeholder="caption"
-                            className="print:hidden mt-1 w-full text-2xs text-gray-500 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-gray-400 outline-none"
-                          />
-                          {im.caption && <figcaption className="hidden print:block mt-1 text-2xs" style={{ color: MUTED }}>{im.caption}</figcaption>}
-                        </figure>
-                      ))}
-                    </div>
-                  )}
+                  {renderCardPhotos('rows', row.id, row.images)}
                   <div className="print:hidden mt-2.5 flex items-center gap-2">
-                    <label className="cursor-pointer flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 border border-gray-200 px-1.5 py-0.5 transition-colors" title="Add photos to this card">
-                      <ImagePlus className="w-3 h-3" /> photo
-                      <input type="file" accept="image/*" multiple className="hidden"
-                        onChange={e => { Array.from(e.target.files ?? []).forEach(f => void addRowImage(row.id, f)); e.target.value = '' }} />
-                    </label>
+                    {renderPhotoButton('rows', row.id)}
                     <SnippetMenu
                       snippets={snippets}
                       currentText={stripProse(row.scope)}
@@ -791,6 +822,42 @@ export default function OpcPage() {
             })}
           </div>
         </div>
+
+        {/* ── DIVIDER IMAGE ── optional full-width band between the scope and the cost summary.
+            Pick from the shared hero set or upload a project photo; sits at a natural section
+            boundary so it flows regardless of how long the scope cards run. */}
+        {opc.dividerImage ? (
+          <div className="mb-10 opc-avoid-break relative group/div">
+            {opc.dividerImage.startsWith('/') || imgUrls[opc.dividerImage]
+              /* eslint-disable-next-line @next/next/no-img-element */
+              ? <img
+                  src={opc.dividerImage.startsWith('/') ? opc.dividerImage : imgUrls[opc.dividerImage]}
+                  alt="" className="w-full h-56 object-cover rounded-lg" style={{ objectPosition: 'center 55%' }}
+                />
+              : <div className="w-full h-56 rounded-lg bg-gray-100" />}
+            <div className="print:hidden absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover/div:opacity-100 transition-opacity">
+              {HERO_IMAGES.map(h => (
+                <button key={h} onClick={() => mutate({ dividerImage: h })}
+                  title={`Image ${h.replace(/\D+/g, '')}`}
+                  className={`w-2.5 h-2.5 rounded-full border border-white/80 shadow ${opc.dividerImage === h ? 'bg-white' : 'bg-white/20 hover:bg-white/60'}`} />
+              ))}
+              <label className="cursor-pointer ml-1 bg-black/40 text-white rounded-full p-1" title="Upload a project photo">
+                <ImagePlus className="w-3 h-3" />
+                <input type="file" accept="image/*" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) void addDividerImage(f); e.target.value = '' }} />
+              </label>
+              <button onClick={() => mutate({ dividerImage: undefined })} title="Remove the divider image"
+                className="bg-black/40 text-white rounded-full p-1"><X className="w-3 h-3" /></button>
+            </div>
+          </div>
+        ) : (
+          <div className="print:hidden mb-10 flex">
+            <button onClick={() => mutate({ dividerImage: DEFAULT_DIVIDER })}
+              className="flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 border border-dashed border-gray-300 px-2 py-1 transition-colors">
+              <ImagePlus className="w-3 h-3" /> add divider image
+            </button>
+          </div>
+        )}
 
         {/* ── PROJECT COST SUMMARY ── */}
         <div className="mb-10 opc-avoid-break">
@@ -959,6 +1026,8 @@ export default function OpcPage() {
                     placeholder="What changes and why it saves…"
                     className="text-xs font-light leading-relaxed"
                   />
+                  {renderCardPhotos('valueManagement', v.id, v.images)}
+                  <div className="print:hidden mt-2 flex">{renderPhotoButton('valueManagement', v.id)}</div>
                 </div>
                 <div className="shrink-0 text-right">
                   <p className="text-2xs tracking-widest uppercase mb-0.5" style={{ color: MUTED }}>Saving</p>
@@ -1049,6 +1118,8 @@ export default function OpcPage() {
                     placeholder="What the upgrade adds…"
                     className="text-xs font-light leading-relaxed"
                   />
+                  {renderCardPhotos('upgrades', u.id, u.images)}
+                  <div className="print:hidden mt-2 flex">{renderPhotoButton('upgrades', u.id)}</div>
                 </div>
                 <div className="shrink-0 text-right">
                   <p className="text-2xs tracking-widest uppercase mb-0.5" style={{ color: MUTED }}>Add</p>
