@@ -256,7 +256,8 @@ export interface EstimateOpc {
   docType?: 'opc' | 'quote'           // render the SAME document as an OPC or a formal Quote (default opc)
   docNumber?: string                  // document number shown on the cover / quote no.; defaults to the estimate version zero-padded ("03")
   heroImage?: string                  // cover image public path (/proposal-hero-N.jpg); default hero 8
-  dividerImage?: string               // optional full-width band between the scope section and the cost summary; a /public hero path or an attachments-bucket path
+  dividerImage?: string               // LEGACY single band before the cost summary - folded into dividers.scope on load; kept so old rows still read
+  dividers?: Record<string, string>   // full-width image bands by anchor ('intro' | 'row:<rowId>' | 'scope' | 'summary' | 'exclusions') -> /public hero path or attachments-bucket path
 }
 
 /** A value-management (value-engineering) option: an alternative that reduces the cost, with the

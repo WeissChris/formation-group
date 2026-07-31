@@ -8,7 +8,7 @@
 // value rounded to the nearest $100. Scope prose lives on the row, written inline or inserted
 // from the shared snippet library (fg_opc_snippets, cross-device via liveSync). Edits autosave.
 
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { loadEstimates, loadProjects, loadProposals, saveEstimate, loadOpcSnippets } from '@/lib/storage'
@@ -325,6 +325,8 @@ export default function OpcPage() {
         poolSubtotalExGst: found.opc?.poolSubtotalExGst ?? null,
         exclusions: found.opc?.exclusions ?? DEFAULT_EXCLUSIONS,
         excludedItems: found.opc?.excludedItems ?? [],
+        // Fold the legacy single divider into the per-anchor map (it lived before the summary).
+        dividers: { ...(found.opc?.dividerImage ? { scope: found.opc.dividerImage } : {}), ...(found.opc?.dividers ?? {}) },
         valueManagement: reconcileOptions(
           found.opc?.valueManagement, optionCategories(found, 'value_management'),
           (category, value) => ({ id: generateId(), title: category, note: '', saving: value, categoryRef: category }),
@@ -374,7 +376,7 @@ export default function OpcPage() {
     ...(opc?.rows ?? []).flatMap(r => (r.images ?? []).map(im => im.path)),
     ...(opc?.upgrades ?? []).flatMap(u => (u.images ?? []).map(im => im.path)),
     ...(opc?.valueManagement ?? []).flatMap(v => (v.images ?? []).map(im => im.path)),
-    ...(opc?.dividerImage && !opc.dividerImage.startsWith('/') ? [opc.dividerImage] : []),
+    ...Object.values(opc?.dividers ?? {}).filter(p => !p.startsWith('/')),
   ].join('|')
   useEffect(() => {
     const paths = rowImagePaths ? rowImagePaths.split('|') : []
@@ -493,13 +495,60 @@ export default function OpcPage() {
   }
   const setCardImageCaption = (list: ImgList, itemId: string, path: string, caption: string) =>
     patchImages(list, itemId, ims => ims.map(im => im.path === path ? { ...im, caption } : im))
-  const addDividerImage = async (file: File) => {
-    const path = await uploadAttachment(`opc/${id}/divider-${Date.now()}-${safeFileName(file.name)}`, file)
+  // ── Image bands ── full-width divider images, insertable at any anchor point in the document
+  // (after the intro, after any scope card, before/after the summary, after the exclusions).
+  const setBand = (anchor: string, image: string | undefined) =>
+    mutate(prev => {
+      const next = { ...(prev.dividers ?? {}) }
+      if (image) next[anchor] = image
+      else delete next[anchor]
+      return { dividers: next, ...(anchor === 'scope' ? { dividerImage: undefined } : {}) }
+    })
+  const uploadBand = async (anchor: string, file: File) => {
+    const path = await uploadAttachment(`opc/${id}/band-${Date.now()}-${safeFileName(file.name)}`, file)
     if (!path) { window.alert('Photo upload failed - check the connection and try again.'); return }
     const url = await attachmentUrl(path)
     if (url) setImgUrls(prev => ({ ...prev, [path]: url }))
-    mutate({ dividerImage: path })
+    setBand(anchor, path)
   }
+  /** The band itself (with hover controls), or null when the anchor has none. */
+  const renderImageBand = (anchor: string) => {
+    const image = opc?.dividers?.[anchor]
+    if (!image) return null
+    return (
+      <div className="mb-10 opc-avoid-break relative group/band">
+        {image.startsWith('/') || imgUrls[image]
+          /* eslint-disable-next-line @next/next/no-img-element */
+          ? <img src={image.startsWith('/') ? image : imgUrls[image]} alt=""
+              className="w-full h-56 object-cover rounded-lg" style={{ objectPosition: 'center 55%' }} />
+          : <div className="w-full h-56 rounded-lg bg-gray-100" />}
+        <div className="print:hidden absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover/band:opacity-100 transition-opacity">
+          {HERO_IMAGES.map(h => (
+            <button key={h} onClick={() => setBand(anchor, h)}
+              title={`Image ${h.replace(/\D+/g, '')}`}
+              className={`w-2.5 h-2.5 rounded-full border border-white/80 shadow ${image === h ? 'bg-white' : 'bg-white/20 hover:bg-white/60'}`} />
+          ))}
+          <label className="cursor-pointer ml-1 bg-black/40 text-white rounded-full p-1" title="Upload a project photo">
+            <ImagePlus className="w-3 h-3" />
+            <input type="file" accept="image/*" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) void uploadBand(anchor, f); e.target.value = '' }} />
+          </label>
+          <button onClick={() => setBand(anchor, undefined)} title="Remove the image band"
+            className="bg-black/40 text-white rounded-full p-1"><X className="w-3 h-3" /></button>
+        </div>
+      </div>
+    )
+  }
+  /** Dashed add control shown at a section boundary while the anchor has no band. */
+  const renderAddBand = (anchor: string) =>
+    opc?.dividers?.[anchor] ? null : (
+      <div className="print:hidden mb-10 flex">
+        <button onClick={() => setBand(anchor, DEFAULT_DIVIDER)}
+          className="flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 border border-dashed border-gray-300 px-2 py-1 transition-colors">
+          <ImagePlus className="w-3 h-3" /> add image band
+        </button>
+      </div>
+    )
 
   // Plain render helpers (NOT components - an inline component type would remount per render and
   // drop caption-input focus on every keystroke).
@@ -812,6 +861,8 @@ export default function OpcPage() {
             className="text-sm font-light leading-relaxed"
           />
         </div>
+        {renderImageBand('intro')}
+        {renderAddBand('intro')}
 
         {/* ── LANDSCAPE CONSTRUCTION ESTIMATE ── */}
         <div className="mb-10">
@@ -823,7 +874,8 @@ export default function OpcPage() {
               const price = priceOf(row)
               const others = rows.filter(r => r.id !== row.id)
               return (
-                <div key={row.id} className="opc-avoid-break rounded-lg px-5 py-3.5" style={{ backgroundColor: BG_WARM, borderLeft: `3px solid ${GREEN}` }}>
+                <React.Fragment key={row.id}>
+                <div className="opc-avoid-break rounded-lg px-5 py-3.5" style={{ backgroundColor: BG_WARM, borderLeft: `3px solid ${GREEN}` }}>
                   <div className="flex items-start justify-between gap-6">
                     <div className="flex-1 min-w-0">
                       <input
@@ -880,48 +932,25 @@ export default function OpcPage() {
                         {others.map(o => <option key={o.id} value={o.id}>{o.title}</option>)}
                       </select>
                     )}
+                    {!opc.dividers?.[`row:${row.id}`] && (
+                      <button onClick={() => setBand(`row:${row.id}`, DEFAULT_DIVIDER)}
+                        title="Add a full-width image band below this card"
+                        className="flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 border border-dashed border-gray-200 px-1.5 py-0.5 transition-colors">
+                        <ImagePlus className="w-3 h-3" /> band
+                      </button>
+                    )}
                   </div>
                 </div>
+                {renderImageBand(`row:${row.id}`)}
+                </React.Fragment>
               )
             })}
           </div>
         </div>
 
-        {/* ── DIVIDER IMAGE ── optional full-width band between the scope and the cost summary.
-            Pick from the shared hero set or upload a project photo; sits at a natural section
-            boundary so it flows regardless of how long the scope cards run. */}
-        {opc.dividerImage ? (
-          <div className="mb-10 opc-avoid-break relative group/div">
-            {opc.dividerImage.startsWith('/') || imgUrls[opc.dividerImage]
-              /* eslint-disable-next-line @next/next/no-img-element */
-              ? <img
-                  src={opc.dividerImage.startsWith('/') ? opc.dividerImage : imgUrls[opc.dividerImage]}
-                  alt="" className="w-full h-56 object-cover rounded-lg" style={{ objectPosition: 'center 55%' }}
-                />
-              : <div className="w-full h-56 rounded-lg bg-gray-100" />}
-            <div className="print:hidden absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover/div:opacity-100 transition-opacity">
-              {HERO_IMAGES.map(h => (
-                <button key={h} onClick={() => mutate({ dividerImage: h })}
-                  title={`Image ${h.replace(/\D+/g, '')}`}
-                  className={`w-2.5 h-2.5 rounded-full border border-white/80 shadow ${opc.dividerImage === h ? 'bg-white' : 'bg-white/20 hover:bg-white/60'}`} />
-              ))}
-              <label className="cursor-pointer ml-1 bg-black/40 text-white rounded-full p-1" title="Upload a project photo">
-                <ImagePlus className="w-3 h-3" />
-                <input type="file" accept="image/*" className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) void addDividerImage(f); e.target.value = '' }} />
-              </label>
-              <button onClick={() => mutate({ dividerImage: undefined })} title="Remove the divider image"
-                className="bg-black/40 text-white rounded-full p-1"><X className="w-3 h-3" /></button>
-            </div>
-          </div>
-        ) : (
-          <div className="print:hidden mb-10 flex">
-            <button onClick={() => mutate({ dividerImage: DEFAULT_DIVIDER })}
-              className="flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 border border-dashed border-gray-300 px-2 py-1 transition-colors">
-              <ImagePlus className="w-3 h-3" /> add divider image
-            </button>
-          </div>
-        )}
+        {/* ── IMAGE BAND: between scope and summary ── */}
+        {renderImageBand('scope')}
+        {renderAddBand('scope')}
 
         {/* ── PROJECT COST SUMMARY ── */}
         <div className="mb-10 opc-avoid-break">
@@ -1006,6 +1035,10 @@ export default function OpcPage() {
           </p>
         </div>
 
+        {/* ── IMAGE BAND: after the summary ── */}
+        {renderImageBand('summary')}
+        {renderAddBand('summary')}
+
         {/* ── EXCLUSIONS & KEY NOTES ── */}
         <div className="mb-10 opc-avoid-break">
           <p className="text-2xs tracking-[0.25em] uppercase mb-2" style={{ color: GREEN }}>03 — Exclusions &amp; Key Notes</p>
@@ -1044,6 +1077,10 @@ export default function OpcPage() {
             <Plus className="w-3 h-3" /> Add exclusion
           </button>
         </div>
+
+        {/* ── IMAGE BAND: after the exclusions ── */}
+        {renderImageBand('exclusions')}
+        {renderAddBand('exclusions')}
 
         {/* ── VALUE MANAGEMENT ── options to reduce cost, with a total possible saving. Hidden in
             print when there are none so an empty section never prints. */}
