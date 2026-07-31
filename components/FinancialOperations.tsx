@@ -16,6 +16,7 @@ import { getEstimateTotals, getEstimateContract, readLineItemRevenue, activeLine
 import { variationStage, isAwaitingOffice, type VariationStage } from '@/lib/variationStatus'
 import type { ProgressPaymentStage, Estimate, WeeklyActual, ProgressClaim, ProgressClaimLineItem, EntityType } from '@/types'
 import { Plus, X, FileText, Receipt, GitBranch, Eye, Check, ChevronRight, ArrowLeft, Send } from 'lucide-react'
+import SpellCheckButton from '@/components/SpellCheckButton'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -1053,7 +1054,17 @@ function InvoicesSubTab({
               placeholder="client@email.com"
               className="w-full px-3 py-2 mb-4 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors"
             />
-            <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Message</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Message</label>
+              <SpellCheckButton
+                className="flex items-center gap-1 text-2xs font-light tracking-wide uppercase text-fg-muted border border-fg-border px-2 py-0.5 hover:text-fg-heading hover:border-fg-heading transition-colors disabled:opacity-50"
+                getTexts={() => [{ label: 'Email message', text: sendModal.message }]}
+                onReplace={(word, replacement) => {
+                  const re = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g')
+                  setSendModal(m => m ? { ...m, message: m.message.replace(re, replacement) } : m)
+                }}
+              />
+            </div>
             <textarea
               value={sendModal.message}
               onChange={e => setSendModal(m => m ? { ...m, message: e.target.value } : m)}

@@ -9,11 +9,13 @@ import { useState } from 'react'
 import { SpellCheck, X, Check } from 'lucide-react'
 import { checkSpelling, addToIgnoreList, type SpellingIssue, type SpellBlock } from '@/lib/spellcheck'
 
-export default function SpellCheckButton({ getTexts, onReplace }: {
+export default function SpellCheckButton({ getTexts, onReplace, className }: {
   getTexts: () => (SpellBlock | string)[]
   /** When provided, suggestions + the custom box become click-to-fix: replaces every occurrence of
    *  the word in the document. Without it (read-only docs) suggestions display as hints. */
   onReplace?: (word: string, replacement: string) => void
+  /** Trigger styling override - the default suits the dark document toolbars. */
+  className?: string
 }) {
   const [issues, setIssues] = useState<SpellingIssue[] | null>(null)
   const [busy, setBusy] = useState(false)
@@ -48,7 +50,7 @@ export default function SpellCheckButton({ getTexts, onReplace }: {
       <button
         onClick={run}
         disabled={busy}
-        className="flex items-center gap-2 px-4 py-1.5 bg-white/10 text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-white/20 transition-colors disabled:opacity-50"
+        className={className || 'flex items-center gap-2 px-4 py-1.5 bg-white/10 text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-white/20 transition-colors disabled:opacity-50'}
       >
         <SpellCheck className="w-3.5 h-3.5" /> {busy ? 'Checking…' : 'Spelling'}
       </button>
