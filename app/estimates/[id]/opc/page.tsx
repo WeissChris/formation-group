@@ -1042,9 +1042,12 @@ export default function OpcPage() {
             </div>
           </div>
 
-          <p className="text-xs font-light italic mt-4" style={{ color: MUTED }}>
-            A formal fixed-price quote will follow once the design and scope are finalised.
-          </p>
+          {/* OPC-only caveat - a formal quote IS the fixed price, so it must not carry this line */}
+          {!isQuote && (
+            <p className="text-xs font-light italic mt-4" style={{ color: MUTED }}>
+              A formal fixed-price quote will follow once the design and scope are finalised.
+            </p>
+          )}
         </div>
 
         {/* ── IMAGE BAND: after the summary ── */}
