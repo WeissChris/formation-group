@@ -232,6 +232,14 @@ export interface OpcRow {
   title: string           // client-facing row name (defaults to the category name)
   categories: string[]    // estimate categories priced into this row
   scope: string           // client-facing "Scope of Works" prose
+  images?: OpcRowImage[]  // photos rendered inside the card, flowing with the scope text
+}
+
+/** A photo on an OPC/Quote scope card. The file lives in the attachments bucket (path only,
+ *  never base64) and renders via a signed URL; the optional caption prints under the image. */
+export interface OpcRowImage {
+  path: string
+  caption?: string
 }
 
 /** Everything the OPC print page stores beyond the estimate's own numbers. */
@@ -247,6 +255,7 @@ export interface EstimateOpc {
   upgrades?: OpcUpgradeOption[]       // optional upgrades with an added cost each + a total
   docType?: 'opc' | 'quote'           // render the SAME document as an OPC or a formal Quote (default opc)
   docNumber?: string                  // document number shown on the cover / quote no.; defaults to the estimate version zero-padded ("03")
+  heroImage?: string                  // cover image public path (/proposal-hero-N.jpg); default hero 8
 }
 
 /** A value-management (value-engineering) option: an alternative that reduces the cost, with the

@@ -16,7 +16,8 @@ import { getEstimates, upsertEstimate, getOpcSnippets, upsertOpcSnippet, deleteO
 import { formatCurrency, generateId } from '@/lib/utils'
 import { activeLineItems, getEstimateContract, itemsContractValue, optionCategories } from '@/lib/estimateCalculations'
 import type { Estimate, EstimateOpc, OpcRow, OpcSnippet } from '@/types'
-import { Printer, ArrowLeft, X, Plus, ChevronDown, Bold, Italic, List } from 'lucide-react'
+import { Printer, ArrowLeft, X, Plus, ChevronDown, Bold, Italic, List, ImagePlus } from 'lucide-react'
+import { uploadAttachment, attachmentUrl, deleteAttachment, safeFileName } from '@/lib/attachments'
 import SpellCheckButton from '@/components/SpellCheckButton'
 
 const GREEN = '#3D5A3A'
@@ -25,6 +26,8 @@ const BODY = '#2d2d2d'
 const MUTED = '#6b6b6b'
 const BG_WARM = '#F0EEEB'
 const HERO_IMAGE = '/proposal-hero-8.jpg'
+// The shared proposal hero set - the cover picker cycles these.
+const HERO_IMAGES = Array.from({ length: 9 }, (_, i) => `/proposal-hero-${i + 1}.jpg`)
 
 // Company contact details for the closing block + repeating page footer. Only non-empty lines
 // render, so phone/email can be filled in once confirmed without touching the layout.
@@ -285,6 +288,8 @@ export default function OpcPage() {
   const [opc, setOpc] = useState<EstimateOpc | null>(null)
   const [snippets, setSnippets] = useState<OpcSnippet[]>([])
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
+  // Signed display URLs for scope-card photos, keyed by attachment path (paths only in the data).
+  const [imgUrls, setImgUrls] = useState<Record<string, string>>({})
 
   useEffect(() => {
     let cancelled = false
@@ -355,6 +360,18 @@ export default function OpcPage() {
   // management) MUST use the function form and key off item id - deriving the next array from a
   // render-time snapshot lets a slightly-late edit (e.g. a contentEditable blur) overwrite the
   // whole array with stale data, silently dropping a row or resetting a price.
+  // Resolve a signed URL for every card photo path not yet resolved (load + after an upload
+  // synced from another device). Signed URLs last an hour - plenty for an editing session.
+  const rowImagePaths = (opc?.rows ?? []).flatMap(r => (r.images ?? []).map(im => im.path)).join('|')
+  useEffect(() => {
+    const paths = rowImagePaths ? rowImagePaths.split('|') : []
+    for (const p of paths) {
+      if (imgUrls[p]) continue
+      void attachmentUrl(p).then(url => { if (url) setImgUrls(prev => prev[p] ? prev : { ...prev, [p]: url }) })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowImagePaths])
+
   const mutate = (patch: Partial<EstimateOpc> | ((prev: EstimateOpc) => Partial<EstimateOpc>)) => {
     setOpc(prev => {
       const base = (prev ?? {}) as EstimateOpc
@@ -404,6 +421,21 @@ export default function OpcPage() {
   // for the same reason as value management above - a late blur must never overwrite the array.
   const setRow = (rowId: string, patch: Partial<OpcRow>) =>
     mutate(prev => ({ rows: (prev.rows ?? []).map(r => r.id === rowId ? { ...r, ...patch } : r) }))
+
+  // ── Scope-card photos ── files go to the attachments bucket; the row stores the path only.
+  const addRowImage = async (rowId: string, file: File) => {
+    const path = await uploadAttachment(`opc/${id}/${Date.now()}-${safeFileName(file.name)}`, file)
+    if (!path) { window.alert('Photo upload failed - check the connection and try again.'); return }
+    const url = await attachmentUrl(path)
+    if (url) setImgUrls(prev => ({ ...prev, [path]: url }))
+    mutate(prev => ({ rows: (prev.rows ?? []).map(r => r.id === rowId ? { ...r, images: [...(r.images ?? []), { path }] } : r) }))
+  }
+  const removeRowImage = (rowId: string, path: string) => {
+    mutate(prev => ({ rows: (prev.rows ?? []).map(r => r.id === rowId ? { ...r, images: (r.images ?? []).filter(im => im.path !== path) } : r) }))
+    void deleteAttachment(path)
+  }
+  const setRowImageCaption = (rowId: string, path: string, caption: string) =>
+    mutate(prev => ({ rows: (prev.rows ?? []).map(r => r.id === rowId ? { ...r, images: (r.images ?? []).map(im => im.path === path ? { ...im, caption } : im) } : r) }))
 
   /** Merge a row into a target: categories combine, scope text concatenates, source row goes. */
   const mergeInto = (sourceId: string, targetId: string) => {
@@ -603,9 +635,17 @@ export default function OpcPage() {
       </div>
 
       {/* ── COVER ── */}
-      <div className="opc-cover relative h-[70vh] min-h-[480px]">
+      <div className="opc-cover relative h-[70vh] min-h-[480px] group/hero">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={HERO_IMAGE} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: 'center 55%' }} />
+        <img src={opc.heroImage || HERO_IMAGE} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: 'center 55%' }} />
+        {/* Cover image picker - cycles the shared proposal hero set; shows on hover, never prints */}
+        <div className="print:hidden absolute top-8 right-10 flex items-center gap-1 opacity-0 group-hover/hero:opacity-100 transition-opacity">
+          {HERO_IMAGES.map(h => (
+            <button key={h} onClick={() => mutate({ heroImage: h })}
+              title={`Cover image ${h.replace(/\D+/g, '')}`}
+              className={`w-2.5 h-2.5 rounded-full border border-white/70 ${(opc.heroImage || HERO_IMAGE) === h ? 'bg-white' : 'bg-white/20 hover:bg-white/50'}`} />
+          ))}
+        </div>
         <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.15) 55%, rgba(0,0,0,0.1) 100%)' }} />
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/formation-logo-white.svg" alt="Formation" className="absolute top-8 left-10 h-6 w-auto" />
@@ -697,7 +737,37 @@ export default function OpcPage() {
                       className="text-xs font-light leading-relaxed"
                     />
                   </div>
+                  {/* Card photos - flow with the card (no fixed frames, so any scope length works).
+                      They wrap into a row of up to ~3; the whole card still avoids page breaks. */}
+                  {(row.images ?? []).length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {(row.images ?? []).map(im => (
+                        <figure key={im.path} className="relative group/img flex-1 min-w-[150px] max-w-[250px]">
+                          {imgUrls[im.path]
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            ? <img src={imgUrls[im.path]} alt={im.caption || ''} className="w-full h-36 object-cover rounded" />
+                            : <div className="w-full h-36 rounded bg-white/60" />}
+                          <button onClick={() => removeRowImage(row.id, im.path)} title="Remove photo"
+                            className="print:hidden absolute top-1 right-1 bg-black/40 text-white rounded-full p-0.5 opacity-0 group-hover/img:opacity-100 transition-opacity">
+                            <X className="w-3 h-3" />
+                          </button>
+                          <input
+                            value={im.caption ?? ''}
+                            onChange={e => setRowImageCaption(row.id, im.path, e.target.value)}
+                            placeholder="caption"
+                            className="print:hidden mt-1 w-full text-2xs text-gray-500 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-gray-400 outline-none"
+                          />
+                          {im.caption && <figcaption className="hidden print:block mt-1 text-2xs" style={{ color: MUTED }}>{im.caption}</figcaption>}
+                        </figure>
+                      ))}
+                    </div>
+                  )}
                   <div className="print:hidden mt-2.5 flex items-center gap-2">
+                    <label className="cursor-pointer flex items-center gap-1 text-2xs text-gray-400 hover:text-gray-700 border border-gray-200 px-1.5 py-0.5 transition-colors" title="Add photos to this card">
+                      <ImagePlus className="w-3 h-3" /> photo
+                      <input type="file" accept="image/*" multiple className="hidden"
+                        onChange={e => { Array.from(e.target.files ?? []).forEach(f => void addRowImage(row.id, f)); e.target.value = '' }} />
+                    </label>
                     <SnippetMenu
                       snippets={snippets}
                       currentText={stripProse(row.scope)}
