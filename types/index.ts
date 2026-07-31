@@ -258,6 +258,7 @@ export interface EstimateOpc {
   heroImage?: string                  // cover image public path (/proposal-hero-N.jpg); default hero 8
   dividerImage?: string               // LEGACY single band before the cost summary - folded into dividers.scope on load; kept so old rows still read
   dividers?: Record<string, string>   // full-width image bands by anchor ('intro' | 'row:<rowId>' | 'scope' | 'summary' | 'exclusions') -> /public hero path or attachments-bucket path
+  dividerHeights?: Record<string, 's' | 'm' | 'l'>   // per-anchor band height (default m) - lets a band be sized to fill the bottom of a page
 }
 
 /** A value-management (value-engineering) option: an alternative that reduces the cost, with the

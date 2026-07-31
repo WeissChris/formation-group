@@ -515,14 +515,26 @@ export default function OpcPage() {
   const renderImageBand = (anchor: string) => {
     const image = opc?.dividers?.[anchor]
     if (!image) return null
+    const height = opc?.dividerHeights?.[anchor] ?? 'm'
+    const hClass = height === 's' ? 'h-40' : height === 'l' ? 'h-72' : 'h-56'
+    const setHeight = (h: 's' | 'm' | 'l') =>
+      mutate(prev => ({ dividerHeights: { ...(prev.dividerHeights ?? {}), [anchor]: h } }))
     return (
       <div className="mb-10 opc-avoid-break relative group/band">
         {image.startsWith('/') || imgUrls[image]
           /* eslint-disable-next-line @next/next/no-img-element */
           ? <img src={image.startsWith('/') ? image : imgUrls[image]} alt=""
-              className="w-full h-56 object-cover rounded-lg" style={{ objectPosition: 'center 55%' }} />
-          : <div className="w-full h-56 rounded-lg bg-gray-100" />}
+              className={`w-full ${hClass} object-cover rounded-lg`} style={{ objectPosition: 'center 55%' }} />
+          : <div className={`w-full ${hClass} rounded-lg bg-gray-100`} />}
         <div className="print:hidden absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover/band:opacity-100 transition-opacity">
+          {(['s', 'm', 'l'] as const).map(h => (
+            <button key={h} onClick={() => setHeight(h)}
+              title={`Band height ${h === 's' ? 'small' : h === 'm' ? 'medium' : 'large'} - size it to fill the page`}
+              className={`w-4 h-4 rounded-sm text-[8px] font-medium uppercase leading-none ${height === h ? 'bg-white text-gray-800' : 'bg-black/40 text-white hover:bg-black/60'}`}>
+              {h}
+            </button>
+          ))}
+          <span className="w-px h-3 bg-white/50 mx-0.5" />
           {HERO_IMAGES.map(h => (
             <button key={h} onClick={() => setBand(anchor, h)}
               title={`Image ${h.replace(/\D+/g, '')}`}
@@ -971,7 +983,7 @@ export default function OpcPage() {
                 const pctOfTotal = breakdownTotal > 0 ? (b.price / breakdownTotal) * 100 : 0
                 return (
                   <div key={b.title} className="flex items-center gap-3 py-1.5 border-b border-gray-100 break-inside-avoid">
-                    <span className="w-44 shrink-0 text-xs font-light truncate" style={{ color: HEADING }} title={b.title}>{b.title}</span>
+                    <span className="w-44 shrink-0 text-xs font-light leading-tight" style={{ color: HEADING }}>{b.title}</span>
                     <div className="flex-1 h-3 rounded-sm" style={{ backgroundColor: '#EDEBE8' }}>
                       <div className="h-full rounded-sm" style={{ width: `${(b.price / breakdownMax) * 100}%`, backgroundColor: GREEN }} />
                     </div>
@@ -1261,9 +1273,10 @@ export default function OpcPage() {
           </button>
         </div>
 
-        {/* Closing block: disclaimer + get-in-touch + contact details */}
-        <div className="border-t border-gray-200 pt-6 pb-2 opc-avoid-break">
-          <p className="text-xs font-light italic mb-6" style={{ color: MUTED }}>
+        {/* Closing block: disclaimer + get-in-touch + contact details. Kept compact so it shares
+            the final content page instead of drifting onto a nearly-empty page of its own. */}
+        <div className="border-t border-gray-200 pt-4 pb-1 opc-avoid-break">
+          <p className="text-xs font-light italic mb-4" style={{ color: MUTED }}>
             {isQuote
               ? `This quote is fixed for the scope described and valid for 30 days from the date above. Prices are subject to change after this period or if the scope changes.`
               : `This Opinion of Probable Cost is preliminary pricing prepared from the design documentation available at the date above. It is not a fixed-price quotation; a formal quote will follow once the design and scope are finalised.`}
@@ -1271,7 +1284,7 @@ export default function OpcPage() {
           <div className="flex items-end justify-between gap-6">
             <div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/formation-primary-black.svg" alt="Formation Landscapes" className="h-8 w-auto mb-2"
+              <img src="/formation-primary-black.svg" alt="Formation Landscapes" className="h-7 w-auto mb-1.5"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
               <p className="text-2xs font-light" style={{ color: MUTED }}>Formation Landscapes Pty Ltd · Melbourne, Victoria</p>
               <p className="text-2xs font-light" style={{ color: MUTED }}>
