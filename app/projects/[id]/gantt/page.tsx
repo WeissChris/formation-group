@@ -2183,12 +2183,21 @@ export default function GanttPage() {
   // can see at a glance whether work is still unscheduled (under-claiming) before invoicing.
   // Scheduled forecast total — same leaf-claim source as the cash-flow so split/nested categories count too.
   const forecastRevenue = entries.reduce((s, e) => s + entryClaimSegments(e).reduce((ss, c) => ss + (c.seg.revenueAllocation || 0), 0), 0)
+  // Claims live on the leaf nodes (entryClaimSegments), NOT entry.segments - a split category clears
+  // its own segments, and categories default to split, so reading them said "unscheduled" for
+  // categories that were fully on the programme.
   const unscheduledCats = categories.filter(c => {
     const e = entries.find(x => x.category === c.category)
-    return !e || !e.segments.some(s => s.startDate && s.endDate)
+    return !e || !entryClaimSegments(e).some(({ seg }) => seg.startDate && seg.endDate)
   })
   const scheduledPct = projTotals.revenue > 0 ? Math.round((forecastRevenue / projTotals.revenue) * 100) : 0
   const reconciled = Math.abs(forecastRevenue - projTotals.revenue) < 1
+  // The cost twin of the accuracy check, for the foreman (budget) view: dollars allocated across the
+  // work periods vs the job budget. The shortfall is budget not yet on the programme - the weekly
+  // cost cells will under-total the budget by exactly this amount.
+  const allocatedCost = entries.reduce((s, e) => s + entryClaimSegments(e).reduce((ss, c) => ss + (c.seg.costAllocation || 0), 0), 0)
+  const allocatedPct = projTotals.cost > 0 ? Math.round((allocatedCost / projTotals.cost) * 100) : 0
+  const costReconciled = Math.abs(allocatedCost - projTotals.cost) < 1
 
   // % complete auto-fed from invoicing (Andrew): sent/paid progress-claim value ÷ contract.
   const invoicedToDate = loadProgressClaims(id)
@@ -2789,6 +2798,25 @@ export default function GanttPage() {
               </div>
             </>
           )}
+          {/* Budget allocation check — the cost twin of Scheduled, and the foreman's only reconcile
+              (the revenue one is hidden in the budget view). Anything short means the weekly cost
+              cells will not add up to the budget, because that budget is not on the programme yet. */}
+          <div className="h-4 w-px bg-fg-border" />
+          <div className="flex items-baseline gap-1.5" title="Cost allocated across the work periods vs the job budget — anything short is budget not yet allocated on the programme">
+            <span className="text-[10px] uppercase tracking-wide text-fg-muted">Allocated</span>
+            <span className={`tabular-nums ${costReconciled ? 'text-green-600' : 'text-amber-600'}`}>
+              {formatCurrency(allocatedCost)} / {formatCurrency(projTotals.cost)}
+            </span>
+            <span className={costReconciled ? 'text-green-600/80' : 'text-amber-600/80'}>
+              {costReconciled ? '✓' : `${allocatedPct}%`}
+            </span>
+            {!costReconciled && projTotals.cost > allocatedCost && (
+              <span className="text-amber-600/80 text-[10px]">· {formatCurrency(projTotals.cost - allocatedCost)} un-allocated</span>
+            )}
+            {!showRevenue && unscheduledCats.length > 0 && (
+              <span className="text-amber-600/80 text-[10px]">· {unscheduledCats.length} to schedule</span>
+            )}
+          </div>
           {/* % complete auto-fed from invoicing */}
           {showRevenue && invoicedToDate > 0 && (
             <div className="flex items-baseline gap-1.5" title={`Invoiced ${formatCurrency(invoicedToDate)} of ${formatCurrency(projTotals.revenue)} contract (sent + paid progress claims)`}>
