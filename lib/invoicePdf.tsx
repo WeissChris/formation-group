@@ -40,7 +40,7 @@ const WARM = '#F7F5F2'
 const s = StyleSheet.create({
   page: { fontFamily: 'Helvetica', fontSize: 10, color: BODY, padding: 48, paddingBottom: 64 },
   title: { fontSize: 22, color: INK, marginTop: 10 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', borderBottomWidth: 2, borderBottomColor: GREEN, paddingBottom: 14, marginBottom: 18 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: 14, marginBottom: 18 },
   metaLabel: { fontSize: 7.5, color: MUTED, textTransform: 'uppercase', letterSpacing: 1 },
   metaValue: { fontSize: 10, color: INK, marginTop: 1, marginBottom: 6 },
   billLabel: { fontSize: 7.5, color: MUTED, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 3 },
@@ -124,8 +124,18 @@ export function InvoicePdf({ inv }: { inv: InvoicePdfInput }) {
         })}
 
         <View style={{ marginTop: 10 }}>
+          {/* The deposit / earlier progress claims, so the client sees this claim in context */}
+          {(() => {
+            const prior = inv.lines.reduce((sum, l) => sum + (l.claimedToDate ?? 0), 0)
+            return prior > 0.005 ? (
+              <View style={s.totalsRow}>
+                <Text style={s.totalsLabel}>Previously claimed (ex GST)</Text>
+                <Text style={s.totalsValue}>{money(prior)}</Text>
+              </View>
+            ) : null
+          })()}
           <View style={s.totalsRow}>
-            <Text style={s.totalsLabel}>Subtotal (ex GST)</Text>
+            <Text style={s.totalsLabel}>This claim (ex GST)</Text>
             <Text style={s.totalsValue}>{money(inv.subtotalEx)}</Text>
           </View>
           <View style={s.totalsRow}>
