@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { GanttEntry } from '@/types'
-import { plannedByWeek, claimLeafSegments, entrySegments, segmentWeekShare, segmentWeekShares } from './ganttForecast'
+import { plannedByWeek, claimLeafSegments, entrySegments, segmentWeekShare, segmentWeekShares, invoiceCycleFridays, plannedRevenueByCategory } from './ganttForecast'
 
 // Three consecutive week-ending Fridays.
 const fridays = ['2026-08-07', '2026-08-14', '2026-08-21'].map(d => new Date(`${d}T00:00:00`))
@@ -150,5 +150,38 @@ describe('segmentWeekShare / segmentWeekShares (week-straddle distribution)', ()
     const holBar = { id: 'h', startDate: '2026-06-05', endDate: '2026-06-09', weekCount: 1, grain: 'days' as const, revenueAllocation: 800, costAllocation: 0 }
     expect(segmentWeekShare(holBar, '2026-06-01', '2026-06-05')).toBeCloseTo(0.5, 6)
     expect(segmentWeekShare(holBar, '2026-06-08', '2026-06-12')).toBeCloseTo(0.5, 6)
+  })
+})
+
+describe('invoiceCycleFridays + plannedRevenueByCategory (progress-claim prefill)', () => {
+  // Work starts Mon 2026-08-03; first Friday is 08-07, so the first invoice Friday is 08-14.
+  const entries = [
+    entry({ category: 'Decking', segments: [], subtasks: [
+      { id: 'lab', label: 'Labour', costType: 'labour', segments: [seg('2026-08-03', '2026-08-14', 2, 6000)] },
+    ] }),
+    entry({ id: 'e2', category: 'Paving', segments: [seg('2026-08-10', '2026-08-21', 2, 4000)] }),
+  ]
+
+  it('anchors the first cycle on the 2nd Friday after the first scheduled work', () => {
+    expect(invoiceCycleFridays(entries, '2026-08-03')).toEqual(['2026-08-07', '2026-08-14'])
+  })
+
+  it('steps fortnightly to the cycle current at today', () => {
+    expect(invoiceCycleFridays(entries, '2026-08-17')).toEqual(['2026-08-21', '2026-08-28'])
+  })
+
+  it('returns null when nothing is scheduled', () => {
+    expect(invoiceCycleFridays([entry({ segments: [], subtasks: [] })], '2026-08-03')).toBeNull()
+  })
+
+  it('splits the fortnight revenue per category via leaf claims', () => {
+    const m = plannedRevenueByCategory(entries, ['2026-08-07', '2026-08-14'])
+    expect(m.get('Decking')).toBeCloseTo(6000)          // both weeks of the split-line claim
+    expect(m.get('Paving')).toBeCloseTo(2000)           // only the 08-14 week of its 2-week bar
+  })
+
+  it('a category with nothing in the window is absent', () => {
+    const m = plannedRevenueByCategory(entries, ['2026-09-04'])
+    expect(m.has('Decking')).toBe(false)
   })
 })

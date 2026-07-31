@@ -90,6 +90,43 @@ export function segmentWeekShares(seg: GanttSegment): { friIso: string; fraction
   return out
 }
 
+// ── Invoicing-cycle prefill (progress claims) ────────────────────────────────
+/** The two week-ending Fridays of the invoicing fortnight current at `todayIso` - the cycle whose
+ *  invoice Friday is the first on or after today. Anchored exactly like the gantt strip: the first
+ *  invoice issues on the SECOND Friday after the first scheduled work, then fortnightly. Null when
+ *  nothing is scheduled. */
+export function invoiceCycleFridays(entries: GanttEntry[], todayIso: string): [string, string] | null {
+  const workStartIso = entries.flatMap(e => entryClaimSegments(e)).filter(c => c.seg.startDate).map(c => c.seg.startDate as string).sort()[0]
+  if (!workStartIso) return null
+  const fri = snapToFriday(new Date(`${workStartIso}T00:00:00`))
+  fri.setDate(fri.getDate() + 7)
+  const today = new Date(`${todayIso}T00:00:00`)
+  let guard = 0
+  while (fri < today && guard++ < 500) fri.setDate(fri.getDate() + 14)
+  const prev = new Date(fri); prev.setDate(prev.getDate() - 7)
+  return [toISODate(prev), toISODate(fri)]
+}
+
+/** Planned revenue per gantt category across the given week-ending Fridays - the same leaf-claim +
+ *  week-share maths as plannedByWeek, split per category. Feeds the progress-claim prefill, so each
+ *  claim row can start from what the programme says this fortnight is worth. */
+export function plannedRevenueByCategory(entries: GanttEntry[], friIsos: string[]): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const e of entries) {
+    let rev = 0
+    for (const friIso of friIsos) {
+      const mon = new Date(`${friIso}T00:00:00`); mon.setDate(mon.getDate() - 4)
+      const monIso = toISODate(mon)
+      for (const { seg } of entryClaimSegments(e)) {
+        const share = segmentWeekShare(seg, monIso, friIso)
+        if (share > 0) rev += (seg.revenueAllocation || 0) * share
+      }
+    }
+    if (rev > 0) map.set(e.category, (map.get(e.category) ?? 0) + rev)
+  }
+  return map
+}
+
 // Planned revenue + cost per week (keyed by the week's Friday ISO). Each segment contributes its
 // per-week SHARE (proportional to working days for a straddling days bar; equal per week for a weeks bar),
 // so it works in both views and against a baseline snapshot. Fortnightly cycle + inline invoice totals.

@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   loadEstimates, loadWeeklyActuals,
-  loadProgressClaims,
+  loadProgressClaims, loadGanttEntries,
 } from '@/lib/storage'
+import { invoiceCycleFridays, plannedRevenueByCategory } from '@/lib/ganttForecast'
 import { upsertEstimate, upsertProgressClaim, deleteProgressClaimAsync } from '@/lib/storageAsync'
 import { createXeroDraftInvoice } from '@/lib/xero'
 import { formatCurrency, formatCurrencyCents, generateId } from '@/lib/utils'
@@ -252,6 +253,40 @@ function ProgressClaimBuilder({
   const [comments, setComments] = useState(editingClaim?.comments ?? '')
   const [roundingAdjustment, setRoundingAdjustment] = useState(editingClaim?.roundingAdjustment ?? 0)
 
+  // ── Programme prefill ── what the gantt forecast says the CURRENT invoicing fortnight is worth,
+  // per category (same cycle anchor as the gantt's INVOICING FORTNIGHT strip). Null when the job
+  // has no scheduled claims yet.
+  const forecast = useMemo(() => {
+    const ganttEntries = loadGanttEntries(projectId)
+    const cycle = invoiceCycleFridays(ganttEntries, new Date().toISOString().slice(0, 10))
+    if (!cycle) return null
+    const byCat = plannedRevenueByCategory(ganttEntries, cycle)
+    return byCat.size > 0 ? { cycle, byCat } : null
+  }, [projectId])
+  const forecastLabel = useMemo(() => {
+    if (!forecast) return ''
+    const mon = new Date(`${forecast.cycle[0]}T00:00:00`); mon.setDate(mon.getDate() - 4)
+    const opt: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }
+    return `${mon.toLocaleDateString(undefined, opt)} - ${new Date(`${forecast.cycle[1]}T00:00:00`).toLocaleDateString(undefined, opt)}`
+  }, [forecast])
+  // Capped at the line's remaining contract (the programme does not know what has been claimed);
+  // every figure stays editable after - this only seeds the inputs.
+  const applyForecast = useCallback(() => {
+    if (!forecast) return
+    setLineItems(prev => prev.map(li => {
+      if (li.type !== 'category') return li
+      const planned = forecast.byCat.get(li.categoryId)
+      if (planned === undefined) return li   // not on the programme this fortnight (or a grouped row) - leave as typed
+      const amt = Math.round(Math.min(planned, li.remaining) * 100) / 100
+      return { ...li, claimAmount: amt, claimPercent: li.remaining > 0 ? (amt / li.remaining) * 100 : 0 }
+    }))
+  }, [forecast])
+  // A fresh claim starts from the programme automatically; editing an existing one never re-fills.
+  useEffect(() => {
+    if (!editingClaim && forecast) applyForecast()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Grouping state — groups only affect display, underlying lineItems are preserved
   type ClaimGroup = { id: string; name: string; categoryIds: string[] }
   const [groups, setGroups] = useState<ClaimGroup[]>([])
@@ -424,6 +459,15 @@ function ProgressClaimBuilder({
               <h2 className="text-xs font-light tracking-architectural uppercase text-fg-muted">Cost Categories</h2>
               <div className="flex items-center gap-3">
                 <span className="text-xs font-light text-fg-heading tabular-nums">Total (Ex): {formatCurrencyCents(categoriesTotal)}</span>
+                {forecast && (
+                  <button
+                    onClick={applyForecast}
+                    title="Fill each category from the gantt forecast for the current invoicing fortnight (capped at the remaining contract). Overwrites the category amounts; everything stays editable."
+                    className="text-2xs font-light tracking-wide uppercase px-2.5 py-1 border border-fg-border text-fg-muted hover:text-fg-heading transition-colors"
+                  >
+                    Prefill from programme · {forecastLabel}
+                  </button>
+                )}
                 <button
                   onClick={() => { setGroupingMode(g => !g); setSelectedIds(new Set()); setPendingGroupName('') }}
                   className={`text-2xs font-light tracking-wide uppercase px-2.5 py-1 border transition-colors ${groupingMode ? 'bg-fg-dark text-white/80 border-fg-dark' : 'border-fg-border text-fg-muted hover:text-fg-heading'}`}
