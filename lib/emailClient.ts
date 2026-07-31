@@ -92,6 +92,7 @@ export async function requestSendInvoice(body: {
   to: string
   clientName: string
   invoiceNumber: string
+  claimId?: string   // enables the open-tracking pixel + read chip
   description?: string
   projectAddress?: string
   lines: { description: string; amount: number }[]   // billed lines - the email body summary

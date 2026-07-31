@@ -808,6 +808,17 @@ function InvoicesSubTab({
 
   const refreshClaims = () => setClaims(loadProgressClaims(projectId))
 
+  // Read receipts for sent invoice emails (tracking pixel -> fg_claim_opens), keyed by claim id.
+  const [opens, setOpens] = useState<Record<string, { first: string; last: string; count: number }>>({})
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/claims/opens?projectId=${encodeURIComponent(projectId)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled && d?.opens) setOpens(d.opens) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [projectId])
+
   // Sending an invoice is the natural heartbeat for a progress snapshot - it captures where timeline
   // and budget stand at that moment, building the creep trend without anyone collecting it by hand.
   const fireProgressSnapshot = () => {
@@ -981,6 +992,7 @@ function InvoicesSubTab({
     const res = await requestSendInvoice({
       to,
       clientName,
+      claimId: current.id,
       invoiceNumber: current.invoiceNumber,
       description: current.description || undefined,
       projectAddress: proj?.address || undefined,
@@ -1146,6 +1158,14 @@ function InvoicesSubTab({
                           <span className={`text-2xs font-light tracking-wide uppercase border rounded-sm px-1.5 py-0.5 whitespace-nowrap ${STATUS_BADGE[claim.status]}`}>
                             {claim.status}
                           </span>
+                          {opens[claim.id] && (
+                            <span
+                              title={`Client opened the invoice email ${formatDateShort(opens[claim.id].first)}${opens[claim.id].count > 1 ? ` · opened ${opens[claim.id].count} times, last ${formatDateShort(opens[claim.id].last)}` : ''}. Best-effort: some mail apps preload or block images.`}
+                              className="ml-1.5 text-2xs font-light tracking-wide uppercase text-green-400/90 whitespace-nowrap"
+                            >
+                              ✓ read
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 pr-4 text-xs font-light text-fg-muted whitespace-nowrap">
                           {formatDateShort(claim.createdAt)}

@@ -344,6 +344,7 @@ export interface InvoiceEmailInput {
   comments?: string   // the claim's client-visible comments
   message?: string    // the covering email message, editable at send time; sensible default when blank
   attachments?: { filename: string; content: string }[]   // the tax-invoice PDF (base64), built by the send route
+  trackingUrl?: string   // open-tracking pixel URL (/api/claims/opened?cid=...) - appended invisibly when set
 }
 
 const moneyCents = (v: number) =>
@@ -397,7 +398,18 @@ export function buildInvoiceEmailHtml(input: InvoiceEmailInput): string {
           <p style="margin:0;font-size:14px;line-height:1.6;color:${BODY};">Kind regards,<br><strong style="font-weight:600;">Chris Weiss</strong><br><span style="color:${MUTED};">Formation Landscapes</span></p>
         </td></tr>
       </table>
-    </td></tr></table></body></html>`
+    </td></tr></table>${input.trackingUrl ? `<img src="${escapeHtml(input.trackingUrl)}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0;" />` : ''}</body></html>`
+}
+
+/** Internal read receipt - tells the office the client opened the invoice email. */
+export async function sendInvoiceOpenedNotification(input: { invoiceNumber: string; projectName?: string; total?: number }): Promise<SendResult> {
+  const to = (process.env.PROPOSAL_REPLY_TO || DEFAULT_REPLY_TO).trim()
+  const subject = `Invoice ${input.invoiceNumber} opened${input.projectName ? ` — ${input.projectName}` : ''}`
+  const totalLine = typeof input.total === 'number'
+    ? ` (${new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: 2 }).format(input.total)} inc GST)`
+    : ''
+  const text = `The client has opened the invoice email for ${input.invoiceNumber}${input.projectName ? ` — ${input.projectName}` : ''}${totalLine}.\n\nRecorded ${new Date().toLocaleString('en-AU', { timeZone: 'Australia/Melbourne' })}. Open tracking is best-effort: some mail apps preload images (early receipt) or block them (no receipt).`
+  return sendViaResend({ to, subject, html: `<p style="font-family:sans-serif;font-size:14px;line-height:1.6;">${escapeHtml(text).replace(/\n\n/g, '</p><p style="font-family:sans-serif;font-size:14px;line-height:1.6;">')}</p>`, text })
 }
 
 export function buildInvoiceEmailText(input: InvoiceEmailInput): string {

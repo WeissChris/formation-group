@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
   const comments = typeof body?.comments === 'string' ? body.comments : undefined
   const message = typeof body?.message === 'string' ? body.message.slice(0, 4000) : undefined
   const cc = typeof body?.cc === 'string' ? body.cc : undefined
+  const claimId = typeof body?.claimId === 'string' ? body.claimId.trim().slice(0, 80) : ''
   const subtotalEx = Number(body?.subtotalEx)
   const gst = Number(body?.gst)
   const total = Number(body?.total)
@@ -78,6 +79,10 @@ export async function POST(request: NextRequest) {
   }) as never)
   const attachments = [{ filename: `${invoiceNumber.replace(/[^\w.-]+/g, '_')}.pdf`, content: Buffer.from(buffer).toString('base64') }]
 
-  const res = await sendInvoiceEmail({ to, cc, clientName, invoiceNumber, description, projectAddress, lines, subtotalEx, gst, total, comments, message, attachments })
+  // Open-tracking pixel - records the read in fg_claim_opens and notifies the office on first open.
+  const base = (process.env.NEXT_PUBLIC_APP_URL || `https://${request.headers.get('host') || ''}`).replace(/\/$/, '')
+  const trackingUrl = claimId && base.startsWith('https://') ? `${base}/api/claims/opened?cid=${encodeURIComponent(claimId)}` : undefined
+
+  const res = await sendInvoiceEmail({ to, cc, clientName, invoiceNumber, description, projectAddress, lines, subtotalEx, gst, total, comments, message, attachments, trackingUrl })
   return NextResponse.json(res, { status: res.ok ? 200 : 502 })
 }
