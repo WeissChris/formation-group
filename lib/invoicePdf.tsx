@@ -39,7 +39,9 @@ const WARM = '#F7F5F2'
 
 const s = StyleSheet.create({
   page: { fontFamily: 'Helvetica', fontSize: 10, color: BODY, padding: 48, paddingBottom: 64 },
-  title: { fontSize: 22, color: INK, marginTop: 10 },
+  // Understated, tracked small caps - the house style's section-heading language, not a shouty
+  // banner. The logo carries the brand; the title just names the document.
+  title: { fontSize: 11, color: INK, marginTop: 14, textTransform: 'uppercase', letterSpacing: 3 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingBottom: 14, marginBottom: 18 },
   metaLabel: { fontSize: 7.5, color: MUTED, textTransform: 'uppercase', letterSpacing: 1 },
   metaValue: { fontSize: 10, color: INK, marginTop: 1, marginBottom: 6 },
