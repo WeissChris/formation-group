@@ -153,6 +153,13 @@ export default function EstimateBoQPage() {
                 <p className="text-2xs font-semibold tracking-architectural uppercase text-fg-muted">{cat}</p>
                 <p className="text-xs tabular-nums text-fg-heading">{formatCurrency(catTotal(cat))}</p>
               </div>
+              {/* Estimator's section notes - written for the build crew, so they belong on the BOQ */}
+              {(estimate.categoryNotes?.[cat] || '').trim() && (
+                <p className="mb-2 px-2 py-1.5 text-xs font-light leading-snug text-fg-heading bg-fg-border/15 border-l-2 border-fg-muted whitespace-pre-wrap">
+                  <span className="font-normal uppercase text-2xs tracking-wide text-fg-muted">Note </span>
+                  {(estimate.categoryNotes?.[cat] || '').trim()}
+                </p>
+              )}
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="text-2xs font-light tracking-architectural uppercase text-fg-muted border-b border-fg-border/40">
