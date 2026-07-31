@@ -94,7 +94,7 @@ export async function requestSendInvoice(body: {
   invoiceNumber: string
   description?: string
   projectAddress?: string
-  lines: { description: string; amount: number }[]
+  lines: { description: string; amount: number; claimedToDate?: number; remaining?: number }[]
   subtotalEx: number
   gst: number
   total: number

@@ -864,11 +864,13 @@ function InvoicesSubTab({
   const [sendingXeroId, setSendingXeroId] = useState<string | null>(null)
   const [sendingClientId, setSendingClientId] = useState<string | null>(null)
 
-  /** The invoice lines Xero and the client email both use: included claim lines, whole-claim fallback. */
+  /** The invoice lines Xero and the client email/PDF use: included claim lines, whole-claim
+   *  fallback. claimedToDate/remaining feed the PDF's progress columns (prior claims and the
+   *  balance BEFORE this claim - the PDF subtracts the claim for its Remaining column). */
   const claimEmailLines = (claim: ProgressClaim) => {
     const detail = claim.lineItems
       .filter(li => li.included && Math.abs(li.claimAmount) > 0.005)
-      .map(li => ({ description: li.description, amount: li.claimAmount }))
+      .map(li => ({ description: li.description, amount: li.claimAmount, claimedToDate: li.claimedToDate, remaining: li.remaining }))
     return detail.length > 0
       ? detail
       : [{ description: claim.description || `Progress claim ${claim.invoiceNumber}`, amount: claim.subtotalEx }]
@@ -885,7 +887,7 @@ function InvoicesSubTab({
       entity: entity === 'lume' ? 'lume' : 'formation',
       contactName: clientName,
       reference: `${projectName} — ${claim.invoiceNumber}`,
-      lineItems: claimEmailLines(claim),
+      lineItems: claimEmailLines(claim).map(l => ({ description: l.description, amount: l.amount })),
     })
     if (!res.ok) {
       alert(res.needsReconnect

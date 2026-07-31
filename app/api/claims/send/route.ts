@@ -43,9 +43,14 @@ export async function POST(request: NextRequest) {
   const total = Number(body?.total)
   const lines = Array.isArray(body?.lines)
     ? (body.lines as unknown[])
-        .map(l => (l && typeof l === 'object' ? l as { description?: unknown; amount?: unknown } : null))
-        .filter((l): l is { description?: unknown; amount?: unknown } => !!l)
-        .map(l => ({ description: String(l.description ?? ''), amount: Number(l.amount) }))
+        .map(l => (l && typeof l === 'object' ? l as { description?: unknown; amount?: unknown; claimedToDate?: unknown; remaining?: unknown } : null))
+        .filter((l): l is { description?: unknown; amount?: unknown; claimedToDate?: unknown; remaining?: unknown } => !!l)
+        .map(l => ({
+          description: String(l.description ?? ''),
+          amount: Number(l.amount),
+          claimedToDate: Number.isFinite(Number(l.claimedToDate)) && l.claimedToDate !== undefined ? Number(l.claimedToDate) : undefined,
+          remaining: Number.isFinite(Number(l.remaining)) && l.remaining !== undefined ? Number(l.remaining) : undefined,
+        }))
         .filter(l => l.description && Number.isFinite(l.amount))
         .slice(0, 100)
     : []

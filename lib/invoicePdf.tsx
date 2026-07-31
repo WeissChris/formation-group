@@ -3,6 +3,7 @@
 
 import React from 'react'
 import { Document, Page, View, Text, StyleSheet, Font } from '@react-pdf/renderer'
+import { FormationLogoPdf } from './formationLogoPdf'
 
 Font.registerHyphenationCallback(word => [word])
 
@@ -20,7 +21,9 @@ export interface InvoicePdfInput {
   description?: string
   clientName: string
   projectAddress?: string
-  lines: { description: string; amount: number }[]   // ex GST
+  // Per-category detail (all ex GST). claimedToDate/remaining are the position BEFORE this claim;
+  // absent on the whole-claim fallback line, whose columns render as dashes.
+  lines: { description: string; amount: number; claimedToDate?: number; remaining?: number }[]
   subtotalEx: number
   gst: number
   total: number
@@ -36,18 +39,18 @@ const WARM = '#F7F5F2'
 
 const s = StyleSheet.create({
   page: { fontFamily: 'Helvetica', fontSize: 10, color: BODY, padding: 48, paddingBottom: 64 },
-  brand: { fontSize: 9, color: GREEN, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'Helvetica-Bold' },
-  title: { fontSize: 22, color: INK, marginTop: 4 },
+  title: { fontSize: 22, color: INK, marginTop: 10 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', borderBottomWidth: 2, borderBottomColor: GREEN, paddingBottom: 14, marginBottom: 18 },
   metaLabel: { fontSize: 7.5, color: MUTED, textTransform: 'uppercase', letterSpacing: 1 },
   metaValue: { fontSize: 10, color: INK, marginTop: 1, marginBottom: 6 },
   billLabel: { fontSize: 7.5, color: MUTED, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 3 },
   billName: { fontSize: 11, color: INK },
-  tableHead: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: INK, paddingBottom: 4, marginTop: 18 },
-  th: { fontSize: 7.5, color: MUTED, textTransform: 'uppercase', letterSpacing: 1 },
+  tableHead: { flexDirection: 'row', alignItems: 'flex-end', borderBottomWidth: 1, borderBottomColor: INK, paddingBottom: 4, marginTop: 18 },
+  th: { fontSize: 7, color: MUTED, textTransform: 'uppercase', letterSpacing: 0.5 },
   tr: { flexDirection: 'row', borderBottomWidth: 0.75, borderBottomColor: LINE, paddingVertical: 6 },
-  tdDesc: { flex: 1, paddingRight: 12 },
-  tdAmt: { width: 90, textAlign: 'right', color: INK },
+  tdDesc: { flex: 1, paddingRight: 10 },
+  tdNum: { width: 78, textAlign: 'right', fontSize: 9, color: MUTED, paddingLeft: 8 },
+  tdClaim: { width: 82, textAlign: 'right', color: INK, paddingLeft: 8 },
   totalsRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 3 },
   totalsLabel: { width: 140, fontSize: 9, color: MUTED },
   totalsValue: { width: 90, textAlign: 'right', fontSize: 9.5, color: INK },
@@ -80,7 +83,7 @@ export function InvoicePdf({ inv }: { inv: InvoicePdfInput }) {
       <Page size="A4" style={s.page}>
         <View style={s.headerRow}>
           <View>
-            <Text style={s.brand}>Formation Landscapes</Text>
+            <FormationLogoPdf width={150} />
             <Text style={s.title}>Tax Invoice</Text>
             {inv.description ? <Text style={{ fontSize: 10, color: MUTED, marginTop: 4 }}>{inv.description}</Text> : null}
           </View>
@@ -102,14 +105,23 @@ export function InvoicePdf({ inv }: { inv: InvoicePdfInput }) {
 
         <View style={s.tableHead}>
           <Text style={[s.th, s.tdDesc]}>Description</Text>
-          <Text style={[s.th, { width: 90, textAlign: 'right' }]}>Amount (ex GST)</Text>
+          <Text style={[s.th, { width: 78, textAlign: 'right', paddingLeft: 8 }]}>Claimed to date</Text>
+          <Text style={[s.th, { width: 82, textAlign: 'right', paddingLeft: 8 }]}>This claim (ex)</Text>
+          <Text style={[s.th, { width: 78, textAlign: 'right', paddingLeft: 8 }]}>Remaining</Text>
         </View>
-        {inv.lines.map((l, i) => (
-          <View key={i} style={s.tr} wrap={false}>
-            <Text style={s.tdDesc}>{l.description}</Text>
-            <Text style={s.tdAmt}>{money(l.amount)}</Text>
-          </View>
-        ))}
+        {inv.lines.map((l, i) => {
+          // Standard progress-claim reading: previously claimed / this claim / balance still to
+          // come after this claim.
+          const remainingAfter = l.remaining !== undefined ? Math.max(0, l.remaining - l.amount) : undefined
+          return (
+            <View key={i} style={s.tr} wrap={false}>
+              <Text style={s.tdDesc}>{l.description}</Text>
+              <Text style={s.tdNum}>{l.claimedToDate !== undefined ? money(l.claimedToDate) : '-'}</Text>
+              <Text style={s.tdClaim}>{money(l.amount)}</Text>
+              <Text style={s.tdNum}>{remainingAfter !== undefined ? money(remainingAfter) : '-'}</Text>
+            </View>
+          )
+        })}
 
         <View style={{ marginTop: 10 }}>
           <View style={s.totalsRow}>
