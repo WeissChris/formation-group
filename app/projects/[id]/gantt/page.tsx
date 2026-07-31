@@ -3185,7 +3185,20 @@ export default function GanttPage() {
                           {split && (() => {
                             const segs = entryClaimSegments(entry)
                             const claimed = segs.reduce((s, c) => s + (showRevenue ? (c.seg.revenueAllocation || 0) : (c.seg.costAllocation || 0)), 0)
-                            return <div className="text-[9px] text-fg-muted" title="Claimed so far (rolled up from all nested lines)">claimed {formatCurrency(claimed)}</div>
+                            const catBudget = showRevenue ? cat.budgetedRevenue : cat.budgetedCost
+                            const short = catBudget - claimed
+                            // Amber whenever the roll-up does not reconcile to the category budget, with
+                            // the shortfall spelt out - these are the rows still to be allocated.
+                            if (short > 0.5) return (
+                              <div className="text-[9px] text-amber-600" title="Claimed so far (rolled up from all nested lines) - the rest of the budget is not on the programme yet">
+                                claimed {formatCurrency(claimed)} · {formatCurrency(short)} to allocate
+                              </div>
+                            )
+                            return (
+                              <div className={`text-[9px] ${short < -0.5 ? 'text-amber-600' : 'text-fg-muted'}`} title={short < -0.5 ? 'Claimed more than the category budget' : 'Claimed so far (rolled up from all nested lines)'}>
+                                claimed {formatCurrency(claimed)}
+                              </div>
+                            )
                           })()}
                           {/* L/M/S/E breakdown — only when UNSPLIT (a split category shows it on its
                               Mat/Lab/Sub/Equip subtask rows, so it's redundant under the parent total). */}
@@ -3253,10 +3266,13 @@ export default function GanttPage() {
                             const budget = showRevenue ? (cat.rev?.[effType] ?? 0) : (cat.cost[effType] ?? 0)
                             const isDirect = depth === 0 && !!subtask.costType
                             const over = isDirect && claimed - budget > 0.5
+                            // Under-allocated lines get the same amber as over-allocated ones - both
+                            // mean the periods do not reconcile to the budget yet.
+                            const under = isDirect && budget - claimed > 0.5
                             return (
                               <span className={`gantt-finance ${over ? 'text-amber-600' : ''}`}
-                                title={`${effType} — claimed ${formatCurrency(claimedRev)}${isDirect ? ` of ${formatCurrency(budget)} budget` : ''}${effType === 'labour' ? ` · ${Math.round(claimedCost / STD_LABOUR_RATE)}h` : ''}`}>
-                                <span className="text-fg-heading">{formatCurrency(claimed)}</span>{isDirect ? <span className="text-fg-muted/50"> / {formatCurrency(budget)}</span> : null}
+                                title={`${effType} — claimed ${formatCurrency(claimedRev)}${isDirect ? ` of ${formatCurrency(budget)} budget` : ''}${under ? ` · ${formatCurrency(budget - claimed)} still to allocate` : ''}${effType === 'labour' ? ` · ${Math.round(claimedCost / STD_LABOUR_RATE)}h` : ''}`}>
+                                <span className={over || under ? 'text-amber-600' : 'text-fg-heading'}>{formatCurrency(claimed)}</span>{isDirect ? <span className={over || under ? 'text-amber-600/70' : 'text-fg-muted/50'}> / {formatCurrency(budget)}</span> : null}
                                 {effType === 'labour' ? <span className="text-fg-muted/50"> · {Math.round(claimedCost / STD_LABOUR_RATE)}h</span> : null}
                               </span>
                             )
