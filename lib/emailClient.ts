@@ -87,6 +87,34 @@ export async function requestSendVariation(body: {
   }
 }
 
+/** Ask the server to email a progress-claim invoice to the client. */
+export async function requestSendInvoice(body: {
+  to: string
+  clientName: string
+  invoiceNumber: string
+  description?: string
+  projectAddress?: string
+  lines: { description: string; amount: number }[]
+  subtotalEx: number
+  gst: number
+  total: number
+  comments?: string
+  cc?: string
+}): Promise<SendProposalResult> {
+  try {
+    const resp = await fetch('/api/claims/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await resp.json().catch(() => ({}))
+    if (!resp.ok) return { ok: false, error: data?.error || `http_${resp.status}` }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'network' }
+  }
+}
+
 /** Friendly message for a send-error code. */
 export function sendErrorMessage(error?: string): string {
   switch (error) {

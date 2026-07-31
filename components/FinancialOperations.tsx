@@ -5,8 +5,9 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   loadEstimates, loadWeeklyActuals,
-  loadProgressClaims, loadGanttEntries,
+  loadProgressClaims, loadGanttEntries, loadProjects,
 } from '@/lib/storage'
+import { requestSendInvoice, sendErrorMessage } from '@/lib/emailClient'
 import { invoiceCycleFridays, plannedRevenueByCategory } from '@/lib/ganttForecast'
 import { upsertEstimate, upsertProgressClaim, deleteProgressClaimAsync } from '@/lib/storageAsync'
 import { createXeroDraftInvoice } from '@/lib/xero'
@@ -861,37 +862,95 @@ function InvoicesSubTab({
   }
 
   const [sendingXeroId, setSendingXeroId] = useState<string | null>(null)
+  const [sendingClientId, setSendingClientId] = useState<string | null>(null)
 
-  const handleSendToXero = async (claim: ProgressClaim) => {
-    if (claim.xeroInvoiceId && !confirm('This claim already has a Xero draft. Create another?')) return
-    if (!clientName.trim()) {
-      alert('This project has no client name set — Xero needs it for the contact. Add a client on the project, then try again.')
-      return
-    }
+  /** The invoice lines Xero and the client email both use: included claim lines, whole-claim fallback. */
+  const claimEmailLines = (claim: ProgressClaim) => {
     const detail = claim.lineItems
       .filter(li => li.included && Math.abs(li.claimAmount) > 0.005)
       .map(li => ({ description: li.description, amount: li.claimAmount }))
-    const lineItems = detail.length > 0
+    return detail.length > 0
       ? detail
       : [{ description: claim.description || `Progress claim ${claim.invoiceNumber}`, amount: claim.subtotalEx }]
-    setSendingXeroId(claim.id)
+  }
+
+  /** Create the Xero draft and persist the ids on the claim. Returns the updated claim, or null
+   *  (with the error already alerted) on failure. Shared by Send to Xero and Email Client. */
+  const createXeroDraft = async (claim: ProgressClaim): Promise<ProgressClaim | null> => {
+    if (!clientName.trim()) {
+      alert('This project has no client name set — Xero needs it for the contact. Add a client on the project, then try again.')
+      return null
+    }
     const res = await createXeroDraftInvoice({
       entity: entity === 'lume' ? 'lume' : 'formation',
       contactName: clientName,
       reference: `${projectName} — ${claim.invoiceNumber}`,
-      lineItems,
+      lineItems: claimEmailLines(claim),
     })
-    setSendingXeroId(null)
     if (!res.ok) {
       alert(res.needsReconnect
         ? 'Xero is connected read-only. Open Settings and reconnect Xero to grant invoice-create access, then try again.'
         : `Could not create the Xero draft: ${res.error}`)
-      return
+      return null
     }
-    void upsertProgressClaim({ ...claim, xeroInvoiceId: res.invoiceId ?? undefined, xeroInvoiceNumber: res.invoiceNumber ?? undefined })   // localStorage (immediate) + Supabase (background)
-    fireProgressSnapshot()   // an invoice going out is a snapshot heartbeat
+    const updated = { ...claim, xeroInvoiceId: res.invoiceId ?? undefined, xeroInvoiceNumber: res.invoiceNumber ?? undefined }
+    void upsertProgressClaim(updated)   // localStorage (immediate) + Supabase (background)
     refreshClaims()
-    alert(`Draft invoice created in Xero${res.invoiceNumber ? ` (${res.invoiceNumber})` : ''}. Review and approve it in Xero.`)
+    return updated
+  }
+
+  const handleSendToXero = async (claim: ProgressClaim) => {
+    if (claim.xeroInvoiceId && !confirm('This claim already has a Xero draft. Create another?')) return
+    setSendingXeroId(claim.id)
+    const updated = await createXeroDraft(claim)
+    setSendingXeroId(null)
+    if (!updated) return
+    fireProgressSnapshot()   // an invoice going out is a snapshot heartbeat
+    alert(`Draft invoice created in Xero${updated.xeroInvoiceNumber ? ` (${updated.xeroInvoiceNumber})` : ''}. Review and approve it in Xero.`)
+  }
+
+  /** Email the invoice to the client. The Xero draft rides along (created once), and a claim
+   *  still marked draft/pending is flagged first with the option to send as Sent. */
+  const handleSendToClient = async (claim: ProgressClaim) => {
+    if (claim.status === 'draft' || claim.status === 'pending') {
+      if (!confirm(`This invoice is still marked "${claim.status}". Sending emails it to the client and marks it as Sent. Continue?`)) return
+    }
+    const proj = loadProjects().find(p => p.id === projectId)
+    const entered = window.prompt('Email the invoice to:', proj?.clientEmail || '')
+    if (entered === null) return
+    const to = entered.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) { alert('That does not look like an email address — invoice not sent.'); return }
+
+    setSendingClientId(claim.id)
+    let current = claim
+    if (!current.xeroInvoiceId) {
+      const drafted = await createXeroDraft(current)
+      if (drafted) current = drafted
+      else if (!confirm('The Xero draft could not be created. Email the client anyway?')) { setSendingClientId(null); return }
+    }
+    const res = await requestSendInvoice({
+      to,
+      clientName,
+      invoiceNumber: current.invoiceNumber,
+      description: current.description || undefined,
+      projectAddress: proj?.address || undefined,
+      lines: claimEmailLines(current),
+      subtotalEx: current.subtotalEx,
+      gst: current.gst,
+      total: current.total,
+      comments: current.comments || undefined,
+    })
+    setSendingClientId(null)
+    if (!res.ok) { alert(sendErrorMessage(res.error)); return }
+    const updated: ProgressClaim = {
+      ...current,
+      status: current.status === 'paid' ? 'paid' : 'sent',
+      sentAt: current.sentAt ?? new Date().toISOString(),
+    }
+    void upsertProgressClaim(updated)   // localStorage (immediate) + Supabase (background)
+    fireProgressSnapshot()
+    refreshClaims()
+    alert(`Invoice ${current.invoiceNumber} emailed to ${to}.`)
   }
 
   // Totals
@@ -1012,6 +1071,14 @@ function InvoicesSubTab({
                                 {sendingXeroId === claim.id ? 'Sending…' : 'Send to Xero'}
                               </button>
                             )}
+                            <button
+                              onClick={() => handleSendToClient(claim)}
+                              disabled={sendingClientId === claim.id}
+                              title={claim.sentAt ? `Emailed ${formatDateShort(claim.sentAt)} — send again` : 'Email this invoice to the client (creates the Xero draft too)'}
+                              className="text-2xs font-light tracking-wide uppercase text-blue-400/80 border border-blue-400/40 px-2 py-0.5 hover:bg-blue-400/10 transition-colors whitespace-nowrap disabled:opacity-50"
+                            >
+                              {sendingClientId === claim.id ? 'Sending…' : claim.sentAt ? 'Resend' : 'Email Client'}
+                            </button>
                             {claim.status !== 'paid' && (
                               <button
                                 onClick={() => handleMarkPaid(claim)}
