@@ -1,5 +1,8 @@
+import React from 'react'
 import { NextRequest, NextResponse } from 'next/server'
+import { renderToBuffer } from '@react-pdf/renderer'
 import { sendInvoiceEmail, isValidEmail } from '@/lib/email'
+import { InvoicePdf } from '@/lib/invoicePdf'
 import { rateLimit, clientIp } from '@/lib/rateLimit'
 
 export const runtime = 'nodejs'
@@ -52,6 +55,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'invalid_request' }, { status: 400 })
   }
 
-  const res = await sendInvoiceEmail({ to, cc, clientName, invoiceNumber, description, projectAddress, lines, subtotalEx, gst, total, comments, message })
+  // The tax invoice itself is a PDF attachment - payment details, terms, ABN and the business
+  // address live on the document, not in the email body. Invoice date = the send date.
+  const buffer = await renderToBuffer(React.createElement(InvoicePdf, {
+    inv: {
+      invoiceNumber, description, clientName, projectAddress, lines, subtotalEx, gst, total, comments,
+      invoiceDate: new Date().toISOString(),
+    },
+  }) as never)
+  const attachments = [{ filename: `${invoiceNumber.replace(/[^\w.-]+/g, '_')}.pdf`, content: Buffer.from(buffer).toString('base64') }]
+
+  const res = await sendInvoiceEmail({ to, cc, clientName, invoiceNumber, description, projectAddress, lines, subtotalEx, gst, total, comments, message, attachments })
   return NextResponse.json(res, { status: res.ok ? 200 : 502 })
 }

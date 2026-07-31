@@ -193,6 +193,7 @@ async function sendViaResend(opts: {
   cc?: string[]
   bcc?: string[]
   replyTo?: string
+  attachments?: { filename: string; content: string }[]   // content = base64
 }): Promise<SendResult> {
   const apiKey = (process.env.RESEND_API_KEY || '').trim()
   if (!apiKey) return { ok: false, error: 'email_not_configured' }
@@ -213,6 +214,7 @@ async function sendViaResend(opts: {
         subject: opts.subject,
         html: opts.html,
         ...(opts.text ? { text: opts.text } : {}),
+        ...(opts.attachments && opts.attachments.length ? { attachments: opts.attachments } : {}),
       }),
     })
   } catch (e) {
@@ -341,6 +343,7 @@ export interface InvoiceEmailInput {
   total: number
   comments?: string   // the claim's client-visible comments
   message?: string    // the covering email message, editable at send time; sensible default when blank
+  attachments?: { filename: string; content: string }[]   // the tax-invoice PDF (base64), built by the send route
 }
 
 const moneyCents = (v: number) =>
@@ -387,6 +390,7 @@ export function buildInvoiceEmailHtml(input: InvoiceEmailInput): string {
             ${totalRow('Total (inc GST)', moneyCents(input.total), true)}
           </table>
           ${comments ? `<p style="margin:0 0 22px 0;font-size:13px;line-height:1.7;color:${BODY};">${escapeHtml(comments)}</p>` : ''}
+          <p style="margin:0 0 22px 0;font-size:13px;line-height:1.7;color:${MUTED};">The invoice is attached as a PDF, including payment details.</p>
         </td></tr>
         <tr><td style="padding:24px 44px 34px 44px;border-top:1px solid #eeeae5;">
           <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:${BODY};">Any questions? Just reply to this email.</p>
@@ -407,6 +411,7 @@ export function buildInvoiceEmailText(input: InvoiceEmailInput): string {
     `GST (10%): ${moneyCents(input.gst)}`,
     `Total (inc GST): ${moneyCents(input.total)}`, '',
     ...((input.comments ?? '').trim() ? [(input.comments ?? '').trim(), ''] : []),
+    'The invoice is attached as a PDF, including payment details.', '',
     'Any questions, just reply to this email.', '',
     'Kind regards,', 'Chris Weiss', 'Formation Landscapes',
   ].join('\n')
@@ -424,6 +429,7 @@ export async function sendInvoiceEmail(input: InvoiceEmailInput): Promise<SendRe
     subject: `Invoice ${input.invoiceNumber} — Formation Landscapes`,
     html: buildInvoiceEmailHtml(input),
     text: buildInvoiceEmailText(input),
+    attachments: input.attachments,
   })
 }
 

@@ -986,7 +986,7 @@ function InvoicesSubTab({
               Email invoice {sendModal.claim.invoiceNumber}
             </h3>
             <p className="text-xs font-light text-fg-muted mb-4">
-              {formatCurrencyCents(sendModal.claim.total)} inc GST · the claim lines and totals are included under your message.
+              {formatCurrencyCents(sendModal.claim.total)} inc GST · the tax invoice (with payment details) is attached as a PDF; the claim summary also appears under your message.
             </p>
             <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">To</label>
             <input
