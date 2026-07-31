@@ -292,6 +292,11 @@ export default function OpcPage() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   // Signed display URLs for scope-card photos, keyed by attachment path (paths only in the data).
   const [imgUrls, setImgUrls] = useState<Record<string, string>>({})
+  // A4 page guides: dashed lines where the print will break, so a photo's fit is visible while
+  // editing. Guide mode narrows the body to the exact print width so heights match the paper.
+  const [showGuides, setShowGuides] = useState(true)
+  const [guideYs, setGuideYs] = useState<number[]>([])
+  const bodyRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -379,6 +384,42 @@ export default function OpcPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowImagePaths])
+
+  // Predict where the printed pages break. The cover is page 1 (break-after: page); body content
+  // fills 271mm pages (297 - 14mm top - 12mm bottom). Simulated in PRINT flow: an opc-avoid-break
+  // block that would straddle a boundary jumps to the next page, pushing everything after it down
+  // (tracked as `shift`), exactly like the browser's print engine. Lines are drawn at the SCREEN
+  // position each break lands on. Guide mode pins the body to print width, so heights line up.
+  useEffect(() => {
+    const body = bodyRef.current
+    if (!showGuides || !body) { setGuideYs([]); return }
+    const compute = () => {
+      const pageH = 271 * (96 / 25.4)
+      const bodyTop = body.getBoundingClientRect().top
+      const blocks = Array.from(body.querySelectorAll<HTMLElement>('.opc-avoid-break'))
+        .filter(el => !el.parentElement?.closest('.opc-avoid-break'))   // top-most blocks only
+        .map(el => { const r = el.getBoundingClientRect(); return { top: r.top - bodyTop, bottom: r.bottom - bodyTop, h: r.height } })
+        .filter(b => b.h < pageH)   // a block taller than a page breaks inside anyway
+        .sort((a, b) => a.top - b.top)
+      const ys: number[] = []
+      let shift = 0            // extra space print inserts ahead of this point (cards that jumped)
+      let pageEnd = pageH
+      for (const b of blocks) {
+        while (b.top + shift >= pageEnd) { ys.push(pageEnd - shift); pageEnd += pageH }
+        if (b.bottom + shift > pageEnd) {
+          ys.push(b.top)                        // the break lands just before this card
+          shift += pageEnd - (b.top + shift)    // print pushes the card to the next page top
+          pageEnd += pageH
+        }
+      }
+      while (pageEnd - shift < body.scrollHeight) { ys.push(pageEnd - shift); pageEnd += pageH }
+      setGuideYs(prev => prev.length === ys.length && prev.every((v, i) => Math.abs(v - ys[i]) < 0.5) ? prev : ys)
+    }
+    compute()
+    const ro = new ResizeObserver(compute)   // re-measure as photos load / text reflows
+    ro.observe(body)
+    return () => ro.disconnect()
+  }, [showGuides, opc])
 
   const mutate = (patch: Partial<EstimateOpc> | ((prev: EstimateOpc) => Partial<EstimateOpc>)) => {
     setOpc(prev => {
@@ -683,6 +724,13 @@ export default function OpcPage() {
             onReplace={replaceWord}
           />
           <button
+            onClick={() => setShowGuides(g => !g)}
+            title="Show where the printed A4 pages break - the body narrows to the exact print width so photo fit is what you will get on paper"
+            className={`px-3 py-1.5 text-xs font-light tracking-architectural uppercase transition-colors ${showGuides ? 'bg-white/20 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20'}`}
+          >
+            A4 guides
+          </button>
+          <button
             onClick={printOpc}
             className="flex items-center gap-2 px-4 py-1.5 bg-white/10 text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-white/20 transition-colors"
           >
@@ -738,7 +786,23 @@ export default function OpcPage() {
         </div>
       </div>
 
-      <div className="opc-body max-w-[860px] mx-auto px-8 py-14">
+      <div
+        ref={bodyRef}
+        className="opc-body relative max-w-[860px] mx-auto px-8 py-14"
+        style={showGuides ? { maxWidth: '186mm', padding: '0.2cm 0.4cm' } : undefined}
+      >
+        {/* A4 page-break guides (screen only). Page 1 is the cover; the body starts on page 2. */}
+        {showGuides && (
+          <div className="print:hidden absolute inset-0 pointer-events-none" aria-hidden>
+            <span className="absolute right-0 top-0 text-[9px] font-light text-red-400/80 bg-white/80 px-1">page 2</span>
+            {guideYs.map((y, i) => (
+              <div key={i} className="absolute left-0 right-0" style={{ top: y }}>
+                <div className="border-t border-dashed border-red-400/60" />
+                <span className="absolute right-0 top-0.5 text-[9px] font-light text-red-400/80 bg-white/80 px-1">page {i + 3}</span>
+              </div>
+            ))}
+          </div>
+        )}
         {/* Intro */}
         <div className="mb-10">
           <ProseField
