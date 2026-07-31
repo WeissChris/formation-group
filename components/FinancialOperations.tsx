@@ -909,16 +909,21 @@ function InvoicesSubTab({
     alert(`Draft invoice created in Xero${updated.xeroInvoiceNumber ? ` (${updated.xeroInvoiceNumber})` : ''}. Review and approve it in Xero.`)
   }
 
-  /** Email the invoice to the client. The Xero draft rides along (created once), and a claim
-   *  still marked draft/pending is flagged first with the option to send as Sent. */
-  const handleSendToClient = async (claim: ProgressClaim) => {
+  // ── Send-to-client dialog ── recipient prefilled from the project, covering message editable.
+  const [sendModal, setSendModal] = useState<{ claim: ProgressClaim; to: string; message: string } | null>(null)
+
+  const openSendModal = (claim: ProgressClaim) => {
+    // Draft guard up front (Chris): an invoice still marked draft/pending is flagged, and sending
+    // it flips it to Sent - cancel here aborts the whole thing.
     if (claim.status === 'draft' || claim.status === 'pending') {
       if (!confirm(`This invoice is still marked "${claim.status}". Sending emails it to the client and marks it as Sent. Continue?`)) return
     }
     const proj = loadProjects().find(p => p.id === projectId)
-    const entered = window.prompt('Email the invoice to:', proj?.clientEmail || '')
-    if (entered === null) return
-    const to = entered.trim()
+    setSendModal({ claim, to: proj?.clientEmail || '', message: 'Please find the details of our progress claim below.' })
+  }
+
+  /** Email the invoice to the client. The Xero draft rides along (created once). */
+  const handleSendToClient = async (claim: ProgressClaim, to: string, message: string) => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) { alert('That does not look like an email address — invoice not sent.'); return }
 
     setSendingClientId(claim.id)
@@ -928,6 +933,7 @@ function InvoicesSubTab({
       if (drafted) current = drafted
       else if (!confirm('The Xero draft could not be created. Email the client anyway?')) { setSendingClientId(null); return }
     }
+    const proj = loadProjects().find(p => p.id === projectId)
     const res = await requestSendInvoice({
       to,
       clientName,
@@ -939,9 +945,11 @@ function InvoicesSubTab({
       gst: current.gst,
       total: current.total,
       comments: current.comments || undefined,
+      message: message.trim() || undefined,
     })
     setSendingClientId(null)
     if (!res.ok) { alert(sendErrorMessage(res.error)); return }
+    setSendModal(null)
     const updated: ProgressClaim = {
       ...current,
       status: current.status === 'paid' ? 'paid' : 'sent',
@@ -971,6 +979,49 @@ function InvoicesSubTab({
 
   return (
     <>
+      {sendModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => { if (sendingClientId === null) setSendModal(null) }}>
+          <div className="bg-white border border-fg-border w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-light tracking-architectural uppercase text-fg-heading mb-1">
+              Email invoice {sendModal.claim.invoiceNumber}
+            </h3>
+            <p className="text-xs font-light text-fg-muted mb-4">
+              {formatCurrencyCents(sendModal.claim.total)} inc GST · the claim lines and totals are included under your message.
+            </p>
+            <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">To</label>
+            <input
+              type="email"
+              value={sendModal.to}
+              onChange={e => setSendModal(m => m ? { ...m, to: e.target.value } : m)}
+              placeholder="client@email.com"
+              className="w-full px-3 py-2 mb-4 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors"
+            />
+            <label className="text-2xs font-light tracking-architectural uppercase text-fg-muted block mb-1">Message</label>
+            <textarea
+              value={sendModal.message}
+              onChange={e => setSendModal(m => m ? { ...m, message: e.target.value } : m)}
+              rows={5}
+              className="w-full px-3 py-2 mb-5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors resize-y"
+            />
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setSendModal(null)}
+                disabled={sendingClientId !== null}
+                className="text-xs font-light tracking-wide uppercase text-fg-muted hover:text-fg-heading transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleSendToClient(sendModal.claim, sendModal.to.trim(), sendModal.message)}
+                disabled={sendingClientId !== null}
+                className="flex items-center gap-2 px-4 py-1.5 bg-fg-dark text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-fg-darker transition-colors disabled:opacity-50"
+              >
+                <Send className="w-3 h-3" /> {sendingClientId !== null ? 'Sending…' : 'Send invoice'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showBuilder && (
         // `key` forces a fresh mount when switching between editingClaim values; without it
         // the builder's internal useState would keep the previously-edited claim's line items
@@ -1072,7 +1123,7 @@ function InvoicesSubTab({
                               </button>
                             )}
                             <button
-                              onClick={() => handleSendToClient(claim)}
+                              onClick={() => openSendModal(claim)}
                               disabled={sendingClientId === claim.id}
                               title={claim.sentAt ? `Emailed ${formatDateShort(claim.sentAt)} — send again` : 'Email this invoice to the client (creates the Xero draft too)'}
                               className="text-2xs font-light tracking-wide uppercase text-blue-400/80 border border-blue-400/40 px-2 py-0.5 hover:bg-blue-400/10 transition-colors whitespace-nowrap disabled:opacity-50"

@@ -340,10 +340,16 @@ export interface InvoiceEmailInput {
   gst: number
   total: number
   comments?: string   // the claim's client-visible comments
+  message?: string    // the covering email message, editable at send time; sensible default when blank
 }
 
 const moneyCents = (v: number) =>
   new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
+
+function invoiceParagraphs(message?: string): string[] {
+  const source = (message || '').trim() || 'Please find the details of our progress claim below.'
+  return source.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)
+}
 
 export function buildInvoiceEmailHtml(input: InvoiceEmailInput): string {
   const GREEN = '#3D5A3A', INK = '#1a1a1a', BODY = '#2d2d2d', MUTED = '#8A8580'
@@ -373,7 +379,7 @@ export function buildInvoiceEmailHtml(input: InvoiceEmailInput): string {
         </td></tr>
         <tr><td style="padding:22px 44px 0 44px;">
           <p style="margin:0 0 16px 0;font-size:15px;color:${INK};">Hi ${name},</p>
-          <p style="margin:0 0 18px 0;font-size:14px;line-height:1.7;color:${BODY};">Please find the details of our progress claim below.</p>
+          ${invoiceParagraphs(input.message).map(p => `<p style="margin:0 0 18px 0;font-size:14px;line-height:1.7;color:${BODY};">${escapeHtml(p)}</p>`).join('')}
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px 0;">${rows}</table>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px 0;">
             ${totalRow('Subtotal (ex GST)', moneyCents(input.subtotalEx))}
@@ -393,6 +399,7 @@ export function buildInvoiceEmailHtml(input: InvoiceEmailInput): string {
 export function buildInvoiceEmailText(input: InvoiceEmailInput): string {
   return [
     `Hi ${clientGreetingNames(input.clientName)},`, '',
+    invoiceParagraphs(input.message).join('\n\n'), '',
     `Invoice ${input.invoiceNumber}${input.description ? ` - ${input.description}` : ''}`,
     ...(input.projectAddress ? [input.projectAddress] : []), '',
     ...input.lines.map(l => `${l.description}: ${moneyCents(l.amount)}`), '',

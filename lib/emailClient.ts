@@ -99,6 +99,7 @@ export async function requestSendInvoice(body: {
   gst: number
   total: number
   comments?: string
+  message?: string
   cc?: string
 }): Promise<SendProposalResult> {
   try {

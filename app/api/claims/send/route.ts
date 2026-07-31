@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
   const description = typeof body?.description === 'string' ? body.description : undefined
   const projectAddress = typeof body?.projectAddress === 'string' ? body.projectAddress : undefined
   const comments = typeof body?.comments === 'string' ? body.comments : undefined
+  const message = typeof body?.message === 'string' ? body.message.slice(0, 4000) : undefined
   const cc = typeof body?.cc === 'string' ? body.cc : undefined
   const subtotalEx = Number(body?.subtotalEx)
   const gst = Number(body?.gst)
@@ -51,6 +52,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: 'invalid_request' }, { status: 400 })
   }
 
-  const res = await sendInvoiceEmail({ to, cc, clientName, invoiceNumber, description, projectAddress, lines, subtotalEx, gst, total, comments })
+  const res = await sendInvoiceEmail({ to, cc, clientName, invoiceNumber, description, projectAddress, lines, subtotalEx, gst, total, comments, message })
   return NextResponse.json(res, { status: res.ok ? 200 : 502 })
 }
