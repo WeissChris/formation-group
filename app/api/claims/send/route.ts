@@ -41,19 +41,27 @@ export async function POST(request: NextRequest) {
   const subtotalEx = Number(body?.subtotalEx)
   const gst = Number(body?.gst)
   const total = Number(body?.total)
-  const lines = Array.isArray(body?.lines)
-    ? (body.lines as unknown[])
-        .map(l => (l && typeof l === 'object' ? l as { description?: unknown; amount?: unknown; claimedToDate?: unknown; remaining?: unknown } : null))
-        .filter((l): l is { description?: unknown; amount?: unknown; claimedToDate?: unknown; remaining?: unknown } => !!l)
+  type RawLine = { description?: unknown; amount?: unknown; claimedToDate?: unknown; remaining?: unknown; contract?: unknown }
+  const num = (v: unknown) => (v !== undefined && Number.isFinite(Number(v)) ? Number(v) : undefined)
+  const parseLines = (raw: unknown) => Array.isArray(raw)
+    ? (raw as unknown[])
+        .map(l => (l && typeof l === 'object' ? l as RawLine : null))
+        .filter((l): l is RawLine => !!l)
         .map(l => ({
           description: String(l.description ?? ''),
           amount: Number(l.amount),
-          claimedToDate: Number.isFinite(Number(l.claimedToDate)) && l.claimedToDate !== undefined ? Number(l.claimedToDate) : undefined,
-          remaining: Number.isFinite(Number(l.remaining)) && l.remaining !== undefined ? Number(l.remaining) : undefined,
+          claimedToDate: num(l.claimedToDate),
+          remaining: num(l.remaining),
+          contract: num(l.contract),
         }))
         .filter(l => l.description && Number.isFinite(l.amount))
         .slice(0, 100)
     : []
+  const lines = parseLines(body?.lines)
+  // The PDF's full claim schedule (zero-claim rows included so the columns reconcile);
+  // falls back to the billed lines for older clients.
+  const scheduleParsed = parseLines(body?.schedule)
+  const schedule = scheduleParsed.length > 0 ? scheduleParsed : lines
 
   if (!isValidEmail(to) || !invoiceNumber || lines.length === 0 ||
       !Number.isFinite(subtotalEx) || !Number.isFinite(gst) || !Number.isFinite(total)) {
@@ -64,7 +72,7 @@ export async function POST(request: NextRequest) {
   // address live on the document, not in the email body. Invoice date = the send date.
   const buffer = await renderToBuffer(React.createElement(InvoicePdf, {
     inv: {
-      invoiceNumber, description, clientName, projectAddress, lines, subtotalEx, gst, total, comments,
+      invoiceNumber, description, clientName, projectAddress, lines: schedule, subtotalEx, gst, total, comments,
       invoiceDate: new Date().toISOString(),
     },
   }) as never)

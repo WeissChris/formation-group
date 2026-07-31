@@ -94,7 +94,8 @@ export async function requestSendInvoice(body: {
   invoiceNumber: string
   description?: string
   projectAddress?: string
-  lines: { description: string; amount: number; claimedToDate?: number; remaining?: number }[]
+  lines: { description: string; amount: number }[]   // billed lines - the email body summary
+  schedule?: { description: string; amount: number; claimedToDate?: number; remaining?: number; contract?: number }[]   // full claim schedule for the PDF
   subtotalEx: number
   gst: number
   total: number

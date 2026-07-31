@@ -21,9 +21,10 @@ export interface InvoicePdfInput {
   description?: string
   clientName: string
   projectAddress?: string
-  // Per-category detail (all ex GST). claimedToDate/remaining are the position BEFORE this claim;
-  // absent on the whole-claim fallback line, whose columns render as dashes.
-  lines: { description: string; amount: number; claimedToDate?: number; remaining?: number }[]
+  // The FULL claim schedule (all ex GST), zero-claim rows included so every column reconciles:
+  // contract = claimed to date + this claim + remaining. claimedToDate/remaining are the position
+  // BEFORE this claim; absent on the whole-claim fallback line, whose columns render as dashes.
+  lines: { description: string; amount: number; claimedToDate?: number; remaining?: number; contract?: number }[]
   subtotalEx: number
   gst: number
   total: number
@@ -50,20 +51,20 @@ const s = StyleSheet.create({
   tableHead: { flexDirection: 'row', alignItems: 'flex-end', borderBottomWidth: 1, borderBottomColor: INK, paddingBottom: 4, marginTop: 18 },
   th: { fontSize: 7, color: MUTED, textTransform: 'uppercase', letterSpacing: 0.5 },
   tr: { flexDirection: 'row', borderBottomWidth: 0.75, borderBottomColor: LINE, paddingVertical: 7 },
-  // Wide numeric columns - the description rarely needs half the page, so let the money use it.
-  tdDesc: { flex: 1, paddingRight: 10 },
-  tdNum: { width: 100, textAlign: 'right', fontSize: 9.5, color: MUTED, paddingLeft: 10 },
-  tdClaim: { width: 104, textAlign: 'right', color: INK, paddingLeft: 10 },
+  // Four money columns share the page with the description - the full reconciling schedule.
+  tdDesc: { flex: 1, paddingRight: 8 },
+  tdNum: { width: 84, textAlign: 'right', fontSize: 9, color: MUTED, paddingLeft: 8 },
+  tdClaim: { width: 88, textAlign: 'right', fontSize: 9.5, color: INK, paddingLeft: 8 },
   // Per-column totals directly under the table.
   colTotals: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: INK, paddingVertical: 7 },
-  colTotalNum: { width: 100, textAlign: 'right', fontSize: 9.5, color: INK, paddingLeft: 10, fontFamily: 'Helvetica-Bold' },
-  colTotalClaim: { width: 104, textAlign: 'right', fontSize: 10, color: INK, paddingLeft: 10, fontFamily: 'Helvetica-Bold' },
+  colTotalNum: { width: 84, textAlign: 'right', fontSize: 9, color: INK, paddingLeft: 8, fontFamily: 'Helvetica-Bold' },
+  colTotalClaim: { width: 88, textAlign: 'right', fontSize: 9.5, color: INK, paddingLeft: 8, fontFamily: 'Helvetica-Bold' },
   totalsRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingVertical: 3 },
-  totalsLabel: { width: 140, fontSize: 9, color: MUTED },
-  totalsValue: { width: 104, textAlign: 'right', fontSize: 9.5, color: INK },
+  totalsLabel: { width: 150, fontSize: 9, color: MUTED },
+  totalsValue: { width: 88, textAlign: 'right', fontSize: 9.5, color: INK },
   grand: { flexDirection: 'row', justifyContent: 'flex-end', borderTopWidth: 1, borderTopColor: INK, marginTop: 4, paddingTop: 6 },
-  grandLabel: { width: 140, fontSize: 10, fontFamily: 'Helvetica-Bold', color: INK },
-  grandValue: { width: 104, textAlign: 'right', fontSize: 11, fontFamily: 'Helvetica-Bold', color: INK },
+  grandLabel: { width: 150, fontSize: 10, fontFamily: 'Helvetica-Bold', color: INK },
+  grandValue: { width: 88, textAlign: 'right', fontSize: 11, fontFamily: 'Helvetica-Bold', color: INK },
   payBox: { backgroundColor: WARM, borderWidth: 1, borderColor: LINE, paddingVertical: 9, paddingHorizontal: 12, marginTop: 18 },
   payTitle: { fontSize: 8, color: INK, textTransform: 'uppercase', letterSpacing: 1.5, fontFamily: 'Helvetica-Bold', marginBottom: 4 },
   payLine: { fontSize: 9.5, color: BODY, marginBottom: 1.5 },
@@ -112,9 +113,10 @@ export function InvoicePdf({ inv }: { inv: InvoicePdfInput }) {
 
         <View style={s.tableHead}>
           <Text style={[s.th, s.tdDesc]}>Description</Text>
-          <Text style={[s.th, { width: 100, textAlign: 'right', paddingLeft: 10 }]}>Claimed to date</Text>
-          <Text style={[s.th, { width: 104, textAlign: 'right', paddingLeft: 10 }]}>This claim (ex)</Text>
-          <Text style={[s.th, { width: 100, textAlign: 'right', paddingLeft: 10 }]}>Remaining</Text>
+          <Text style={[s.th, { width: 84, textAlign: 'right', paddingLeft: 8 }]}>Contract (ex)</Text>
+          <Text style={[s.th, { width: 84, textAlign: 'right', paddingLeft: 8 }]}>Claimed to date</Text>
+          <Text style={[s.th, { width: 88, textAlign: 'right', paddingLeft: 8 }]}>This claim (ex)</Text>
+          <Text style={[s.th, { width: 84, textAlign: 'right', paddingLeft: 8 }]}>Remaining</Text>
         </View>
         {inv.lines.map((l, i) => {
           // Standard progress-claim reading: previously claimed / this claim / balance still to
@@ -123,20 +125,23 @@ export function InvoicePdf({ inv }: { inv: InvoicePdfInput }) {
           return (
             <View key={i} style={s.tr} wrap={false}>
               <Text style={s.tdDesc}>{l.description}</Text>
+              <Text style={s.tdNum}>{l.contract !== undefined ? money(l.contract) : '-'}</Text>
               <Text style={s.tdNum}>{l.claimedToDate !== undefined ? money(l.claimedToDate) : '-'}</Text>
-              <Text style={s.tdClaim}>{money(l.amount)}</Text>
+              <Text style={s.tdClaim}>{Math.abs(l.amount) > 0.005 ? money(l.amount) : '-'}</Text>
               <Text style={s.tdNum}>{remainingAfter !== undefined ? money(remainingAfter) : '-'}</Text>
             </View>
           )
         })}
-        {/* Column totals - the deposit / prior claims and the balance to come, totalled in place */}
+        {/* Column totals - every column reconciles: contract = claimed + this claim + remaining */}
         {(() => {
+          const contract = inv.lines.reduce((sum, l) => sum + (l.contract ?? 0), 0)
           const prior = inv.lines.reduce((sum, l) => sum + (l.claimedToDate ?? 0), 0)
           const remaining = inv.lines.reduce((sum, l) => sum + (l.remaining !== undefined ? Math.max(0, l.remaining - l.amount) : 0), 0)
           const thisClaim = inv.lines.reduce((sum, l) => sum + l.amount, 0)
           return (
             <View style={s.colTotals} wrap={false}>
               <Text style={[s.tdDesc, { fontFamily: 'Helvetica-Bold', fontSize: 9.5, color: INK }]}>Total</Text>
+              <Text style={s.colTotalNum}>{contract > 0.005 ? money(contract) : '-'}</Text>
               <Text style={s.colTotalNum}>{money(prior)}</Text>
               <Text style={s.colTotalClaim}>{money(thisClaim)}</Text>
               <Text style={s.colTotalNum}>{money(remaining)}</Text>

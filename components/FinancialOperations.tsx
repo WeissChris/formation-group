@@ -864,13 +864,24 @@ function InvoicesSubTab({
   const [sendingXeroId, setSendingXeroId] = useState<string | null>(null)
   const [sendingClientId, setSendingClientId] = useState<string | null>(null)
 
-  /** The invoice lines Xero and the client email/PDF use: included claim lines, whole-claim
-   *  fallback. claimedToDate/remaining feed the PDF's progress columns (prior claims and the
-   *  balance BEFORE this claim - the PDF subtracts the claim for its Remaining column). */
+  /** Lines for the Xero draft and email-body summary: claim lines actually billed this invoice. */
   const claimEmailLines = (claim: ProgressClaim) => {
     const detail = claim.lineItems
       .filter(li => li.included && Math.abs(li.claimAmount) > 0.005)
-      .map(li => ({ description: li.description, amount: li.claimAmount, claimedToDate: li.claimedToDate, remaining: li.remaining }))
+      .map(li => ({ description: li.description, amount: li.claimAmount }))
+    return detail.length > 0
+      ? detail
+      : [{ description: claim.description || `Progress claim ${claim.invoiceNumber}`, amount: claim.subtotalEx }]
+  }
+
+  /** The FULL claim schedule for the tax-invoice PDF: every included contract line, zero-claim
+   *  rows too, with the contract value - so the columns reconcile (contract = claimed to date +
+   *  this claim + remaining, and claimed-to-date totals to the deposit). Dropping the $0 rows
+   *  understated both outer columns, which is how the Macrae deposit "disappeared". */
+  const claimPdfLines = (claim: ProgressClaim) => {
+    const detail = claim.lineItems
+      .filter(li => li.included && (Math.abs(li.claimAmount) > 0.005 || (li.claimedToDate ?? 0) > 0.005 || (li.contractAmount ?? 0) > 0.005))
+      .map(li => ({ description: li.description, amount: li.claimAmount, claimedToDate: li.claimedToDate, remaining: li.remaining, contract: li.contractAmount }))
     return detail.length > 0
       ? detail
       : [{ description: claim.description || `Progress claim ${claim.invoiceNumber}`, amount: claim.subtotalEx }]
@@ -924,7 +935,7 @@ function InvoicesSubTab({
         invoiceNumber: claim.invoiceNumber,
         description: claim.description || undefined,
         projectAddress: proj?.address || undefined,
-        lines: claimEmailLines(claim),
+        lines: claimPdfLines(claim),
         subtotalEx: claim.subtotalEx,
         gst: claim.gst,
         total: claim.total,
@@ -974,6 +985,7 @@ function InvoicesSubTab({
       description: current.description || undefined,
       projectAddress: proj?.address || undefined,
       lines: claimEmailLines(current),
+      schedule: claimPdfLines(current),
       subtotalEx: current.subtotalEx,
       gst: current.gst,
       total: current.total,

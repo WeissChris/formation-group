@@ -33,15 +33,18 @@ export async function POST(request: NextRequest) {
   const subtotalEx = Number(body?.subtotalEx)
   const gst = Number(body?.gst)
   const total = Number(body?.total)
+  type RawLine = { description?: unknown; amount?: unknown; claimedToDate?: unknown; remaining?: unknown; contract?: unknown }
+  const num = (v: unknown) => (v !== undefined && Number.isFinite(Number(v)) ? Number(v) : undefined)
   const lines = Array.isArray(body?.lines)
     ? (body.lines as unknown[])
-        .map(l => (l && typeof l === 'object' ? l as { description?: unknown; amount?: unknown; claimedToDate?: unknown; remaining?: unknown } : null))
-        .filter((l): l is { description?: unknown; amount?: unknown; claimedToDate?: unknown; remaining?: unknown } => !!l)
+        .map(l => (l && typeof l === 'object' ? l as RawLine : null))
+        .filter((l): l is RawLine => !!l)
         .map(l => ({
           description: String(l.description ?? ''),
           amount: Number(l.amount),
-          claimedToDate: Number.isFinite(Number(l.claimedToDate)) && l.claimedToDate !== undefined ? Number(l.claimedToDate) : undefined,
-          remaining: Number.isFinite(Number(l.remaining)) && l.remaining !== undefined ? Number(l.remaining) : undefined,
+          claimedToDate: num(l.claimedToDate),
+          remaining: num(l.remaining),
+          contract: num(l.contract),
         }))
         .filter(l => l.description && Number.isFinite(l.amount))
         .slice(0, 100)
