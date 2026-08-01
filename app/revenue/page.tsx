@@ -15,6 +15,10 @@ import {
   MONTH_NAMES,
 } from '@/lib/utils'
 import type { Project, WeeklyRevenue, EntityType } from '@/types'
+import {
+  fyStartYearOf, fyElapsedPct, computeBudgetProgress, DEFAULT_GP_TARGET,
+  type CompanyBudget,
+} from '@/lib/companyBudget'
 import EntityBadge from '@/components/EntityBadge'
 import { ChevronLeft, ChevronRight, X, Plus } from 'lucide-react'
 
@@ -22,21 +26,22 @@ import { ChevronLeft, ChevronRight, X, Plus } from 'lucide-react'
 const LUME_DEFAULT_GP = 28.6 // 40% markup = 28.6% GP margin
 const DESIGN_DEFAULT_GP = 70 // Industry standard for design fee services
 const DESIGN_DEFAULT_GP_DISPLAY = DESIGN_DEFAULT_GP // Keep caption and calc in sync
-const GP_TARGET = 40
 
 // ─── GP% Helpers ─────────────────────────────────────────────────────────────
+// Coloured against the stored company GP target (fg_company_budget via /api/company/budget),
+// falling back to the legacy 40. Amber band is target minus 5.
 
-function gpColor(gp: number | null): string {
+function gpColor(gp: number | null, target: number): string {
   if (gp === null) return 'text-fg-muted'
-  if (gp >= 40) return 'text-green-600'
-  if (gp >= 35) return 'text-amber-500'
+  if (gp >= target) return 'text-green-600'
+  if (gp >= target - 5) return 'text-amber-500'
   return 'text-red-500'
 }
 
-function gpBarColor(gp: number | null): string {
+function gpBarColor(gp: number | null, target: number): string {
   if (gp === null) return 'bg-fg-border'
-  if (gp >= 40) return 'bg-green-500'
-  if (gp >= 35) return 'bg-amber-400'
+  if (gp >= target) return 'bg-green-500'
+  if (gp >= target - 5) return 'bg-amber-400'
   return 'bg-red-400'
 }
 
@@ -295,6 +300,19 @@ export default function RevenuePage() {
   const [projectGPData, setProjectGPData] = useState<ProjectGPEntry[]>([])
   const [belowTargetJobs, setBelowTargetJobs] = useState<ProjectGPEntry[]>([])
 
+  // Company budget for the current FY - drives the GP target and the Budget vs Actual panel.
+  const [budget, setBudget] = useState<CompanyBudget | null>(null)
+  const gpTarget = budget?.gpTargetPct || DEFAULT_GP_TARGET
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const resp = await fetch(`/api/company/budget?fy=${fyStartYearOf(new Date())}`, { cache: 'no-store' })
+        const body = await resp.json()
+        if (body.budget) setBudget(body.budget as CompanyBudget)
+      } catch { /* offline - fall back to the default target */ }
+    })()
+  }, [])
+
   // Live cross-device: refresh when realtime sync (or another tab) writes revenue or projects.
   useCrossTabRefresh(['revenue', 'projects'], () => {
     setRevenue(loadWeeklyRevenue())
@@ -411,7 +429,7 @@ export default function RevenuePage() {
       .map(([projectId, data]) => {
         const hasValidData = data.revenue > 0 && data.cost > 0
         const gp = hasValidData ? ((data.revenue - data.cost) / data.revenue) * 100 : 0
-        const variance = gp - 40
+        const variance = gp - gpTarget
         const isReviewStage = !data.stage || REVIEW_STAGES.includes(data.stage)
 
         let reviewReason: string | undefined
@@ -420,7 +438,7 @@ export default function RevenuePage() {
           if (isReviewStage && data.stage === 'active') {
             reviewReason = 'Review Required – Missing financial data'
           }
-        } else if (isReviewStage && gp < 40) {
+        } else if (isReviewStage && gp < gpTarget) {
           // Only flag underperformance — positive variance is never flagged
           reviewReason = variance <= -5
             ? 'Review Required – GP below target'
@@ -434,9 +452,10 @@ export default function RevenuePage() {
     setProjectGPData(calcProjectGPData)
     // Only flag as "below target" if data is valid and stage is relevant
     setBelowTargetJobs(calcProjectGPData.filter(p =>
-      p.gp < 40 && p.revenue > 0 && p.cost > 0 && (!p.stage || REVIEW_STAGES.includes(p.stage))
+      p.gp < gpTarget && p.revenue > 0 && p.cost > 0 && (!p.stage || REVIEW_STAGES.includes(p.stage))
     ))
-  }, [])
+    // gpTarget arrives async from the budget fetch - recompute the flags when it lands.
+  }, [gpTarget])
 
   const refresh = () => setRevenue(loadWeeklyRevenue())
   // Manual add/edit → upsertRevenue so the row reaches Supabase immediately (visible on other
@@ -460,6 +479,34 @@ export default function RevenuePage() {
   const revenueThisYear = revenue
     .filter(r => getFinancialYear(new Date(r.weekEnding)) === fyLabel)
     .reduce((s, r) => s + r.plannedRevenue, 0)
+
+  // ── Budget vs Actual (current FY) ── invoiced-to-date from the claim-written actualInvoiced
+  // rows, still-scheduled from planned revenue this week onward; projection = the two combined.
+  const fyRows = revenue.filter(r => getFinancialYear(new Date(r.weekEnding)) === fyLabel)
+  const ENTITY_ROWS: Array<{ entity: EntityType; label: string; target: (b: CompanyBudget) => number }> = [
+    { entity: 'formation', label: 'Formation Landscapes', target: b => b.revenueTargetFormation },
+    { entity: 'lume', label: 'Lume Pools', target: b => b.revenueTargetLume },
+    { entity: 'design', label: 'Design', target: b => b.revenueTargetDesign },
+  ]
+  const budgetRows = budget
+    ? ENTITY_ROWS.map(def => {
+        const rows = fyRows.filter(r => r.entity === def.entity)
+        const invoiced = rows.reduce((s, r) => s + (r.actualInvoiced || 0), 0)
+        const plannedRemaining = rows
+          .filter(r => weekFriday(r.weekEnding) >= now)
+          .reduce((s, r) => s + r.plannedRevenue, 0)
+        return { label: def.label, ...computeBudgetProgress(def.target(budget), invoiced, plannedRemaining) }
+      })
+    : []
+  const budgetTotal = budget
+    ? computeBudgetProgress(
+        budgetRows.reduce((s, r) => s + r.target, 0),
+        budgetRows.reduce((s, r) => s + r.invoicedToDate, 0),
+        budgetRows.reduce((s, r) => s + r.plannedRemaining, 0),
+      )
+    : null
+  const fyElapsed = fyElapsedPct(fyStartYearOf(now), toISODate(now)) * 100
+  const hasBudgetTargets = budgetTotal !== null && budgetTotal.target > 0
 
   const topProjects = Object.entries(
     revenue
@@ -552,25 +599,25 @@ export default function RevenuePage() {
             { label: 'Overall (Formation)', gp: overallFormationGP, sub: belowTargetJobs.length >= 2 ? `⚠ ${belowTargetJobs.length} jobs need review` : `From ${formationEstimateCount} estimates` },
             { label: 'Design',              gp: designGP,           sub: `${acceptedProposalCount} accepted proposals` },
             { label: 'Lume Pools',          gp: lumeGP,             sub: lumeGPIsFallback ? `${lumeJobCount} pool jobs · default est.` : `${lumeJobCount} pool jobs · rev-weighted` },
-            { label: 'GP% Target',          gp: 40,                 sub: 'Business target', isTarget: true },
+            { label: 'GP% Target',          gp: gpTarget,           sub: budget ? 'From Settings budget' : 'Default - set in Settings', isTarget: true },
           ].map(({ label, gp, sub, isTarget }) => {
-            const variance = gp !== null ? gp - 40 : null
+            const variance = gp !== null ? gp - gpTarget : null
             return (
               <div key={label} className="bg-fg-bg px-5 py-5">
                 <p className="text-2xs tracking-architectural uppercase text-fg-muted mb-2">{label}</p>
-                <p className={`text-2xl font-light tabular-nums ${isTarget ? 'text-fg-heading' : gpColor(gp)}`}>
+                <p className={`text-2xl font-light tabular-nums ${isTarget ? 'text-fg-heading' : gpColor(gp, gpTarget)}`}>
                   {gp !== null ? `${gp.toFixed(1)}%` : '0.0%'}
                 </p>
                 <p className="text-2xs text-fg-muted mt-1">{sub}</p>
                 <div className="mt-2 h-1 bg-fg-border rounded-full overflow-hidden">
-                  <div className={`h-full ${isTarget ? 'bg-fg-dark' : gpBarColor(gp)}`} style={{ width: `${Math.min(100, gp || 0)}%` }} />
+                  <div className={`h-full ${isTarget ? 'bg-fg-dark' : gpBarColor(gp, gpTarget)}`} style={{ width: `${Math.min(100, gp || 0)}%` }} />
                 </div>
                 {!isTarget && variance !== null && (
                   <div className="mt-2 flex items-center gap-1">
                     <span className={`text-2xs font-medium ${variance >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                       {variance >= 0 ? '+' : ''}{variance.toFixed(1)}%
                     </span>
-                    <span className="text-2xs text-fg-muted">vs 40% target</span>
+                    <span className="text-2xs text-fg-muted">vs {gpTarget}% target</span>
                   </div>
                 )}
               </div>
@@ -580,6 +627,65 @@ export default function RevenuePage() {
         <p className="text-2xs text-fg-muted/60">
           Design GP% estimated at {DESIGN_DEFAULT_GP_DISPLAY}% (fee-based). Lume GP% estimated at {LUME_DEFAULT_GP}% (40% markup). Formation GP% from accepted estimates.
         </p>
+      </div>
+
+      {/* Budget vs Actual - current FY */}
+      <div className="mb-10">
+        <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-4">
+          Budget vs Actual - {fyLabel} <span className="normal-case font-light text-fg-muted/60">({fyElapsed.toFixed(0)}% of the year elapsed)</span>
+        </p>
+        {!hasBudgetTargets ? (
+          <div className="border border-fg-border px-5 py-4 flex items-center justify-between flex-wrap gap-2">
+            <p className="text-xs font-light text-fg-muted">
+              No revenue targets set for {fyLabel} yet - the year cannot be tracked against a budget.
+            </p>
+            <Link href="/settings" className="text-2xs font-light tracking-wide uppercase text-fg-muted hover:text-fg-heading border border-fg-border px-3 py-1.5 transition-colors">
+              Set targets in Settings
+            </Link>
+          </div>
+        ) : (
+          <div className="border border-fg-border divide-y divide-fg-border">
+            <div className="grid grid-cols-6 px-4 py-2 bg-fg-card/30">
+              <span className="text-2xs text-fg-muted uppercase tracking-wide">Division</span>
+              <span className="text-2xs text-fg-muted uppercase tracking-wide text-right">FY Target</span>
+              <span className="text-2xs text-fg-muted uppercase tracking-wide text-right">Invoiced to date</span>
+              <span className="text-2xs text-fg-muted uppercase tracking-wide text-right">Still scheduled</span>
+              <span className="text-2xs text-fg-muted uppercase tracking-wide text-right">Projection</span>
+              <span className="text-2xs text-fg-muted uppercase tracking-wide text-right">vs Target</span>
+            </div>
+            {[...budgetRows.filter(r => r.target > 0 || r.projection > 0), { label: `Total - ${fyLabel}`, ...budgetTotal! }].map((r, idx, arr) => {
+              const isTotal = idx === arr.length - 1
+              return (
+                <div key={r.label} className={`grid grid-cols-6 px-4 py-3 ${isTotal ? 'bg-fg-card/20 font-normal' : ''}`}>
+                  <span className={`text-xs font-light self-center ${isTotal ? 'text-fg-heading' : 'text-fg-heading'}`}>{r.label}</span>
+                  <span className="text-xs font-light tabular-nums text-right self-center text-fg-heading">{r.target > 0 ? formatCurrency(r.target) : '-'}</span>
+                  <span className="text-xs font-light tabular-nums text-right self-center text-fg-heading">{formatCurrency(r.invoicedToDate)}</span>
+                  <span className="text-xs font-light tabular-nums text-right self-center text-fg-muted">{formatCurrency(r.plannedRemaining)}</span>
+                  <span className="text-xs font-light tabular-nums text-right self-center text-fg-heading">{formatCurrency(r.projection)}</span>
+                  <span className={`text-xs tabular-nums text-right self-center font-medium ${r.target > 0 ? (r.variance >= 0 ? 'text-green-600' : 'text-red-500') : 'text-fg-muted'}`}>
+                    {r.target > 0 && r.pctOfTarget !== null
+                      ? `${r.variance >= 0 ? '+' : ''}${formatCurrency(r.variance)} (${r.pctOfTarget.toFixed(0)}%)`
+                      : '-'}
+                  </span>
+                </div>
+              )
+            })}
+            <div className="px-4 py-3">
+              {/* Total progress: solid = invoiced, light = still scheduled, marker = year elapsed */}
+              <div className="relative h-1.5 bg-fg-border rounded-full overflow-hidden">
+                <div className="absolute inset-y-0 left-0 bg-green-500" style={{ width: `${Math.min(100, (budgetTotal!.invoicedToDate / budgetTotal!.target) * 100)}%` }} />
+                <div className="absolute inset-y-0 bg-green-500/30" style={{
+                  left: `${Math.min(100, (budgetTotal!.invoicedToDate / budgetTotal!.target) * 100)}%`,
+                  width: `${Math.max(0, Math.min(100, (budgetTotal!.projection / budgetTotal!.target) * 100) - Math.min(100, (budgetTotal!.invoicedToDate / budgetTotal!.target) * 100))}%`,
+                }} />
+                <div className="absolute inset-y-0 w-px bg-fg-heading" style={{ left: `${fyElapsed}%` }} />
+              </div>
+              <p className="text-2xs font-light text-fg-muted/70 mt-2">
+                Solid = invoiced, light = still scheduled, marker = where the year is up to. Invoiced comes from sent claims; scheduled from the gantt forecasts.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Underperforming jobs */}
@@ -593,12 +699,12 @@ export default function RevenuePage() {
           <div className="border border-amber-300/60 bg-amber-50/20">
             <div className="px-5 py-3 border-b border-amber-300/40 flex items-center justify-between">
               <p className="text-2xs font-medium tracking-architectural uppercase text-amber-700">
-                &#9888; {belowTargetJobs.length} job{belowTargetJobs.length !== 1 ? 's' : ''} below 40% target
+                &#9888; {belowTargetJobs.length} job{belowTargetJobs.length !== 1 ? 's' : ''} below {gpTarget}% target
               </p>
               <span className="text-2xs text-fg-muted">Top 3 shown</span>
             </div>
             {belowTargetJobs.slice(0, 3).map(j => {
-              const variance = j.gp - 40
+              const variance = j.gp - gpTarget
               return (
                 <div key={j.projectId} className="flex items-center justify-between px-5 py-3 border-b border-amber-300/20 last:border-0">
                   <div>
@@ -606,7 +712,7 @@ export default function RevenuePage() {
                     {j.reviewReason && <span className="text-2xs text-amber-600 font-medium">{j.reviewReason}</span>}
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className={`text-sm font-light tabular-nums ${gpColor(j.gp)}`}>{j.gp.toFixed(1)}%</span>
+                    <span className={`text-sm font-light tabular-nums ${gpColor(j.gp, gpTarget)}`}>{j.gp.toFixed(1)}%</span>
                     <span className="text-2xs text-red-500 tabular-nums w-20 text-right">{variance.toFixed(1)}% vs target</span>
                   </div>
                 </div>
@@ -630,7 +736,7 @@ export default function RevenuePage() {
           {projectGPData.length === 0 ? (
             <div className="px-4 py-6 text-center text-xs font-light text-fg-muted">No accepted estimates yet — 0 projects to display</div>
           ) : projectGPData.map(p => {
-            const variance = p.gp - 40
+            const variance = p.gp - gpTarget
             return (
               <div key={p.projectId} className="grid grid-cols-6 px-4 py-3 hover:bg-fg-card/20 transition-colors">
                 <div className="col-span-2">
@@ -639,13 +745,13 @@ export default function RevenuePage() {
                     <p className="text-2xs text-fg-muted">{p.entity}</p>
                     {p.reviewReason
                       ? <span className="text-2xs text-amber-600 font-medium">&#183; {p.reviewReason.replace('Review Required – ', '')}</span>
-                      : p.gp >= 40 && p.revenue > 0 && <span className="text-2xs text-green-600">&#183; Above target</span>
+                      : p.gp >= gpTarget && p.revenue > 0 && <span className="text-2xs text-green-600">&#183; Above target</span>
                     }
                   </div>
                 </div>
                 <p className="text-xs font-light tabular-nums text-right text-fg-heading self-center">{formatCurrency(p.revenue)}</p>
                 <p className="text-xs font-light tabular-nums text-right text-fg-muted self-center">{formatCurrency(p.cost)}</p>
-                <p className={`text-sm font-light tabular-nums text-right self-center ${gpColor(p.gp)}`}>{p.gp.toFixed(1)}%</p>
+                <p className={`text-sm font-light tabular-nums text-right self-center ${gpColor(p.gp, gpTarget)}`}>{p.gp.toFixed(1)}%</p>
                 <p className={`text-2xs tabular-nums text-right self-center font-medium ${variance >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                   {variance >= 0 ? '+' : ''}{variance.toFixed(1)}%
                 </p>
