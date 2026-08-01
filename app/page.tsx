@@ -57,12 +57,10 @@ export default function DashboardPage() {
   const [syncing, setSyncing] = useState(false)
   const [snapshotting, setSnapshotting] = useState(false)
 
-  // Auto-capture a daily fade snapshot. The dashboard is the only place that can compute the
-  // Live Jobs rows (progress claims are localStorage-only), and snapshots had never been captured
-  // (the manual button was never clicked), so the fade-over-time history was empty. This fires
-  // once per day, best-effort, only when there's real Xero cost data — the server dedups by
-  // (project, date). A ref holds the latest rows so the effect stays unconditional + early-return
-  // safe regardless of the render flow below.
+  // Auto-fire a daily fade snapshot, best-effort backup to the cron's daily capture (both are
+  // server-computed and deduped by (project, Melbourne date), so double-firing is harmless).
+  // A ref holds the latest rows purely as an "is there anything worth snapshotting" gate; the
+  // server assembles its own rows from Supabase.
   const liveJobRowsRef = useRef<LiveJobRow[]>([])
   const autoSnapDone = useRef(false)
   useEffect(() => {
@@ -73,7 +71,7 @@ export default function DashboardPage() {
     if (localStorage.getItem('fg_last_auto_snapshot') === today) { autoSnapDone.current = true; return }
     autoSnapDone.current = true
     localStorage.setItem('fg_last_auto_snapshot', today)
-    void triggerManualSnapshot(rows.map(row => ({ row, costByAccount: {} })))
+    void triggerManualSnapshot()
   })
 
   // Hoisted into a callable so we can re-run from the cross-tab refresh handler below
@@ -110,8 +108,9 @@ export default function DashboardPage() {
     }
   }
 
-  // Freeze the current Live Jobs view into snapshot history. Browser computes the rows
-  // (because progress claims are localStorage-only) and POSTs them to the server.
+  // Freeze the current Live Jobs view into snapshot history. Server-computed: the route
+  // assembles the rows from Supabase (claims sync there now) and freezes the per-account
+  // cost breakdown too - the old browser path could only ever send an empty map.
   const handleSnapshotNow = async () => {
     if (liveJobRows.length === 0) {
       window.alert('No active projects to snapshot.')
@@ -120,17 +119,7 @@ export default function DashboardPage() {
     if (!window.confirm(`Snapshot ${liveJobRows.length} active project${liveJobRows.length === 1 ? '' : 's'} for today?`)) return
     setSnapshotting(true)
     try {
-      // Build the per-account cost map for each project so the snapshot freezes the breakdown
-      // (not just the totals). Future fade-tracking will read this back.
-      const inputs = liveJobRows.map(row => {
-        const apiRow = liveJobCosts.get(row.projectId)
-        const costByAccount: Record<string, number> = {}
-        // The current /api/xero/live-jobs response doesn't include per-account detail — only the
-        // totals. We pass an empty map here as a starting point. A future enhancement could call
-        // /api/projects/:id/costs per project to get the full breakdown into the snapshot JSONB.
-        return { row, costByAccount }
-      })
-      const result = await triggerManualSnapshot(inputs)
+      const result = await triggerManualSnapshot()
       if (result.ok) {
         const skipped = result.skipped_duplicate
         window.alert(

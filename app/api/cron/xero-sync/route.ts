@@ -3,6 +3,7 @@ import { runFullSync } from '@/lib/xeroCostSync'
 import { runHoursSync } from '@/lib/xeroHoursSync'
 import { runSafetyChase } from '@/lib/safetyChase'
 import { runProgressSnapshots } from '@/lib/runProgressSnapshots'
+import { captureServerSnapshots } from '@/lib/serverSnapshots'
 
 export const runtime = 'nodejs'
 // Vercel function timeout — initial 24-month backfill can take ~60-90s. Allow margin.
@@ -50,8 +51,17 @@ export async function POST(request: NextRequest) {
       ok: false as const, checked: 0, captured: 0,
       error: e instanceof Error ? e.message : 'progress_snapshots_failed',
     }))
-    const extrasOk = hours.ok && safetyChase.ok && snapshots.ok
-    return NextResponse.json({ ok: extrasOk, hours, safetyChase, snapshots },
+    // Daily GP-fade snapshot (fg_project_snapshots) - server-side, Supabase-only (no Xero calls),
+    // deduped per (project, Melbourne date) so the twice-daily cron writes once. Replaces the
+    // dashboard-open capture as the reliable heartbeat of the margin-trend history.
+    const fadeSnapshots = await captureServerSnapshots().catch(e => ({
+      ok: false as const, snapshotted: 0, skipped_duplicate: 0, projects: 0,
+      snapshot_date: '', error: e instanceof Error ? e.message : 'fade_snapshots_failed',
+    }))
+    // Pre-setup state: no service role key. Skip quietly like the cost sync does.
+    const fadeOk = fadeSnapshots.ok || fadeSnapshots.error === 'supabase_admin_not_configured'
+    const extrasOk = hours.ok && safetyChase.ok && snapshots.ok && fadeOk
+    return NextResponse.json({ ok: extrasOk, hours, safetyChase, snapshots, fadeSnapshots },
       { status: extrasOk ? 200 : 502 })
   }
 

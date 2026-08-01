@@ -373,12 +373,14 @@ export interface SnapshotNowResult {
   snapshot_date?: string
   error?: string
 }
-export async function triggerManualSnapshot(inputs: SnapshotInputForApi[]): Promise<SnapshotNowResult> {
+export async function triggerManualSnapshot(inputs?: SnapshotInputForApi[]): Promise<SnapshotNowResult> {
   try {
+    // No inputs -> the server computes the rows itself from Supabase (and fills the
+    // per-account cost map). Passing rows is the legacy browser-computed path.
     const resp = await fetch('/api/snapshots/now', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inputs }),
+      body: JSON.stringify(inputs ? { inputs } : {}),
     })
     return await resp.json()
   } catch (e) {
