@@ -13,12 +13,17 @@ export const COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60 // 30 days
  *   1. SESSION_SECRET           — explicit, ≥32-byte random hex (recommended in prod)
  *   2. APP_PASSWORD_HASH        — deterministic fallback so flipping a forgotten SESSION_SECRET
  *                                 doesn't lock you out (changing password rotates sessions anyway)
- *   3. NEXT_PUBLIC_APP_PASSWORD — dev-only fallback so the legacy flow keeps working
- *   4. constant string          — last-ditch dev fallback
+ *   3. APP_PASSWORD             — server-only plain password; secret to clients, so a safe
+ *                                 signing key for an APP_PASSWORD-only deploy (the repo is
+ *                                 public, so the constant fallback below must never be reached
+ *                                 in prod - this rung closes that gap)
+ *   4. NEXT_PUBLIC_APP_PASSWORD — dev-only fallback so the legacy flow keeps working
+ *   5. constant string          — last-ditch dev fallback
  */
 function getSessionSecret(): string {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET
   if (process.env.APP_PASSWORD_HASH) return process.env.APP_PASSWORD_HASH
+  if (process.env.APP_PASSWORD) return `pw:${process.env.APP_PASSWORD}`
   if (process.env.NEXT_PUBLIC_APP_PASSWORD) return `dev:${process.env.NEXT_PUBLIC_APP_PASSWORD}`
   return 'dev-fallback-do-not-use-in-prod'
 }
