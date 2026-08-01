@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeLiveJobRow, computePortfolioTotals } from './liveJobs'
+import { computeLiveJobRow, computePortfolioTotals, ganttCostTotal } from './liveJobs'
 import type { Project, Estimate, EstimateLineItem, ProgressClaim, ProjectBaseline } from '@/types'
 
 function project(overrides: Partial<Project> = {}): Project {
@@ -158,13 +158,14 @@ describe('computeLiveJobRow — invoicing', () => {
 })
 
 describe('computeLiveJobRow — cost & GP', () => {
-  it('uses Xero cost when provided and computes GP correctly', () => {
+  it('uses the Xero forecast when explicit overrides exist and computes GP correctly', () => {
     const row = computeLiveJobRow({
       project: project({ contractValue: 100_000 }),
       acceptedEstimates: [],
       progressClaims: [],
       costToDate: 60_000,
       forecastFinalCost: 65_000,
+      hasForecastOverrides: true,
     })
     expect(row.costToDate).toBe(60_000)
     expect(row.forecastFinalCost).toBe(65_000)
@@ -173,13 +174,41 @@ describe('computeLiveJobRow — cost & GP', () => {
     expect(row.hasLiveCostData).toBe(true)
   })
 
-  it('falls back to costToDate when forecastFinalCost is null', () => {
+  it('WITHOUT overrides, ignores the restated API forecast and uses the plan cost', () => {
+    // The API's forecast_final_cost is just cost-to-date restated when no override exists —
+    // trusting it made forecast == cost on every job ("spend stops today", inflated GP).
+    const row = computeLiveJobRow({
+      project: project({ contractValue: 100_000 }),
+      acceptedEstimates: [estimate({ lineItems: [lineItem({ total: 70_000, revenue: 100_000 })] })],
+      progressClaims: [],
+      costToDate: 20_000,
+      forecastFinalCost: 20_000,
+      hasForecastOverrides: false,
+    })
+    expect(row.forecastFinalCost).toBe(70_000)   // estimate plan, not the restated 20k
+    expect(row.forecastGpPct).toBe(30)
+  })
+
+  it('prefers the gantt plan (foreman-maintained) over the estimate budget', () => {
+    const row = computeLiveJobRow({
+      project: project({ contractValue: 100_000 }),
+      acceptedEstimates: [estimate({ lineItems: [lineItem({ total: 70_000 })] })],
+      progressClaims: [],
+      costToDate: 20_000,
+      forecastFinalCost: 20_000,
+      ganttCost: 75_000,
+    })
+    expect(row.forecastFinalCost).toBe(75_000)
+  })
+
+  it('floors the plan-based forecast at actual spend', () => {
     const row = computeLiveJobRow({
       project: project({ contractValue: 100_000 }),
       acceptedEstimates: [],
       progressClaims: [],
       costToDate: 60_000,
-      forecastFinalCost: null,
+      forecastFinalCost: 60_000,
+      ganttCost: 50_000,   // plan says 50k but 60k is already out the door
     })
     expect(row.forecastFinalCost).toBe(60_000)
   })
@@ -209,6 +238,42 @@ describe('computeLiveJobRow — cost & GP', () => {
     expect(row.forecastFinalCost).toBe(60_000)   // estimate budget, not 0
     expect(row.hasLiveCostData).toBe(false)
     expect(row.forecastGpPct).not.toBe(100)
+  })
+
+  it('uses the gantt plan when there is no Xero data at all', () => {
+    const row = computeLiveJobRow({
+      project: project({ contractValue: 100_000 }),
+      acceptedEstimates: [],
+      progressClaims: [],
+      costToDate: null,
+      forecastFinalCost: null,
+      ganttCost: 55_000,
+    })
+    expect(row.forecastFinalCost).toBe(55_000)
+    expect(row.hasLiveCostData).toBe(false)
+  })
+})
+
+describe('ganttCostTotal', () => {
+  const seg = (cost: number) => ({ id: `s${cost}`, startDate: '2026-08-03', endDate: '2026-08-07', weekCount: 1, revenueAllocation: 0, costAllocation: cost })
+  const entry = (over: Record<string, unknown>) => ({
+    id: 'g1', projectId: 'p1', estimateId: 'e1', category: 'Decking', crewType: 'Formation' as const,
+    budgetedRevenue: 0, budgetedCost: 0, segments: [], subtasks: [], ...over,
+  })
+
+  it('sums bar costs, including split type-line leaves (entrySegments invariant)', () => {
+    const total = ganttCostTotal([
+      entry({ segments: [seg(10_000)] }),
+      entry({ id: 'g2', category: 'Paving', segments: [], subtasks: [
+        { id: 'lab', label: 'Labour', costType: 'labour', segments: [seg(8_000)] },
+      ] }),
+    ] as never)
+    expect(total).toBe(18_000)
+  })
+
+  it('falls back to budgetedCost for an entry whose bars carry no cost', () => {
+    const total = ganttCostTotal([entry({ budgetedCost: 12_000, segments: [seg(0)] })] as never)
+    expect(total).toBe(12_000)
   })
 })
 

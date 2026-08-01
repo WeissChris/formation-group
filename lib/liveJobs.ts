@@ -7,9 +7,22 @@
 // Produces one LiveJobRow per active project, matching the columns of
 // Andrew's `Live_Jobs_Tracker__Andrew_.xlsx` Summary sheet.
 
-import type { Project, Estimate, ProgressClaim } from '@/types'
+import type { Project, Estimate, ProgressClaim, GanttEntry } from '@/types'
 import { getEstimateContract, variationContractValue, getEstimateTotals } from './estimateCalculations'
 import { getTargetMarginPct } from './projectHealth'
+import { entrySegments } from './ganttForecast'
+
+/**
+ * Total scheduled cost of a project's gantt - the foreman-maintained plan. Goes through
+ * entrySegments so split categories count (the CLAUDE.md single-source invariant); an entry
+ * whose bars carry no cost falls back to its budgetedCost.
+ */
+export function ganttCostTotal(entries: GanttEntry[]): number {
+  return entries.reduce((s, e) => {
+    const segTotal = entrySegments(e).reduce((ss, seg) => ss + (seg.costAllocation || 0), 0)
+    return s + (segTotal > 0 ? segTotal : (e.budgetedCost || 0))
+  }, 0)
+}
 
 export interface LiveJobRow {
   projectId: string
@@ -41,8 +54,15 @@ interface LiveJobInputs {
   progressClaims: ProgressClaim[]
   /** Xero-derived cost. NULL when the project hasn't been mapped or hasn't been synced yet. */
   costToDate: number | null
-  /** Server-computed forecast (sum of override-or-actual per account). NULL falls back to costToDate. */
+  /** Server-computed forecast (sum of override-or-actual per account). Only trusted when
+   *  hasForecastOverrides - without overrides it is just costToDate restated. */
   forecastFinalCost: number | null
+  /** Total scheduled cost from the project's gantt (ganttCostTotal) - the foreman-maintained
+   *  plan, the preferred forecast basis. NULL/0 when the project has no gantt yet. */
+  ganttCost?: number | null
+  /** True when at least one per-account forecast override exists in the Costs (Xero) tab -
+   *  a deliberate human forecast, which outranks the gantt plan. */
+  hasForecastOverrides?: boolean
 }
 
 /**
@@ -57,7 +77,7 @@ interface LiveJobInputs {
  * sitting at 31% is "on target", not "below" (which would be the case with a global 40%).
  */
 export function computeLiveJobRow(inputs: LiveJobInputs): LiveJobRow {
-  const { project, acceptedEstimates, progressClaims, costToDate, forecastFinalCost } = inputs
+  const { project, acceptedEstimates, progressClaims, costToDate, forecastFinalCost, ganttCost, hasForecastOverrides } = inputs
 
   // Revenue: base contract + accepted variations
   const baseEstimates = acceptedEstimates.filter(e => !e.parentEstimateId)
@@ -76,12 +96,19 @@ export function computeLiveJobRow(inputs: LiveJobInputs): LiveJobRow {
 
   // Cost — Xero-derived. NULL → 0 with hasLiveCostData=false signal.
   const cost = costToDate ?? 0
-  // Forecast final cost: prefer the Xero forecast, then Xero cost-to-date, then the accepted-estimate
-  // budget. The old `?? cost` bottomed out at 0 for any job with no Xero feed yet, which read as a
-  // 100% GP. The estimate budget keeps the forecast margin sensible until live cost data arrives.
   const estimateCost = acceptedEstimates.reduce(
     (s, e) => s + (e.lineItems || []).reduce((ls, li) => ls + (li.total || 0), 0), 0)
-  const forecastCost = forecastFinalCost ?? (costToDate ?? estimateCost)
+  // The plan cost: the foreman-maintained gantt when it carries cost (Chris: the gantt IS the
+  // cost forecast - the foremen keep it current), else the accepted-estimate budget.
+  const planCost = (ganttCost ?? 0) > 0 ? (ganttCost as number) : estimateCost
+  // Forecast final cost precedence:
+  //   1. Explicit per-account overrides from the Costs (Xero) tab - a deliberate human forecast.
+  //   2. The plan cost, floored at actual spend (a forecast can never be below money already out).
+  // The old default (forecast = cost-to-date whenever no override existed) read as "spend stops
+  // today" and inflated GP on every job without overrides - forecast cost equalled cost to date.
+  const forecastCost = hasForecastOverrides && forecastFinalCost !== null
+    ? forecastFinalCost
+    : Math.max(cost, planCost)
   const hasLiveCostData = costToDate !== null
 
   // GP

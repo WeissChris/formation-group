@@ -13,7 +13,7 @@ import { isSupabaseConfigured } from '@/lib/supabase'
 import { calcProjectHealth, scheduleStatus } from '@/lib/projectHealth'
 import { isLiveProject } from '@/lib/stageConfig'
 import { getLiveJobs, triggerXeroSync, triggerManualSnapshot, type LiveJobRow as LiveJobApiRow } from '@/lib/xero'
-import { computeLiveJobRow, computePortfolioTotals, type LiveJobRow } from '@/lib/liveJobs'
+import { computeLiveJobRow, computePortfolioTotals, ganttCostTotal, type LiveJobRow } from '@/lib/liveJobs'
 import { computeOutstandingInvoices } from '@/lib/outstandingInvoices'
 import { LiveJobsTable } from '@/components/LiveJobsTable'
 
@@ -305,12 +305,15 @@ export default function DashboardPage() {
     )
     const claims = loadProgressClaims(project.id)
     const apiRow = liveJobCosts.get(project.id) ?? null
+    const pGantt = allGantt.filter(g => g.projectId === project.id)
     return computeLiveJobRow({
       project,
       acceptedEstimates,
       progressClaims: claims,
       costToDate: apiRow?.mapped ? apiRow.cost_to_date : null,
       forecastFinalCost: apiRow?.mapped ? apiRow.forecast_final_cost : null,
+      ganttCost: pGantt.length ? ganttCostTotal(pGantt) : null,
+      hasForecastOverrides: !!apiRow?.has_overrides,
     })
   })
   const liveJobsLastSync = Array.from(liveJobCosts.values())

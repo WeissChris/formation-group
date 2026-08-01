@@ -50,8 +50,13 @@ export async function GET(request: NextRequest) {
     if (!slot.lastPulled || pulled > slot.lastPulled) slot.lastPulled = pulled
   }
 
+  // Projects with at least one explicit forecast override - a deliberate human forecast.
+  // Without one, forecast_final_cost is just cost restated, and the client (computeLiveJobRow)
+  // prefers the gantt plan cost instead.
+  const overrideProjects = new Set<string>()
   for (const f of forecasts || []) {
     const pid = f.project_id as string
+    if (f.forecast_final != null) overrideProjects.add(pid)
     const slot = perProject.get(pid)
     if (!slot) continue
     const acc = slot.accounts.get(f.account_code as string)
@@ -70,6 +75,7 @@ export async function GET(request: NextRequest) {
       forecast_final_cost: Math.round(forecastFinalCost * 100) / 100,
       last_pulled_at: slot.lastPulled,
       mapped: true,
+      has_overrides: overrideProjects.has(projectId),
     }
   })
 
@@ -77,7 +83,7 @@ export async function GET(request: NextRequest) {
   for (const m of mappings || []) {
     const pid = m.project_id as string
     if (!items.find(i => i.project_id === pid)) {
-      items.push({ project_id: pid, cost_to_date: 0, forecast_final_cost: 0, last_pulled_at: null, mapped: true })
+      items.push({ project_id: pid, cost_to_date: 0, forecast_final_cost: 0, last_pulled_at: null, mapped: true, has_overrides: overrideProjects.has(pid) })
     }
   }
 

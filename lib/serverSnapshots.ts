@@ -11,10 +11,10 @@
 // parentEstimateId/lineItems/categoryKind/projectMarkups/roundingMode/variationAmount.
 
 import { supabaseAdmin } from './supabaseAdmin'
-import { computeLiveJobRow } from './liveJobs'
+import { computeLiveJobRow, ganttCostTotal } from './liveJobs'
 import { writeSnapshots, melbourneISODate, type SnapshotResult, type SnapshotInput } from './snapshots'
 import { isLiveProject } from './stageConfig'
-import type { Estimate, ProgressClaim, Project } from '@/types'
+import type { Estimate, GanttEntry, ProgressClaim, Project } from '@/types'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
@@ -29,6 +29,20 @@ function liteProject(row: Record<string, unknown>): Project {
     targetMarginPct: row.target_margin_pct != null ? Number(row.target_margin_pct) : undefined,
     baseline: (row.baseline as Project['baseline']) || undefined,
   } as Project
+}
+
+function liteGantt(row: Record<string, unknown>): GanttEntry {
+  return {
+    id: row.id as string,
+    projectId: row.project_id as string,
+    estimateId: (row.estimate_id as string) || '',
+    category: row.category as string,
+    crewType: (row.crew_type as GanttEntry['crewType']) || 'Formation',
+    budgetedRevenue: Number(row.budgeted_revenue) || 0,
+    budgetedCost: Number(row.budgeted_cost) || 0,
+    segments: (row.segments as GanttEntry['segments']) || [],
+    subtasks: (row.subtasks as GanttEntry['subtasks']) || [],
+  }
 }
 
 function liteEstimate(row: Record<string, unknown>): Estimate {
@@ -60,15 +74,16 @@ export async function captureServerSnapshots(now = new Date()): Promise<ServerSn
     return { ok: false, snapshotted: 0, skipped_duplicate: 0, error: 'supabase_admin_not_configured', snapshot_date: snapshotDate, projects: 0 }
   }
 
-  const [projRes, estRes, claimRes, costRes, fcRes, mapRes] = await Promise.all([
+  const [projRes, estRes, claimRes, costRes, fcRes, mapRes, ganttRes] = await Promise.all([
     supabaseAdmin.from('fg_projects').select('id, entity, name, status, stage, contract_value, target_margin_pct, baseline'),
     supabaseAdmin.from('fg_estimates').select('id, project_id, status, parent_estimate_id, line_items, category_kind, project_markups, rounding_mode, variation_amount, default_markup_formation, default_markup_subcontractor'),
     supabaseAdmin.from('fg_progress_claims').select('data'),
     supabaseAdmin.from('fg_xero_project_costs').select('project_id, account_code, amount_ex_gst'),
     supabaseAdmin.from('fg_project_cost_forecast').select('project_id, account_code, forecast_final'),
     supabaseAdmin.from('fg_project_xero_mapping').select('project_id'),
+    supabaseAdmin.from('fg_gantt').select('id, project_id, estimate_id, category, crew_type, budgeted_revenue, budgeted_cost, segments, subtasks'),
   ])
-  const firstError = projRes.error || estRes.error || claimRes.error || costRes.error || fcRes.error || mapRes.error
+  const firstError = projRes.error || estRes.error || claimRes.error || costRes.error || fcRes.error || mapRes.error || ganttRes.error
   if (firstError) {
     return { ok: false, snapshotted: 0, skipped_duplicate: 0, error: firstError.message, snapshot_date: snapshotDate, projects: 0 }
   }
@@ -77,6 +92,14 @@ export async function captureServerSnapshots(now = new Date()): Promise<ServerSn
   const estimates = (estRes.data ?? []).map(liteEstimate)
   const claims = (claimRes.data ?? []).map(r => r.data as ProgressClaim)
   const mapped = new Set((mapRes.data ?? []).map(r => r.project_id as string))
+  const ganttByProject = new Map<string, GanttEntry[]>()
+  for (const row of ganttRes.data ?? []) {
+    const e = liteGantt(row as Record<string, unknown>)
+    if (!ganttByProject.has(e.projectId)) ganttByProject.set(e.projectId, [])
+    ganttByProject.get(e.projectId)!.push(e)
+  }
+  const overrideProjects = new Set(
+    (fcRes.data ?? []).filter(f => f.forecast_final != null).map(f => f.project_id as string))
 
   // Per-project per-account actuals + forecast overrides - the same fold as /api/xero/live-jobs,
   // so the snapshot freezes exactly what the dashboard shows.
@@ -106,8 +129,13 @@ export async function captureServerSnapshots(now = new Date()): Promise<ServerSn
       : null
     const costByAccount: Record<string, number> = {}
     if (accounts) accounts.forEach((a, code) => { costByAccount[code] = round2(a.actual) })
+    const gantt = ganttByProject.get(project.id) ?? []
     return {
-      row: computeLiveJobRow({ project, acceptedEstimates, progressClaims, costToDate, forecastFinalCost }),
+      row: computeLiveJobRow({
+        project, acceptedEstimates, progressClaims, costToDate, forecastFinalCost,
+        ganttCost: gantt.length ? ganttCostTotal(gantt) : null,
+        hasForecastOverrides: overrideProjects.has(project.id),
+      }),
       costByAccount,
     }
   })

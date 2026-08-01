@@ -29,6 +29,10 @@ interface Props {
   foremanActuals?: WeeklyActual[]
   /** Project start date — for the burn-rate calc on the pace panel */
   projectStartDate?: string
+  /** The plan cost - gantt scheduled cost (foreman-maintained) or the estimate budget. Used as
+   *  the forecast-cost default when no per-account override has been entered, matching the
+   *  Live Jobs formula (computeLiveJobRow) so this tab and the dashboard can't disagree. */
+  planCost?: number
 }
 
 /**
@@ -48,6 +52,7 @@ export function ProjectCostsTab({
   estimateLineItems = [],
   foremanActuals = [],
   projectStartDate,
+  planCost = 0,
 }: Props) {
   const [data, setData] = useState<ProjectCostsResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -101,8 +106,13 @@ export function ProjectCostsTab({
     (s, r) => s + (r.forecast_final != null ? r.forecast_final : r.amount_ex_gst),
     0,
   )
+  // Headline forecast: explicit overrides win; otherwise the plan cost (gantt, else estimate)
+  // floored at spend - same precedence as computeLiveJobRow. Without this, a job with no
+  // overrides showed forecast = spend-to-date, i.e. "spend stops today" and an inflated GP.
+  const hasOverrides = data.costs.some(r => r.forecast_final != null)
+  const headlineForecast = hasOverrides ? totalForecast : Math.max(totalSpent, planCost)
 
-  const gpDollars = forecastRevenue - totalForecast
+  const gpDollars = forecastRevenue - headlineForecast
   const gpPct = forecastRevenue > 0 ? (gpDollars / forecastRevenue) * 100 : 0
   const fadePpts = quotedMarginPct != null ? gpPct - quotedMarginPct : null
 
@@ -132,7 +142,11 @@ export function ProjectCostsTab({
       <div className="grid grid-cols-4 gap-3">
         <HeadlineTile label="Forecast revenue" value={formatCurrency(forecastRevenue)} />
         <HeadlineTile label="Cost to date" value={formatCurrency(totalSpent)} />
-        <HeadlineTile label="Forecast cost" value={formatCurrency(totalForecast)} />
+        <HeadlineTile
+          label="Forecast cost"
+          value={formatCurrency(headlineForecast)}
+          subtle={hasOverrides ? 'From account overrides below' : planCost > 0 ? 'From the gantt plan' : 'No plan - spend to date'}
+        />
         <HeadlineTile
           label="Forecast GP %"
           value={`${gpPct.toFixed(1)}%`}

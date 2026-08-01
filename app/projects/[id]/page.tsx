@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ProjectCostsTab } from '@/components/ProjectCostsTab'
 import { getTargetMarginPct } from '@/lib/projectHealth'
+import { ganttCostTotal } from '@/lib/liveJobs'
 import Link from 'next/link'
 import {
   loadProjects, loadWeeklyRevenue, loadEstimates, saveEstimate,
@@ -1757,6 +1758,10 @@ export default function ProjectDetailPage() {
           const allLineItems = estimates
             .filter(e => e.status === 'accepted')
             .flatMap(e => e.lineItems)
+          // Plan cost for the forecast default: the foreman-maintained gantt, else the
+          // accepted-estimate budget - same precedence as computeLiveJobRow.
+          const ganttPlanCost = ganttCostTotal(ganttEntries)
+          const estimateBudget = allLineItems.reduce((s, li) => s + (li.total || 0), 0)
           return (
             <ProjectCostsTab
               projectId={id}
@@ -1767,6 +1772,7 @@ export default function ProjectDetailPage() {
               estimateLineItems={allLineItems}
               foremanActuals={actuals}
               projectStartDate={project.startDate}
+              planCost={ganttPlanCost > 0 ? ganttPlanCost : estimateBudget}
             />
           )
         })()}

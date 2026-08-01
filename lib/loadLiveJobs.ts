@@ -2,10 +2,10 @@
 // (local project/estimate/claim data + the Xero cost feed), exposed so reports can reuse it
 // without duplicating the join.
 
-import { loadProjects, loadEstimates, loadProgressClaims } from './storage'
+import { loadProjects, loadEstimates, loadProgressClaims, loadGanttEntries } from './storage'
 import { isLiveProject } from './stageConfig'
 import { getLiveJobs } from './xero'
-import { computeLiveJobRow, computePortfolioTotals, type LiveJobRow, type PortfolioTotals } from './liveJobs'
+import { computeLiveJobRow, computePortfolioTotals, ganttCostTotal, type LiveJobRow, type PortfolioTotals } from './liveJobs'
 import type { Project } from '@/types'
 
 export interface LoadedLiveJobs {
@@ -31,12 +31,15 @@ export async function loadLiveJobs(): Promise<LoadedLiveJobs> {
     // That's "no live data", not a real $0 — treat it as null so the forecast falls back to the estimate
     // budget instead of reading $0 cost = 100% GP. last_pulled_at is the "real cost data exists" signal.
     const hasLiveCost = !!(apiRow?.mapped && apiRow.last_pulled_at)
+    const gantt = loadGanttEntries(project.id)
     return computeLiveJobRow({
       project,
       acceptedEstimates,
       progressClaims: claims,
       costToDate: hasLiveCost ? apiRow!.cost_to_date : null,
       forecastFinalCost: hasLiveCost ? apiRow!.forecast_final_cost : null,
+      ganttCost: gantt.length ? ganttCostTotal(gantt) : null,
+      hasForecastOverrides: !!apiRow?.has_overrides,
     })
   })
 
