@@ -4,6 +4,7 @@ import { runHoursSync } from '@/lib/xeroHoursSync'
 import { runSafetyChase } from '@/lib/safetyChase'
 import { runProgressSnapshots } from '@/lib/runProgressSnapshots'
 import { captureServerSnapshots } from '@/lib/serverSnapshots'
+import { runCompanyPnlSync } from '@/lib/xeroPnlSync'
 
 export const runtime = 'nodejs'
 // Vercel function timeout — initial 24-month backfill can take ~60-90s. Allow margin.
@@ -37,6 +38,21 @@ export async function POST(request: NextRequest) {
   // calls this endpoint twice: once for the cost sync, once with ?task=extras for the
   // timesheet-hours pull + subbie compliance chase - each invocation well under the limit.
   const task = new URL(request.url).searchParams.get('task')
+
+  // Company monthly P&L pull (?task=pnl) - its own invocation, like extras: the first run
+  // backfills 24 report calls (~30-60s) and must not eat into the cost sync's window.
+  if (task === 'pnl') {
+    const result = await runCompanyPnlSync().catch(e => ({
+      ok: false as const, months_pulled: 0, months_skipped: 0, unmatched_rows: 0,
+      error: e instanceof Error ? e.message : 'company_pnl_sync_failed',
+    }))
+    const PNL_SKIP_REASONS = new Set(['no_xero_tokens', 'supabase_admin_not_configured', 'rate_limited'])
+    if (!result.ok && result.error && PNL_SKIP_REASONS.has(result.error)) {
+      return NextResponse.json({ ...result, skipped: true }, { status: 200 })
+    }
+    return NextResponse.json(result, { status: result.ok ? 200 : 502 })
+  }
+
   if (task === 'extras') {
     const hours = await runHoursSync().catch(e => ({
       ok: false as const, timesheets_processed: 0, lines_matched: 0, projects_updated: 0, rows_written: 0,

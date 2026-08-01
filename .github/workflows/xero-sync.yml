@@ -3,10 +3,10 @@ name: Xero sync (12-hourly)
 # Polls the production deploy's /api/cron/xero-sync endpoint twice a day. Free alternative
 # to Vercel Cron (which requires the paid plan for sub-daily intervals).
 #
-# TWO calls per run: the cost sync, then ?task=extras (timesheet-hours pull + subbie
-# compliance chase). Combined in one invocation they intermittently blew Vercel's 300s
-# function ceiling (504 Runtime Timeout) whenever Xero rate-limited - each 429 backoff
-# sleeps ~65s. Split, each call has plenty of headroom.
+# THREE calls per run: the cost sync, then ?task=extras (timesheet-hours pull + subbie
+# compliance chase + snapshots), then ?task=pnl (company monthly P&L). Combined in one
+# invocation they intermittently blew Vercel's 300s function ceiling (504 Runtime Timeout)
+# whenever Xero rate-limited - each 429 backoff sleeps ~65s. Split, each call has headroom.
 #
 # Required GitHub repo secrets:
 #   APP_URL       e.g. https://formation-group.vercel.app
@@ -66,4 +66,11 @@ jobs:
           call "${APP_URL}/api/cron/xero-sync?task=extras"
           if [[ ! "$CALL_STATUS" =~ ^2 ]]; then
             echo "::warning::Extras (timesheet hours / compliance chase) failed with HTTP $CALL_STATUS - will retry next run."
+          fi
+
+          # 3) Company monthly P&L (director page). Internally deduped - steady state is 3
+          # report calls; the first run backfills 24 months. Warns, never fails the workflow.
+          call "${APP_URL}/api/cron/xero-sync?task=pnl"
+          if [[ ! "$CALL_STATUS" =~ ^2 ]]; then
+            echo "::warning::Company P&L sync failed with HTTP $CALL_STATUS - will retry next run."
           fi
