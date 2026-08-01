@@ -8,7 +8,8 @@ import {
   loadProgressClaims, loadGanttEntries, loadProjects,
 } from '@/lib/storage'
 import { requestSendInvoice, sendErrorMessage } from '@/lib/emailClient'
-import { invoiceCycleFridays, plannedRevenueByCategory } from '@/lib/ganttForecast'
+import { invoiceCycleFridays, plannedToDateByCategory } from '@/lib/ganttForecast'
+import { syncInvoicedRevenueRows } from '@/lib/claimRevenue'
 import { upsertEstimate, upsertProgressClaim, deleteProgressClaimAsync } from '@/lib/storageAsync'
 import { createXeroDraftInvoice } from '@/lib/xero'
 import { formatCurrency, formatCurrencyCents, generateId } from '@/lib/utils'
@@ -255,15 +256,17 @@ function ProgressClaimBuilder({
   const [comments, setComments] = useState(editingClaim?.comments ?? '')
   const [roundingAdjustment, setRoundingAdjustment] = useState(editingClaim?.roundingAdjustment ?? 0)
 
-  // ── Programme prefill ── what the gantt forecast says the CURRENT invoicing fortnight is worth,
-  // per category (same cycle anchor as the gantt's INVOICING FORTNIGHT strip). Null when the job
-  // has no scheduled claims yet.
+  // ── Programme prefill ── what the gantt forecast says has been earned per category up to the
+  // end of the CURRENT invoicing fortnight (same cycle anchor as the gantt's INVOICING FORTNIGHT
+  // strip). Cumulative, not per-fortnight: the prefill is planned-to-date MINUS claimed-to-date,
+  // so a previous claim tweaked below plan rolls its shortfall into this one, and one tweaked
+  // above plan shrinks it. Null when the job has no scheduled claims yet.
   const forecast = useMemo(() => {
     const ganttEntries = loadGanttEntries(projectId)
     const cycle = invoiceCycleFridays(ganttEntries, new Date().toISOString().slice(0, 10))
     if (!cycle) return null
-    const byCat = plannedRevenueByCategory(ganttEntries, cycle)
-    return byCat.size > 0 ? { cycle, byCat } : null
+    const plannedToDate = plannedToDateByCategory(ganttEntries, cycle[1])
+    return plannedToDate.size > 0 ? { cycle, plannedToDate } : null
   }, [projectId])
   const forecastLabel = useMemo(() => {
     if (!forecast) return ''
@@ -271,15 +274,17 @@ function ProgressClaimBuilder({
     const opt: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }
     return `${mon.toLocaleDateString(undefined, opt)} - ${new Date(`${forecast.cycle[1]}T00:00:00`).toLocaleDateString(undefined, opt)}`
   }, [forecast])
-  // Capped at the line's remaining contract (the programme does not know what has been claimed);
-  // every figure stays editable after - this only seeds the inputs.
+  // Catch-up prefill: planned-to-date minus already claimed, floored at 0 (an over-claimed line
+  // prefills nothing until the plan catches up - same for a deposit claimed ahead of the work)
+  // and capped at the line's remaining contract. Every figure stays editable after - this only
+  // seeds the inputs, and a tweak never rewrites the gantt.
   const applyForecast = useCallback(() => {
     if (!forecast) return
     setLineItems(prev => prev.map(li => {
       if (li.type !== 'category') return li
-      const planned = forecast.byCat.get(li.categoryId)
-      if (planned === undefined) return li   // not on the programme this fortnight (or a grouped row) - leave as typed
-      const amt = Math.round(Math.min(planned, li.remaining) * 100) / 100
+      const planned = forecast.plannedToDate.get(li.categoryId)
+      if (planned === undefined) return li   // not on the programme (or a grouped row) - leave as typed
+      const amt = Math.round(Math.min(Math.max(0, planned - li.claimedToDate), li.remaining) * 100) / 100
       return { ...li, claimAmount: amt, claimPercent: li.remaining > 0 ? (amt / li.remaining) * 100 : 0 }
     }))
   }, [forecast])
@@ -464,7 +469,7 @@ function ProgressClaimBuilder({
                 {forecast && (
                   <button
                     onClick={applyForecast}
-                    title="Fill each category from the gantt forecast for the current invoicing fortnight (capped at the remaining contract). Overwrites the category amounts; everything stays editable."
+                    title="Fill each category from the gantt programme: planned to the end of this fortnight minus what has already been claimed (capped at the remaining contract). A previous claim tweaked up or down self-corrects here. Overwrites the category amounts; everything stays editable."
                     className="text-2xs font-light tracking-wide uppercase px-2.5 py-1 border border-fg-border text-fg-muted hover:text-fg-heading transition-colors"
                   >
                     Prefill from programme · {forecastLabel}
@@ -807,7 +812,12 @@ function InvoicesSubTab({
   const [showBuilder, setShowBuilder] = useState(false)
   const [editingClaim, setEditingClaim] = useState<ProgressClaim | null>(null)
 
-  const refreshClaims = () => setClaims(loadProgressClaims(projectId))
+  const refreshClaims = () => {
+    setClaims(loadProgressClaims(projectId))
+    // Every claim mutation funnels through here (save, delete, mark paid, send) - keep the
+    // Revenue Calendar's invoiced rows in step. Fire-and-forget; it no-ops when nothing changed.
+    void syncInvoicedRevenueRows(projectId)
+  }
 
   // Read receipts for sent invoice emails (tracking pixel -> fg_claim_opens), keyed by claim id.
   const [opens, setOpens] = useState<Record<string, { first: string; last: string; count: number }>>({})

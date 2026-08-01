@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { GanttEntry } from '@/types'
-import { plannedByWeek, claimLeafSegments, entrySegments, segmentWeekShare, segmentWeekShares, invoiceCycleFridays, plannedRevenueByCategory } from './ganttForecast'
+import { plannedByWeek, claimLeafSegments, entrySegments, segmentWeekShare, segmentWeekShares, invoiceCycleFridays, plannedRevenueByCategory, plannedToDateByCategory } from './ganttForecast'
 
 // Three consecutive week-ending Fridays.
 const fridays = ['2026-08-07', '2026-08-14', '2026-08-21'].map(d => new Date(`${d}T00:00:00`))
@@ -183,5 +183,41 @@ describe('invoiceCycleFridays + plannedRevenueByCategory (progress-claim prefill
   it('a category with nothing in the window is absent', () => {
     const m = plannedRevenueByCategory(entries, ['2026-09-04'])
     expect(m.has('Decking')).toBe(false)
+  })
+})
+
+describe('plannedToDateByCategory (cumulative catch-up prefill)', () => {
+  const entries = [
+    entry({ category: 'Decking', segments: [], subtasks: [
+      { id: 'lab', label: 'Labour', costType: 'labour', segments: [seg('2026-08-03', '2026-08-14', 2, 6000)] },
+    ] }),
+    entry({ id: 'e2', category: 'Paving', segments: [seg('2026-08-10', '2026-08-21', 2, 4000)] }),
+  ]
+
+  it('accumulates every week up to and including the through-Friday', () => {
+    const m = plannedToDateByCategory(entries, '2026-08-14')
+    expect(m.get('Decking')).toBeCloseTo(6000)   // both weeks done by 08-14
+    expect(m.get('Paving')).toBeCloseTo(2000)    // first of its two weeks
+  })
+
+  it('reaches the full plan once every bar has finished', () => {
+    const m = plannedToDateByCategory(entries, '2026-09-25')
+    expect(m.get('Decking')).toBeCloseTo(6000)
+    expect(m.get('Paving')).toBeCloseTo(4000)
+  })
+
+  it('is empty before any scheduled work', () => {
+    expect(plannedToDateByCategory(entries, '2026-07-31').size).toBe(0)
+  })
+
+  it('includes split type-line leaf claims, not just the category bar', () => {
+    const m = plannedToDateByCategory([entry({
+      segments: [],   // parent cleared on split
+      subtasks: [
+        { id: 'mat', label: 'Materials', costType: 'material', segments: [seg('2026-08-03', '2026-08-07', 1, 1500)] },
+        { id: 'lab', label: 'Labour', costType: 'labour', segments: [seg('2026-08-03', '2026-08-14', 2, 6000)] },
+      ],
+    })], '2026-08-07')
+    expect(m.get('Decking')).toBeCloseTo(1500 + 3000)
   })
 })

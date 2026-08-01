@@ -127,6 +127,25 @@ export function plannedRevenueByCategory(entries: GanttEntry[], friIsos: string[
   return map
 }
 
+/** Planned revenue per gantt category from the start of work through the week ending
+ *  `throughFriIso` (inclusive) - the cumulative plan. The claim prefill subtracts each line's
+ *  claimed-to-date from this, so a claim tweaked below plan (site behind) rolls the shortfall
+ *  into the NEXT claim's prefill automatically, and a claim tweaked above plan shrinks it -
+ *  the gantt itself is never rewritten and nothing is double-claimed. */
+export function plannedToDateByCategory(entries: GanttEntry[], throughFriIso: string): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const e of entries) {
+    let rev = 0
+    for (const { seg } of entryClaimSegments(e)) {
+      for (const { friIso, fraction } of segmentWeekShares(seg)) {
+        if (friIso <= throughFriIso) rev += (seg.revenueAllocation || 0) * fraction
+      }
+    }
+    if (rev > 0) map.set(e.category, (map.get(e.category) ?? 0) + rev)
+  }
+  return map
+}
+
 // Planned revenue + cost per week (keyed by the week's Friday ISO). Each segment contributes its
 // per-week SHARE (proportional to working days for a straddling days bar; equal per week for a weeks bar),
 // so it works in both views and against a baseline snapshot. Fortnightly cycle + inline invoice totals.
