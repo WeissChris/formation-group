@@ -74,6 +74,23 @@ keep the stages joined up rather than as isolated tools.
   to split** (every fresh category is auto-split on load), so this bites EVERY project, not just
   hand-split ones. Same test file locks it.
 
+### Claims <-> forecast loop (shipped)
+- Progress-claim prefill is **cumulative catch-up**: `plannedToDateByCategory` (planned to the
+  end of the current invoicing fortnight) minus the line's claimed-to-date, floored at 0 and
+  capped at remaining contract. A claim tweaked up/down on site self-corrects in the NEXT
+  prefill; never rewrite the gantt to reconcile a tweak.
+- Sent/paid claims (and invoiced payment stages) write real invoiced rows into `fg_revenue`
+  via `lib/claimRevenue.ts` — rows tagged with trailing **"(Invoiced)"** in notes, the
+  regenerate-safe twin of the "(Gantt)" tag. The sync (delete+rebuild by tag) runs after every
+  claim mutation (FinancialOperations refreshClaims). Never hand-write `actualInvoiced` rows;
+  never tag anything else "(Invoiced)".
+- **GP has ONE formula**: `computeLiveJobRow` (lib/liveJobs). The dashboard tiles, attention
+  feed, /reports and snapshots all read it. Don't add parallel GP maths on a page; /revenue's
+  division tiles are quoted-margin-from-estimates (a different, pre-construction lens).
+- GP-fade snapshots (`fg_project_snapshots`) are captured **server-side daily** by the cron
+  extras task via `lib/serverSnapshots.ts` (also fills `cost_by_account`). The dashboard
+  auto-fire and Snapshot button hit the same server path.
+
 ### Current state (all shipped)
 - **Days view default.** Drag-to-reorder categories (grab handle, far left). Long names wrap.
 - Mat/Lab/Sub split is the **default** — untouched categories auto-split on load (manual splits,

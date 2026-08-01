@@ -225,41 +225,9 @@ export default function DashboardPage() {
     .reduce((s, v) => s + variationContractValue(v), 0)
   const securedRevenue = activeProjects.reduce((s, p) => s + (p.contractValue || 0), 0) + variationsTotal
 
-  // Per-project GP% for formation projects
-  const projectGP = formationProjects.map(p => {
-    const pActuals = allActuals.filter(a => a.projectId === p.id)
-    const pGantt = allGantt.filter(g => g.projectId === p.id)
-    const actualCost = pActuals.reduce((s, a) => s + a.supplyCost + a.labourCost, 0)
-    // Budget cost = the FULL budget. Prefer the accepted base estimate's line-item total: the Gantt is a
-    // scheduling tool that's often only partly built, so summing its segments understates cost and
-    // inflates GP (a Preliminaries-only Gantt reads 98% GP on a 28% job). Fall back to the Gantt cost
-    // only when there's no accepted estimate to budget from.
-    const acceptedEstimate = allEstimates.find(e => e.projectId === p.id && e.status === 'accepted' && !e.parentEstimateId)
-    const estimateCost = acceptedEstimate
-      ? (acceptedEstimate.lineItems || []).reduce((ls, li) => ls + (li.total || 0), 0)
-      : 0
-    const ganttCost = pGantt.reduce((s, g) => {
-      const segTotal = g.segments.reduce((ss, seg) => ss + (seg.costAllocation || 0), 0)
-      // Fallback: if segments have no costAllocation, use budgetedCost from the GanttEntry
-      return s + (segTotal > 0 ? segTotal : g.budgetedCost)
-    }, 0)
-    const budgetCost = estimateCost > 0 ? estimateCost : ganttCost
-    // NB: A "currentGP" used to live here computed as (contractValue - actualCost) / contractValue.
-    // That math was structurally wrong — it compares cost-to-date against the full contract, not
-    // against what's been invoiced so far. Removed because the value was never rendered anywhere.
-    // If a dashboard tile ever wants current GP, base it on totalInvoiced (see Position tab).
-    const forecastGP = p.contractValue > 0 && budgetCost > 0
-      ? ((p.contractValue - budgetCost) / p.contractValue) * 100
-      : null
-    return { project: p, forecastGP }
-  })
-
-  const projectGPWithForecast = projectGP.filter(p => p.forecastGP !== null)
-  const avgForecastGP = projectGPWithForecast.length > 0
-    ? projectGPWithForecast.reduce((s, p) => s + (p.forecastGP || 0), 0) / projectGPWithForecast.length
-    : null
-
-  const belowTargetProjects = projectGP.filter(p => p.forecastGP !== null && (p.forecastGP || 0) < 40)
+  // Per-project GP now comes from the Live Jobs rows (computed below) - single source. The
+  // dashboard used to run its own contract-vs-estimate GP here in parallel, which could
+  // disagree with the Live Jobs band a few rows up and held every job to a flat 40%.
 
   // Upcoming revenue grouped by month
   const upcoming = revenue
@@ -352,6 +320,20 @@ export default function DashboardPage() {
     .pop() ?? null
   const liveJobsTotals = computePortfolioTotals(liveJobRows)
   liveJobRowsRef.current = liveJobRows   // feed the auto-snapshot effect (declared above)
+
+  // ── Formation GP - SINGLE SOURCE: the Live Jobs rows above (computeLiveJobRow: revised
+  // contract vs Xero-informed forecast cost, estimate budget until live data arrives, banded
+  // per-project targets). Rows with no cost basis at all are excluded - a job with no accepted
+  // estimate and no Xero feed would otherwise read as 100% GP.
+  const formationGpRows = liveJobRows.filter(r =>
+    r.entity === 'formation' && r.forecastRevenue > 0 && r.forecastFinalCost > 0)
+  const avgForecastGP = formationGpRows.length > 0
+    ? formationGpRows.reduce((s, r) => s + r.forecastGpPct, 0) / formationGpRows.length
+    : null
+  const avgTargetGP = formationGpRows.length > 0
+    ? formationGpRows.reduce((s, r) => s + r.targetMarginPct, 0) / formationGpRows.length
+    : null
+  const belowTargetRows = formationGpRows.filter(r => r.forecastGpPct < r.targetMarginPct)
 
   const handleSeedData = () => {
     seedDemoData()
@@ -484,13 +466,13 @@ export default function DashboardPage() {
     })
   }
 
-  belowTargetProjects.forEach(({ project, forecastGP }) => {
+  belowTargetRows.forEach(row => {
     attentionItems.push({
       icon: '📉',
-      title: `${toTitleCase(project.name)} forecast GP below target`,
-      subtitle: `${(forecastGP || 0).toFixed(1)}% forecast vs 40% target`,
-      href: `/projects/${project.id}`,
-      severity: (forecastGP || 0) < 35 ? 'red' : 'amber',
+      title: `${toTitleCase(row.projectName)} forecast GP below target`,
+      subtitle: `${row.forecastGpPct.toFixed(1)}% forecast vs ${row.targetMarginPct.toFixed(0)}% target`,
+      href: `/projects/${row.projectId}`,
+      severity: row.forecastGpPct < row.targetMarginPct - 5 ? 'red' : 'amber',
     })
   })
 
@@ -676,15 +658,15 @@ export default function DashboardPage() {
                 <span className="text-xs font-light text-fg-heading tabular-nums">{formatCurrency(formationRevenueFY)}</span>
               </div>
             </div>
-            {avgForecastGP !== null && (
+            {avgForecastGP !== null && avgTargetGP !== null && (
               <div className="mt-3 pt-3 border-t border-fg-border/30">
                 <div className="flex items-baseline justify-between">
                   <span className="text-2xs tracking-architectural uppercase text-fg-muted">Avg Forecast GP%</span>
                   <span className={`text-sm font-light tabular-nums ${
-                    avgForecastGP >= 40 ? 'text-green-600' : avgForecastGP >= 35 ? 'text-amber-500' : 'text-red-500'
+                    avgForecastGP >= avgTargetGP - 2 ? 'text-green-600' : avgForecastGP >= avgTargetGP - 10 ? 'text-amber-500' : 'text-red-500'
                   }`}>{avgForecastGP.toFixed(1)}%</span>
                 </div>
-                <div className="text-2xs text-fg-muted mt-0.5">Target: 40%</div>
+                <div className="text-2xs text-fg-muted mt-0.5">Target: {avgTargetGP.toFixed(1)}% (banded by job mix)</div>
               </div>
             )}
             <Link href="/projects?entity=formation" className="text-2xs font-light tracking-wide uppercase text-fg-muted hover:text-fg-heading transition-colors mt-5 block">
@@ -723,7 +705,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Quarterly GP% ── */}
+      {/* ── Gross Profit summary (same source as the Live Jobs band) ── */}
       <div className="border-t border-fg-border pt-8 mt-8">
         <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-6">
           Gross Profit — Formation Landscapes
@@ -731,19 +713,19 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white border border-fg-border px-5 py-4">
             <p className="text-2xs tracking-architectural uppercase text-fg-muted mb-1">Avg Forecast GP%</p>
-            <p className={`text-2xl font-light ${avgForecastGP !== null ? (avgForecastGP >= 40 ? 'text-green-600' : 'text-amber-500') : 'text-fg-muted'}`}>
+            <p className={`text-2xl font-light ${avgForecastGP !== null && avgTargetGP !== null ? (avgForecastGP >= avgTargetGP - 2 ? 'text-green-600' : 'text-amber-500') : 'text-fg-muted'}`}>
               {avgForecastGP !== null ? `${avgForecastGP.toFixed(1)}%` : '—'}
             </p>
             <p className="text-2xs text-fg-muted mt-1">
-              Across {projectGPWithForecast.length} active project{projectGPWithForecast.length === 1 ? '' : 's'}
+              Across {formationGpRows.length} active project{formationGpRows.length === 1 ? '' : 's'}
             </p>
           </div>
           <div className="bg-white border border-fg-border px-5 py-4">
             <p className="text-2xs tracking-architectural uppercase text-fg-muted mb-1">Target</p>
-            <p className="text-2xl font-light text-fg-heading">40.0%</p>
+            <p className="text-2xl font-light text-fg-heading">{avgTargetGP !== null ? `${avgTargetGP.toFixed(1)}%` : '—'}</p>
             <p className="text-2xs text-fg-muted mt-1">
-              {belowTargetProjects.length > 0
-                ? `${belowTargetProjects.length} job${belowTargetProjects.length === 1 ? '' : 's'} below target`
+              {belowTargetRows.length > 0
+                ? `${belowTargetRows.length} job${belowTargetRows.length === 1 ? '' : 's'} below target`
                 : 'All jobs on target ✓'
               }
             </p>
