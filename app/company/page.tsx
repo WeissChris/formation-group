@@ -1,16 +1,14 @@
 'use client'
 
-// Company P&L - the director-gated home of overheads, net profit and breakeven. Server data
-// comes from /api/company/pnl (x-director-key checked against DIRECTOR_ACCESS_KEY), pulled
-// from the whole-company Xero P&L by the cron. Everything project- and site-facing stays
-// GP-only; this page is the single place NP exists.
+// Company P&L - the home of overheads, net profit and breakeven, behind the single office
+// login like the rest of the app (the separate director key was dropped at Chris's call).
+// Data comes from /api/company/pnl, pulled from the whole-company Xero P&L by the cron.
+// Project- and site-facing surfaces stay GP-only; this page is the single place NP exists.
 
 import { useEffect, useMemo, useState } from 'react'
 import { formatCurrency } from '@/lib/utils'
 import { loadWeeklyRevenue } from '@/lib/storage'
 import { computeCompanyBreakeven, monthStartIso, type CompanyPnlMonth } from '@/lib/companyPnl'
-
-const KEY_STORAGE = 'fg_director_key'
 
 const monthLabel = (monthIso: string) =>
   new Date(`${monthIso}T00:00:00`).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })
@@ -18,69 +16,42 @@ const monthLabel = (monthIso: string) =>
 const pct = (v: number | null) => (v === null ? '-' : `${v.toFixed(1)}%`)
 
 export default function CompanyPnlPage() {
-  const [key, setKey] = useState<string | null>(null)
-  const [keyInput, setKeyInput] = useState('')
   const [months, setMonths] = useState<CompanyPnlMonth[] | null>(null)
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
 
-  useEffect(() => {
-    const stored = sessionStorage.getItem(KEY_STORAGE)
-    if (stored) setKey(stored)
-  }, [])
-
-  const fetchMonths = async (k: string) => {
-    setLoading(true)
+  const fetchMonths = async () => {
     setError('')
     try {
-      const resp = await fetch('/api/company/pnl', { headers: { 'x-director-key': k }, cache: 'no-store' })
+      const resp = await fetch('/api/company/pnl', { cache: 'no-store' })
       const body = await resp.json().catch(() => ({}))
-      if (resp.status === 401) {
-        sessionStorage.removeItem(KEY_STORAGE)
-        setKey(null)
-        setMonths(null)
-        setError('That access key was not accepted.')
-        return
-      }
       if (!resp.ok) {
-        setError(body.error === 'director_gate_not_configured'
-          ? 'The director gate is not configured yet - set DIRECTOR_ACCESS_KEY in the Vercel environment variables and redeploy.'
-          : `Could not load the company P&L: ${body.error || resp.status}`)
+        setError(`Could not load the company P&L: ${body.error || resp.status}`)
         return
       }
       setMonths((body.months as CompanyPnlMonth[]) || [])
+    } catch {
+      setError('Could not load the company P&L - check the connection and reload.')
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    if (key) void fetchMonths(key)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
-
-  const unlock = () => {
-    const k = keyInput.trim()
-    if (!k) return
-    sessionStorage.setItem(KEY_STORAGE, k)
-    setKeyInput('')
-    setKey(k)
-  }
+  useEffect(() => { void fetchMonths() }, [])
 
   const handleSync = async () => {
-    if (!key) return
     setSyncing(true)
     setError('')
     try {
-      const resp = await fetch('/api/company/pnl/sync', { method: 'POST', headers: { 'x-director-key': key } })
+      const resp = await fetch('/api/company/pnl/sync', { method: 'POST' })
       const body = await resp.json().catch(() => ({}))
       if (!resp.ok) {
         setError(body.error === 'no_xero_tokens'
           ? 'Xero is not connected - connect it on the Settings page first.'
           : `Sync failed: ${body.error || resp.status}`)
       }
-      await fetchMonths(key)
+      await fetchMonths()
     } finally {
       setSyncing(false)
     }
@@ -110,36 +81,6 @@ export default function CompanyPnlPage() {
     return out
   }, [breakeven])
 
-  // Locked state
-  if (!key) {
-    return (
-      <div className="max-w-[480px] mx-auto px-6 py-24">
-        <h1 className="text-xl font-light text-fg-heading mb-2">Company P&L</h1>
-        <p className="text-xs font-light text-fg-muted mb-6 leading-relaxed">
-          Overheads, net profit and breakeven live behind a separate access key - the rest of
-          the app stays gross-profit only. Enter the director access key to continue.
-        </p>
-        <div className="flex gap-2">
-          <input
-            type="password"
-            value={keyInput}
-            onChange={e => setKeyInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && unlock()}
-            placeholder="Director access key"
-            className="flex-1 px-3 py-2.5 bg-transparent border border-fg-border text-fg-heading text-sm font-light rounded-none outline-none focus:border-fg-heading transition-colors"
-          />
-          <button
-            onClick={unlock}
-            className="px-5 py-2.5 bg-fg-dark text-white/80 text-xs font-light tracking-architectural uppercase hover:bg-fg-darker transition-colors"
-          >
-            Unlock
-          </button>
-        </div>
-        {error && <p className="text-xs font-light text-red-500 mt-3">{error}</p>}
-      </div>
-    )
-  }
-
   const recent = (months ?? []).slice().sort((a, b) => b.month.localeCompare(a.month))
   const currentMonth = monthStartIso(todayIso)
   const latestComplete = recent.find(m => m.month < currentMonth && (m.revenue !== 0 || m.overheads !== 0))
@@ -150,30 +91,22 @@ export default function CompanyPnlPage() {
         <div>
           <h1 className="text-xl font-light text-fg-heading">Company P&L - Formation Landscapes</h1>
           <p className="text-xs font-light text-fg-muted mt-1">
-            Whole-company monthly figures from Xero (accrual). Director access only - project and
-            site pages stay GP-only.
+            Whole-company monthly figures from Xero (accrual). Overheads and net profit surface
+            here only - project and site pages stay GP-only.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="px-3 py-1.5 text-2xs font-light tracking-wide uppercase border border-fg-border text-fg-muted hover:text-fg-heading hover:border-fg-heading transition-colors disabled:opacity-40"
-          >
-            {syncing ? 'Syncing from Xero...' : 'Sync from Xero now'}
-          </button>
-          <button
-            onClick={() => { sessionStorage.removeItem(KEY_STORAGE); setKey(null); setMonths(null) }}
-            className="px-3 py-1.5 text-2xs font-light tracking-wide uppercase border border-fg-border text-fg-muted hover:text-fg-heading transition-colors"
-          >
-            Lock
-          </button>
-        </div>
+        <button
+          onClick={handleSync}
+          disabled={syncing}
+          className="px-3 py-1.5 text-2xs font-light tracking-wide uppercase border border-fg-border text-fg-muted hover:text-fg-heading hover:border-fg-heading transition-colors disabled:opacity-40"
+        >
+          {syncing ? 'Syncing from Xero...' : 'Sync from Xero now'}
+        </button>
       </div>
 
       {error && <p className="text-xs font-light text-red-500 mb-4">{error}</p>}
 
-      {loading && !months ? (
+      {loading ? (
         <p className="text-sm font-light text-fg-muted">Loading...</p>
       ) : !months || months.length === 0 ? (
         <div className="border border-fg-border p-6">

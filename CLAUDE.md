@@ -94,9 +94,10 @@ keep the stages joined up rather than as isolated tools.
 ### Company P&L / budget layer (shipped)
 - **Company scope is the ONE exception to GP-only**: `fg_company_pnl_months` (whole-company
   monthly revenue / COGS / overheads / NP from the Xero P&L, `lib/xeroPnlSync`, cron
-  `?task=pnl`) surfaces ONLY on `/company`, gated server-side by the `DIRECTOR_ACCESS_KEY`
-  env var (`lib/directorGate`). The per-project cost feed's overhead exclusion is untouched -
-  never widen it, never render NP/overheads on any project, site or dashboard surface.
+  `?task=pnl`) surfaces ONLY on `/company`, behind the single office login (Chris dropped the
+  separate DIRECTOR_ACCESS_KEY gate - one login for everything; the env var is unused now).
+  The per-project cost feed's overhead exclusion is untouched - never widen it, never render
+  NP/overheads on any project, site or dashboard surface.
 - Bucketing is by ACCOUNT CLASS (`lib/companyPnl.parseCompanyPnl`), not section titles;
   DIRECTCOSTS = cost of sales, other EXPENSE classes = overheads. Breakeven = 3-month
   overhead run-rate / trailing-12m GP% (`computeCompanyBreakeven`), shown against the next

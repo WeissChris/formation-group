@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { checkDirectorKey } from '@/lib/directorGate'
 import { runCompanyPnlSync } from '@/lib/xeroPnlSync'
 
 export const runtime = 'nodejs'
@@ -19,16 +18,13 @@ function isSameOrigin(request: NextRequest): boolean {
 /**
  * POST /api/company/pnl/sync
  *
- * Director-gated manual trigger for the company P&L pull (the cron also runs it via
- * /api/cron/xero-sync?task=pnl).
+ * Manual trigger for the company P&L pull (the cron also runs it via
+ * /api/cron/xero-sync?task=pnl). Same-origin guarded, behind the single office login.
  */
 export async function POST(request: NextRequest) {
   if (!isSameOrigin(request)) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
-  const gate = checkDirectorKey(request)
-  if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status })
-
   const result = await runCompanyPnlSync()
   return NextResponse.json(result, { status: result.ok ? 200 : 502 })
 }

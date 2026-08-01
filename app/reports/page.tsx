@@ -60,7 +60,7 @@ export default function ReportsPage() {
         </div>
         <div className="flex items-center gap-2 no-print">
           <Link href="/company" className="px-3 py-1.5 text-2xs font-light tracking-wide uppercase border border-fg-border text-fg-muted hover:text-fg-heading hover:border-fg-heading transition-colors">
-            Company P&L (director)
+            Company P&L
           </Link>
           <button onClick={downloadCsv} className="px-3 py-1.5 text-2xs font-light tracking-wide uppercase border border-fg-border text-fg-muted hover:text-fg-heading hover:border-fg-heading transition-colors">
             Download CSV

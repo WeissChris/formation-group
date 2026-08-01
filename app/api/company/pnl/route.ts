@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
-import { checkDirectorKey } from '@/lib/directorGate'
 import type { CompanyPnlMonth } from '@/lib/companyPnl'
 
 export const runtime = 'nodejs'
@@ -18,15 +17,15 @@ function isSameOrigin(request: NextRequest): boolean {
 /**
  * GET /api/company/pnl
  *
- * Director-gated (x-director-key header vs DIRECTOR_ACCESS_KEY): the stored company monthly
- * P&L rows, oldest first. The only route in the app that serves overheads / net profit.
+ * The stored company monthly P&L rows, oldest first - the only route in the app that serves
+ * overheads / net profit. Behind the single office login like every other office API
+ * (same-origin guard; the separate DIRECTOR_ACCESS_KEY gate was dropped at Chris's call -
+ * one login for everything).
  */
 export async function GET(request: NextRequest) {
   if (!isSameOrigin(request)) {
     return NextResponse.json({ ok: false, error: 'forbidden' }, { status: 403 })
   }
-  const gate = checkDirectorKey(request)
-  if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status })
   if (!supabaseAdmin) return NextResponse.json({ ok: false, error: 'supabase_admin_not_configured' }, { status: 503 })
 
   const { data, error } = await supabaseAdmin
