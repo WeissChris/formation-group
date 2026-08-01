@@ -338,6 +338,10 @@ export interface LiveJobRow {
   project_id: string
   cost_to_date: number
   forecast_final_cost: number
+  /** Spend split by discipline (labour / subbies / materials+equipment), from account names. */
+  cost_labour?: number
+  cost_subbies?: number
+  cost_materials?: number
   /** True when at least one per-account forecast override exists (Costs tab). */
   has_overrides?: boolean
   last_pulled_at: string | null

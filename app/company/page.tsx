@@ -7,8 +7,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { formatCurrency } from '@/lib/utils'
-import { loadWeeklyRevenue } from '@/lib/storage'
+import { loadWeeklyRevenue, loadProjects, loadProgressClaims, loadProgressPaymentStages } from '@/lib/storage'
 import { computeCompanyBreakeven, monthStartIso, type CompanyPnlMonth } from '@/lib/companyPnl'
+import { fyStartYearOf, type CompanyBudget } from '@/lib/companyBudget'
+import { computeDebtors } from '@/lib/debtors'
+import { computeCashflow, type CashflowWeek } from '@/lib/cashflow'
 
 const monthLabel = (monthIso: string) =>
   new Date(`${monthIso}T00:00:00`).toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })
@@ -39,6 +42,18 @@ export default function CompanyPnlPage() {
   }
 
   useEffect(() => { void fetchMonths() }, [])
+
+  // FY budget - only the monthly overhead budget is used here (vs actual overheads).
+  const [budget, setBudget] = useState<CompanyBudget | null>(null)
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const resp = await fetch(`/api/company/budget?fy=${fyStartYearOf(new Date())}`, { cache: 'no-store' })
+        const body = await resp.json()
+        if (body.budget) setBudget(body.budget as CompanyBudget)
+      } catch { /* fine - tile shows unset */ }
+    })()
+  }, [])
 
   const handleSync = async () => {
     setSyncing(true)
@@ -81,6 +96,26 @@ export default function CompanyPnlPage() {
     return out
   }, [breakeven])
 
+  // 13-week cash flow: real receivables + lagged planned invoicing in; scheduled job cost +
+  // overhead run-rate out. Receipt lag from actual days-to-pay history (fallback 14 days).
+  const cashflow = useMemo((): { weeks: CashflowWeek[]; lagDays: number } | null => {
+    if (!breakeven || breakeven.avgMonthlyOverheads === null) return null
+    const projects = loadProjects()
+    const debtors = computeDebtors(
+      projects, loadProgressClaims(), projects.flatMap(p => loadProgressPaymentStages(p.id)), todayIso)
+    const revenue = loadWeeklyRevenue()
+    const lagDays = debtors.avgDaysToPay ?? 14
+    const weeks = computeCashflow({
+      todayIso,
+      outstandingInvoices: debtors.invoices.map(i => ({ sentIso: i.sentIso, amount: i.amount })),
+      plannedRevenue: revenue.map(r => ({ weekEnding: r.weekEnding, amount: r.plannedRevenue })),
+      scheduledCosts: revenue.map(r => ({ weekEnding: r.weekEnding, amount: r.scheduledCost ?? 0 })),
+      weeklyOverheads: (breakeven.avgMonthlyOverheads * 12) / 52,
+      receiptLagDays: lagDays,
+    })
+    return { weeks, lagDays }
+  }, [breakeven, todayIso])
+
   const recent = (months ?? []).slice().sort((a, b) => b.month.localeCompare(a.month))
   const currentMonth = monthStartIso(todayIso)
   const latestComplete = recent.find(m => m.month < currentMonth && (m.revenue !== 0 || m.overheads !== 0))
@@ -120,16 +155,28 @@ export default function CompanyPnlPage() {
         <>
           {/* Headline tiles */}
           {breakeven && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-fg-border mb-8">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-fg-border mb-8">
               {[
                 { label: 'Trailing GP % (12m)', value: pct(breakeven.trailingGpPct), sub: 'Revenue-weighted, complete months' },
                 { label: 'Trailing NP % (12m)', value: pct(breakeven.trailingNpPct), sub: 'After overheads' },
                 { label: 'Avg overheads / month', value: breakeven.avgMonthlyOverheads !== null ? formatCurrency(breakeven.avgMonthlyOverheads) : '-', sub: 'Last 3 complete months' },
+                {
+                  label: 'Overheads vs budget',
+                  value: budget && budget.overheadBudgetMonthly > 0 && breakeven.avgMonthlyOverheads !== null
+                    ? `${breakeven.avgMonthlyOverheads > budget.overheadBudgetMonthly ? '+' : ''}${formatCurrency(breakeven.avgMonthlyOverheads - budget.overheadBudgetMonthly)}`
+                    : '-',
+                  sub: budget && budget.overheadBudgetMonthly > 0
+                    ? `Run-rate vs ${formatCurrency(budget.overheadBudgetMonthly)}/mo budget`
+                    : 'Set a monthly budget in Settings',
+                  tone: budget && budget.overheadBudgetMonthly > 0 && breakeven.avgMonthlyOverheads !== null
+                    ? (breakeven.avgMonthlyOverheads > budget.overheadBudgetMonthly ? 'bad' : 'good')
+                    : undefined,
+                },
                 { label: 'Breakeven revenue / month', value: breakeven.breakevenRevenuePerMonth !== null ? formatCurrency(breakeven.breakevenRevenuePerMonth) : '-', sub: 'Overheads / trailing GP %' },
               ].map(t => (
                 <div key={t.label} className="bg-fg-bg p-4">
                   <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-1">{t.label}</p>
-                  <p className="text-base font-light tabular-nums text-fg-heading">{t.value}</p>
+                  <p className={`text-base font-light tabular-nums ${('tone' in t && t.tone) ? (t.tone === 'bad' ? 'text-red-500' : 'text-green-600') : 'text-fg-heading'}`}>{t.value}</p>
                   <p className="text-2xs font-light text-fg-muted/70 mt-0.5">{t.sub}</p>
                 </div>
               ))}
@@ -159,6 +206,55 @@ export default function CompanyPnlPage() {
               </div>
               <p className="text-2xs font-light text-fg-muted/70 mt-3">
                 Planned Formation revenue from the gantt forecast vs the breakeven run-rate above.
+              </p>
+            </div>
+          )}
+
+          {/* 13-week cash flow */}
+          {cashflow && (
+            <div className="border border-fg-border p-5 mb-8">
+              <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-3">
+                13-week cash flow
+              </p>
+              <div className="overflow-x-auto">
+                <table className="text-left border-collapse" style={{ minWidth: 900 }}>
+                  <thead>
+                    <tr className="border-b border-fg-border text-2xs font-light tracking-architectural uppercase text-fg-muted">
+                      <th className="py-1.5 pr-3 sticky left-0 bg-fg-bg">Week ending</th>
+                      {cashflow.weeks.map(w => (
+                        <th key={w.friIso} className="py-1.5 px-2 text-right whitespace-nowrap">
+                          {new Date(`${w.friIso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {([
+                      ['Cash in', (w: CashflowWeek) => w.inflow, 'text-fg-heading'],
+                      ['Cash out', (w: CashflowWeek) => -w.outflow, 'text-fg-muted'],
+                      ['Net', (w: CashflowWeek) => w.net, ''],
+                      ['Cumulative', (w: CashflowWeek) => w.cumulative, ''],
+                    ] as Array<[string, (w: CashflowWeek) => number, string]>).map(([label, pick, cls]) => (
+                      <tr key={label} className={`border-b border-fg-border/30 ${label === 'Cumulative' ? 'bg-fg-card/20' : ''}`}>
+                        <td className="py-1.5 pr-3 text-2xs font-light uppercase tracking-wide text-fg-muted sticky left-0 bg-fg-bg whitespace-nowrap">{label}</td>
+                        {cashflow.weeks.map(w => {
+                          const v = pick(w)
+                          const colour = cls || (v >= 0 ? 'text-green-600' : 'text-red-500')
+                          return (
+                            <td key={w.friIso} className={`py-1.5 px-2 text-right text-xs font-light tabular-nums whitespace-nowrap ${colour}`}>
+                              {formatCurrency(v)}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-2xs font-light text-fg-muted/70 mt-3">
+                In: outstanding invoices + planned invoicing, both lagged by your real {cashflow.lagDays}-day average
+                time-to-pay. Out: scheduled job costs from the gantt + the overhead run-rate. Ex GST, movements only -
+                add your current bank balance to the cumulative line for the true position.
               </p>
             </div>
           )}

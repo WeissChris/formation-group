@@ -5,6 +5,7 @@ import { runSafetyChase } from '@/lib/safetyChase'
 import { runProgressSnapshots } from '@/lib/runProgressSnapshots'
 import { captureServerSnapshots } from '@/lib/serverSnapshots'
 import { runCompanyPnlSync } from '@/lib/xeroPnlSync'
+import { runCloseoutBackstop } from '@/lib/serverCloseouts'
 
 export const runtime = 'nodejs'
 // Vercel function timeout — initial 24-month backfill can take ~60-90s. Allow margin.
@@ -74,10 +75,17 @@ export async function POST(request: NextRequest) {
       ok: false as const, snapshotted: 0, skipped_duplicate: 0, projects: 0,
       snapshot_date: '', error: e instanceof Error ? e.message : 'fade_snapshots_failed',
     }))
+    // Job closeout backstop: freeze the final result of any newly-completed project
+    // (first run backfills every already-completed job).
+    const closeouts = await runCloseoutBackstop().catch(e => ({
+      ok: false as const, checked: 0, captured: 0,
+      error: e instanceof Error ? e.message : 'closeouts_failed',
+    }))
     // Pre-setup state: no service role key. Skip quietly like the cost sync does.
     const fadeOk = fadeSnapshots.ok || fadeSnapshots.error === 'supabase_admin_not_configured'
-    const extrasOk = hours.ok && safetyChase.ok && snapshots.ok && fadeOk
-    return NextResponse.json({ ok: extrasOk, hours, safetyChase, snapshots, fadeSnapshots },
+    const closeoutsOk = closeouts.ok || closeouts.error === 'supabase_admin_not_configured'
+    const extrasOk = hours.ok && safetyChase.ok && snapshots.ok && fadeOk && closeoutsOk
+    return NextResponse.json({ ok: extrasOk, hours, safetyChase, snapshots, fadeSnapshots, closeouts },
       { status: extrasOk ? 200 : 502 })
   }
 

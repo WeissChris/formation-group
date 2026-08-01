@@ -5,7 +5,9 @@ import Link from 'next/link'
 import { loadProjects, loadWeeklyRevenue, loadDesignProjects, loadProgressPaymentStages, loadProgressClaims, loadProposals, loadGanttEntries, loadWeeklyActuals, loadEstimates, loadEstimatesByProject } from '@/lib/storage'
 import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { seedDemoData } from '@/lib/seed'
-import { formatCurrency, getFinancialYear, MONTH_NAMES } from '@/lib/utils'
+import { formatCurrency, getFinancialYear, toISODate, MONTH_NAMES } from '@/lib/utils'
+import { computeUnbilledWork } from '@/lib/unbilledWork'
+import { computeCompanyBreakeven, type CompanyPnlMonth } from '@/lib/companyPnl'
 import { getEstimateTotals, variationContractValue } from '@/lib/estimateCalculations'
 import { getProposalPhases, phasesTotal } from '@/lib/proposalPhases'
 import type { Project, WeeklyRevenue, GanttEntry, WeeklyActual } from '@/types'
@@ -56,6 +58,21 @@ export default function DashboardPage() {
   const [liveJobsConfigured, setLiveJobsConfigured] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [snapshotting, setSnapshotting] = useState(false)
+  // Company breakeven revenue per month (from the P&L months) - drives the Booked Ahead tile
+  // and the revenue-cliff threshold. Null until the P&L has synced.
+  const [breakevenMonthly, setBreakevenMonthly] = useState<number | null>(null)
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const resp = await fetch('/api/company/pnl', { cache: 'no-store' })
+        if (!resp.ok) return
+        const body = await resp.json()
+        const months = (body.months as CompanyPnlMonth[]) || []
+        const be = computeCompanyBreakeven(months, new Date().toISOString().slice(0, 10))
+        setBreakevenMonthly(be.breakevenRevenuePerMonth)
+      } catch { /* offline - tiles fall back */ }
+    })()
+  }, [])
 
   // Auto-fire a daily fade snapshot, best-effort backup to the cron's daily capture (both are
   // server-computed and deduped by (project, Melbourne date), so double-firing is harmless).
@@ -324,6 +341,20 @@ export default function DashboardPage() {
   const liveJobsTotals = computePortfolioTotals(liveJobRows)
   liveJobRowsRef.current = liveJobRows   // feed the auto-snapshot effect (declared above)
 
+  // ── Unbilled work: completed on the programme, not yet invoiced (portfolio total).
+  // Same planned-to-date maths as the claim prefill; overbilled (deposits) never nets it off.
+  const todayIso = toISODate(now)
+  const unbilledTotal = formationProjects.reduce((s, p) => {
+    const entries = allGantt.filter(g => g.projectId === p.id)
+    if (entries.length === 0) return s
+    return s + computeUnbilledWork(entries, loadProgressClaims(p.id), todayIso).unbilled
+  }, 0)
+
+  // ── Booked ahead: secured future revenue expressed as weeks of work at the breakeven
+  // run-rate (company P&L). The single "when do we need to sell" number.
+  const breakevenWeekly = breakevenMonthly !== null ? (breakevenMonthly * 12) / 52 : null
+  const bookedAheadWeeks = breakevenWeekly && breakevenWeekly > 0 ? pipeline / breakevenWeekly : null
+
   // ── Formation GP - SINGLE SOURCE: the Live Jobs rows above (computeLiveJobRow: revised
   // contract vs Xero-informed forecast cost, estimate budget until live data arrives, banded
   // per-project targets). Rows with no cost basis at all are excluded - a job with no accepted
@@ -444,18 +475,20 @@ export default function DashboardPage() {
     })
   }
 
-  // Revenue cliff: any of the next 3 months with < $50k
+  // Revenue cliff: any of the next 3 months scheduled below the real breakeven run-rate
+  // (company P&L). Before the P&L has synced, the legacy $50k rule of thumb stands in.
+  const cliffThreshold = breakevenMonthly ?? 50000
   for (let i = 0; i < 3; i++) {
     const checkDate = new Date(now)
     checkDate.setMonth(checkDate.getMonth() + i)
     const key = `${MONTH_NAMES[checkDate.getMonth()]} ${checkDate.getFullYear()}`
     const monthTotal = upcomingByMonth[key]?.total ?? 0
-    if (monthTotal > 0 && monthTotal < 50000) {
+    if (monthTotal > 0 && monthTotal < cliffThreshold) {
       attentionItems.push({
         icon: '📉',
         title: `Revenue cliff in ${key}`,
-        subtitle: `Only ${formatCurrency(monthTotal)} scheduled — below $50k threshold`,
-        href: '/revenue',
+        subtitle: `Only ${formatCurrency(monthTotal)} scheduled — below ${breakevenMonthly !== null ? `the ${formatCurrency(cliffThreshold)}/month breakeven` : 'the $50k threshold'}`,
+        href: breakevenMonthly !== null ? '/company' : '/revenue',
       })
     }
   }
@@ -543,11 +576,13 @@ export default function DashboardPage() {
         <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-4">
           Business Health
         </p>
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-px bg-fg-border">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-fg-border">
           {[
             { label: 'Active Jobs',            subtitle: 'Currently on site or in progress', value: String(activeProjects.length),    href: '/projects' },
             { label: 'Contract Value (Active)', subtitle: variationsTotal > 0 ? `Incl. ${formatCurrency(variationsTotal)} approved variations` : 'Total active project contracts', value: formatCurrency(securedRevenue), href: '/projects' },
             { label: 'Future Revenue',          subtitle: 'Scheduled but not yet invoiced',   value: formatCurrency(pipeline),         href: '/revenue' },
+            { label: 'Unbilled Work',           subtitle: 'Done on the programme, not yet claimed', value: formatCurrency(unbilledTotal), href: '/reports' },
+            { label: 'Booked Ahead',            subtitle: breakevenMonthly !== null ? 'Secured work at breakeven run-rate' : 'Needs the company P&L synced', value: bookedAheadWeeks !== null ? `${bookedAheadWeeks.toFixed(1)} wks` : '—', href: '/company' },
             { label: 'Next 30 Days',            subtitle: 'Scheduled invoicing',               value: formatCurrency(next30Days),       href: '/revenue' },
             { label: 'Next 90 Days',            subtitle: '3-month outlook',                   value: formatCurrency(next90Days),       href: '/revenue' },
           ].map(stat => (

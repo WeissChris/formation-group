@@ -107,6 +107,23 @@ keep the stages joined up rather than as isolated tools.
   and renders Budget vs Actual: invoiced FYTD (claim-written rows) + still-scheduled planned
   = projection vs target.
 
+### Metric layer (shipped) - pure libs, all unit tested, one per metric
+- `lib/unbilledWork` (earned-vs-invoiced; dashboard tile + /reports column),
+  `lib/debtors` (ageing + days-to-pay; /reports), `lib/quoteConversion` (/estimates),
+  `lib/disciplineCosts` (budget consumption by M/L/S vs % billed; /reports),
+  `lib/cashflow` (13-week view on /company; receipt lag = real days-to-pay),
+  `lib/crewLoad` (labour hours vs crewSize x 40h; /programme strip).
+- **Closeouts**: `fg_project_closeouts` frozen once per completed project by the cron
+  backstop (`lib/serverCloseouts`, extras task; first run backfills). Append-once - never
+  recompute a closeout. Read via /api/projects/closeouts; quoted-vs-final table on /reports.
+- Portfolio GP trend: /api/snapshots/portfolio aggregates fg_project_snapshots by date
+  (revenue-weighted), rendered by `components/PortfolioGpTrend` on /reports.
+- The dashboard revenue-cliff threshold and the Booked Ahead tile use the company breakeven
+  when the P&L has synced ($50k fallback before that).
+- Forecast cost precedence (computeLiveJobRow): Costs-tab overrides > gantt plan
+  (`ganttCostTotal`, floored at spend) > estimate budget. The live-jobs API's
+  forecast_final_cost is only trusted with has_overrides.
+
 ### Current state (all shipped)
 - **Days view default.** Drag-to-reorder categories (grab handle, far left). Long names wrap.
 - Mat/Lab/Sub split is the **default** — untouched categories auto-split on load (manual splits,

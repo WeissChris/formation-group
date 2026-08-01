@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { loadProjects, loadGanttEntries, loadSupervisors, loadProposals } from '@/lib/storage'
+import { computeCrewLoad } from '@/lib/crewLoad'
 import { getAllGanttMilestones, getSupervisors, getProposals } from '@/lib/storageAsync'
 import { formatCurrency, SHORT_MONTH_NAMES, generateId, toISODate } from '@/lib/utils'
 import { entrySegments } from '@/lib/ganttForecast'
@@ -147,6 +148,14 @@ export default function ProgrammePage() {
 
   const totalWidth = LABEL_W + CELL_W * WEEKS
 
+  // Crew load: scheduled labour hours (gantt labour claims) vs crew capacity, next 8 weeks.
+  // Capacity = summed crewSize across active Formation jobs x 40h. Hidden until the gantts
+  // carry labour hours.
+  const activeFormation = projects.filter(p => isLiveProject(p) && p.entity === 'formation')
+  const crewCount = activeFormation.reduce((s, p) => s + (p.crewSize || 0), 0)
+  const crewLoad = computeCrewLoad(activeFormation.flatMap(p => ganttByProject[p.id] || []), crewCount, today, 8)
+  const showCrewLoad = crewLoad.some(w => w.scheduledHours > 0)
+
   return (
     <div className="w-full px-6 lg:px-12 2xl:px-16 py-12">
 
@@ -160,6 +169,40 @@ export default function ProgrammePage() {
           ← All Projects
         </Link>
       </div>
+
+      {/* Crew load — scheduled labour hours vs capacity, next 8 weeks */}
+      {showCrewLoad && (
+        <div className="border border-fg-border px-5 py-3 mb-6">
+          <div className="flex items-baseline justify-between mb-2">
+            <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted">Crew load — next 8 weeks</p>
+            <p className="text-2xs font-light text-fg-muted">
+              {crewCount > 0 ? `${crewCount} crew · ${crewCount * 40}h/week capacity` : 'Set crew sizes on projects for a capacity line'}
+            </p>
+          </div>
+          <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+            {crewLoad.map(w => {
+              const over = w.loadPct !== null && w.loadPct > 100
+              const light = w.loadPct !== null && w.loadPct < 60
+              return (
+                <div key={w.friIso}>
+                  <p className="text-2xs font-light text-fg-muted mb-1">
+                    {new Date(`${w.friIso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                  </p>
+                  <div className="h-1.5 bg-fg-border rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${over ? 'bg-red-400' : light ? 'bg-amber-400' : 'bg-green-500'}`}
+                      style={{ width: `${Math.min(100, w.loadPct ?? (w.scheduledHours > 0 ? 100 : 0))}%` }}
+                    />
+                  </div>
+                  <p className={`text-2xs font-light tabular-nums mt-1 ${over ? 'text-red-500' : light ? 'text-amber-600' : 'text-fg-muted'}`}>
+                    {Math.round(w.scheduledHours)}h{w.loadPct !== null ? ` · ${Math.round(w.loadPct)}%` : ''}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-6">

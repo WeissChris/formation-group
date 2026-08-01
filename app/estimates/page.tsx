@@ -8,6 +8,7 @@ import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { getEstimates, reconcileVariations, deleteEstimateAsync } from '@/lib/storageAsync'
 import { formatCurrency } from '@/lib/utils'
 import { getEstimateTotals, readLineItemRevenue, getEstimateContract } from '@/lib/estimateCalculations'
+import { computeQuoteConversion } from '@/lib/quoteConversion'
 import type { Estimate } from '@/types'
 import { Plus, Trash2, FileText, Search, GitBranch, ArrowRight } from 'lucide-react'
 
@@ -204,17 +205,23 @@ export default function EstimatesPage() {
         // counts proportionally more than a $2k one (an unweighted mean misrepresented the mix).
         const totalEstimateCost = baseEstimates.reduce((s, e) => s + e.lineItems.reduce((ls, li) => ls + li.total, 0), 0)
         const avgMargin = totalEstimateValue > 0 ? (totalEstimateValue - totalEstimateCost) / totalEstimateValue * 100 : 0
+        // Quote conversion, last 12 months by sentAt (base estimates only).
+        const conv = computeQuoteConversion(estimates, new Date().toISOString().slice(0, 10))
         return (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-fg-border mb-8">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-px bg-fg-border mb-8">
             {[
               { label: 'Total Estimates', value: String(baseEstimates.length) },
               { label: 'Total Value',     value: formatCurrency(totalEstimateValue) },
               { label: 'Accepted',        value: String(acceptedCount) },
               { label: 'Avg Margin',      value: `${avgMargin.toFixed(1)}%` },
+              { label: 'Win Rate (12m)',  value: conv.winRatePct !== null ? `${conv.winRatePct.toFixed(0)}%` : '—', sub: conv.winRatePct !== null ? `${conv.acceptedCount} of ${conv.acceptedCount + conv.declinedCount} decided` : 'No decided quotes yet' },
+              { label: 'Value Won (12m)', value: conv.valueConversionPct !== null ? `${conv.valueConversionPct.toFixed(0)}%` : '—', sub: conv.sentValue > 0 ? `${formatCurrency(conv.acceptedValue)} of ${formatCurrency(conv.sentValue)} sent` : 'Nothing sent yet' },
+              { label: 'Days to Decision', value: conv.avgDaysToDecision !== null ? String(conv.avgDaysToDecision) : '—', sub: conv.pendingCount > 0 ? `${conv.pendingCount} awaiting (${formatCurrency(conv.pendingValue)})` : 'Nothing awaiting' },
             ].map(item => (
               <div key={item.label} className="bg-fg-bg px-5 py-4">
                 <p className="text-2xs font-light tracking-architectural uppercase text-fg-muted mb-1">{item.label}</p>
                 <p className="text-lg font-light text-fg-heading tabular-nums">{item.value}</p>
+                {'sub' in item && item.sub && <p className="text-2xs font-light text-fg-muted/70 mt-0.5">{item.sub}</p>}
               </div>
             ))}
           </div>

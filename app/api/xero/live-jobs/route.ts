@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { isLabourAccount } from '@/lib/labour'
 
 export const runtime = 'nodejs'
 
@@ -30,21 +31,27 @@ export async function GET(request: NextRequest) {
   }
 
   const [{ data: costs }, { data: forecasts }, { data: mappings }] = await Promise.all([
-    supabaseAdmin.from('fg_xero_project_costs').select('project_id, account_code, amount_ex_gst, pulled_at'),
+    supabaseAdmin.from('fg_xero_project_costs').select('project_id, account_code, account_name, amount_ex_gst, pulled_at'),
     supabaseAdmin.from('fg_project_cost_forecast').select('project_id, account_code, forecast_final'),
     supabaseAdmin.from('fg_project_xero_mapping').select('project_id, tracking_option_name'),
   ])
 
-  // Aggregate cost-to-date per project, and per-account so forecast overrides work
+  // Aggregate cost-to-date per project, and per-account so forecast overrides work.
+  // Also split by discipline (labour / subbies / materials+equipment) via the account name -
+  // same matchers as lib/projectMetrics - so the portfolio report can say where money goes.
   type AccountCost = { account_code: string; actual: number; forecast?: number | null }
-  const perProject = new Map<string, { actual: number; accounts: Map<string, AccountCost>; lastPulled: string | null }>()
+  const perProject = new Map<string, { actual: number; labour: number; subbies: number; materials: number; accounts: Map<string, AccountCost>; lastPulled: string | null }>()
 
   for (const c of costs || []) {
     const pid = c.project_id as string
-    if (!perProject.has(pid)) perProject.set(pid, { actual: 0, accounts: new Map(), lastPulled: null })
+    if (!perProject.has(pid)) perProject.set(pid, { actual: 0, labour: 0, subbies: 0, materials: 0, accounts: new Map(), lastPulled: null })
     const slot = perProject.get(pid)!
     const amount = Number(c.amount_ex_gst)
     slot.actual += amount
+    const name = (c.account_name as string) || ''
+    if (isLabourAccount(name)) slot.labour += amount
+    else if (/subcontract/i.test(name)) slot.subbies += amount
+    else slot.materials += amount
     slot.accounts.set(c.account_code as string, { account_code: c.account_code as string, actual: amount })
     const pulled = c.pulled_at as string
     if (!slot.lastPulled || pulled > slot.lastPulled) slot.lastPulled = pulled
@@ -73,6 +80,9 @@ export async function GET(request: NextRequest) {
       project_id: projectId,
       cost_to_date: Math.round(slot.actual * 100) / 100,
       forecast_final_cost: Math.round(forecastFinalCost * 100) / 100,
+      cost_labour: Math.round(slot.labour * 100) / 100,
+      cost_subbies: Math.round(slot.subbies * 100) / 100,
+      cost_materials: Math.round(slot.materials * 100) / 100,
       last_pulled_at: slot.lastPulled,
       mapped: true,
       has_overrides: overrideProjects.has(projectId),
@@ -83,7 +93,7 @@ export async function GET(request: NextRequest) {
   for (const m of mappings || []) {
     const pid = m.project_id as string
     if (!items.find(i => i.project_id === pid)) {
-      items.push({ project_id: pid, cost_to_date: 0, forecast_final_cost: 0, last_pulled_at: null, mapped: true, has_overrides: overrideProjects.has(pid) })
+      items.push({ project_id: pid, cost_to_date: 0, forecast_final_cost: 0, cost_labour: 0, cost_subbies: 0, cost_materials: 0, last_pulled_at: null, mapped: true, has_overrides: overrideProjects.has(pid) })
     }
   }
 

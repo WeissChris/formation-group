@@ -4,7 +4,7 @@
 
 import { loadProjects, loadEstimates, loadProgressClaims, loadGanttEntries } from './storage'
 import { isLiveProject } from './stageConfig'
-import { getLiveJobs } from './xero'
+import { getLiveJobs, type LiveJobRow as LiveJobApiRow } from './xero'
 import { computeLiveJobRow, computePortfolioTotals, ganttCostTotal, type LiveJobRow, type PortfolioTotals } from './liveJobs'
 import type { Project } from '@/types'
 
@@ -12,6 +12,8 @@ export interface LoadedLiveJobs {
   rows: LiveJobRow[]
   totals: PortfolioTotals
   projectsById: Map<string, Project>
+  /** Raw per-project API rows (per-discipline spend etc) keyed by project id. */
+  apiById: Map<string, LiveJobApiRow>
   configured: boolean
   lastSyncedAt: string | null
 }
@@ -49,6 +51,7 @@ export async function loadLiveJobs(): Promise<LoadedLiveJobs> {
     rows,
     totals: computePortfolioTotals(rows),
     projectsById: new Map(projects.map(p => [p.id, p])),
+    apiById: costMap,
     configured,
     lastSyncedAt,
   }
