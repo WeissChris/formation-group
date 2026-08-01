@@ -819,6 +819,12 @@ function InvoicesSubTab({
     void syncInvoicedRevenueRows(projectId)
   }
 
+  // Backfill on mount: claims sent before the invoiced-rows writeback existed get their rows
+  // created the first time the Invoicing tab is opened, not only on the next claim mutation.
+  useEffect(() => {
+    void syncInvoicedRevenueRows(projectId)
+  }, [projectId])
+
   // Read receipts for sent invoice emails (tracking pixel -> fg_claim_opens), keyed by claim id.
   const [opens, setOpens] = useState<Record<string, { first: string; last: string; count: number }>>({})
   useEffect(() => {
