@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runFullSync } from '@/lib/xeroCostSync'
 import { runHoursSync } from '@/lib/xeroHoursSync'
+import { runSalesSync } from '@/lib/xeroSalesSync'
 
 export const runtime = 'nodejs'
 // 24-month backfill can take ~90s; allow margin (matches the cron route).
@@ -34,8 +35,13 @@ export async function POST(request: NextRequest) {
     ok: false as const, timesheets_processed: 0, lines_matched: 0, projects_updated: 0, rows_written: 0,
     error: e instanceof Error ? e.message : 'hours_sync_failed',
   }))
+  // Sales (ACCREC) invoices - additive and isolated like hours: a failure never affects costs.
+  const sales = await runSalesSync().catch(e => ({
+    ok: false as const, invoices_processed: 0, rows_written: 0, projects_updated: 0,
+    error: e instanceof Error ? e.message : 'sales_sync_failed',
+  }))
   if (!result.ok) {
-    return NextResponse.json({ ...result, hours }, { status: 502 })
+    return NextResponse.json({ ...result, hours, sales }, { status: 502 })
   }
-  return NextResponse.json({ ...result, hours })
+  return NextResponse.json({ ...result, hours, sales })
 }

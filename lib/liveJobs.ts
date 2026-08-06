@@ -11,6 +11,7 @@ import type { Project, Estimate, ProgressClaim, GanttEntry } from '@/types'
 import { getEstimateContract, variationContractValue, getEstimateTotals } from './estimateCalculations'
 import { getTargetMarginPct } from './projectHealth'
 import { entrySegments } from './ganttForecast'
+import { xeroSalesExtra, type XeroSaleRow } from './xeroSales'
 
 /**
  * Total scheduled cost of a project's gantt - the foreman-maintained plan. Goes through
@@ -57,6 +58,9 @@ interface LiveJobInputs {
   /** Server-computed forecast (sum of override-or-actual per account). Only trusted when
    *  hasForecastOverrides - without overrides it is just costToDate restated. */
   forecastFinalCost: number | null
+  /** ACCREC (sales) invoices from the Xero feed. Ones not matching a platform claim by invoice
+   *  number add to invoiced-to-date - jobs whose invoicing predates the platform. */
+  xeroSales?: XeroSaleRow[] | null
   /** Total scheduled cost from the project's gantt (ganttCostTotal) - the foreman-maintained
    *  plan, the preferred forecast basis. NULL/0 when the project has no gantt yet. */
   ganttCost?: number | null
@@ -77,7 +81,7 @@ interface LiveJobInputs {
  * sitting at 31% is "on target", not "below" (which would be the case with a global 40%).
  */
 export function computeLiveJobRow(inputs: LiveJobInputs): LiveJobRow {
-  const { project, acceptedEstimates, progressClaims, costToDate, forecastFinalCost, ganttCost, hasForecastOverrides } = inputs
+  const { project, acceptedEstimates, progressClaims, costToDate, forecastFinalCost, ganttCost, hasForecastOverrides, xeroSales } = inputs
 
   // Revenue: base contract + accepted variations
   const baseEstimates = acceptedEstimates.filter(e => !e.parentEstimateId)
@@ -87,10 +91,12 @@ export function computeLiveJobRow(inputs: LiveJobInputs): LiveJobRow {
   const revisedContract = baseContract + variationsTotal
   const forecastRevenue = revisedContract > 0 ? revisedContract : (project.contractValue || 0)
 
-  // Invoiced — sent + paid progress claims
+  // Invoiced — sent + paid progress claims, PLUS Xero sales invoices the platform's claims
+  // don't cover (pre-platform invoicing, deduped by invoice number - see lib/xeroSales).
   const invoicedToDate = progressClaims
     .filter(c => c.status === 'sent' || c.status === 'paid')
     .reduce((s, c) => s + c.subtotalEx, 0)
+    + xeroSalesExtra(xeroSales, progressClaims)
 
   const pctBilled = forecastRevenue > 0 ? (invoicedToDate / forecastRevenue) * 100 : 0
 

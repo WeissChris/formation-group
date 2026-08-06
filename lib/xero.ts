@@ -267,12 +267,21 @@ export interface ProjectCostRow {
   comment: string | null
 }
 
+export interface ProjectSaleRow {
+  invoice_number: string | null
+  invoice_date: string | null
+  status: string | null
+  total_ex_gst: number
+}
+
 export interface ProjectCostsResponse {
   costs: ProjectCostRow[]
   cost_to_date: number
   mapped: boolean
   mapping: ProjectXeroMapping | null
   last_pulled_at: string | null
+  /** ACCREC (sales) invoices matched by tracking - dedupe vs claims via lib/xeroSales. */
+  sales?: ProjectSaleRow[]
 }
 
 export async function getProjectCosts(projectId: string): Promise<ProjectCostsResponse> {
@@ -346,6 +355,9 @@ export interface LiveJobRow {
   has_overrides?: boolean
   last_pulled_at: string | null
   mapped: boolean
+  /** ACCREC (sales) invoices matched to this project by tracking - per-invoice so the client
+   *  can dedupe against platform claims by invoice number (lib/xeroSales). */
+  sales?: Array<{ invoice_number: string | null; total_ex_gst: number }>
 }
 
 export async function getLiveJobs(): Promise<{ items: LiveJobRow[]; configured: boolean }> {

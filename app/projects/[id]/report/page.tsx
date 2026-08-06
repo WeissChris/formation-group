@@ -57,6 +57,7 @@ export default function ProjectReportPage() {
           progressClaims: claims,
           costToDate: cr.mapped ? cr.cost_to_date : null,
           forecastFinalCost: cr.mapped ? forecastFinalCost : null,
+          xeroSales: (cr.sales ?? []).map(s => ({ invoiceNumber: s.invoice_number, totalEx: s.total_ex_gst })),
         }))
       }
       setGeneratedAt(new Date().toLocaleString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' }))

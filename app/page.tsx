@@ -7,6 +7,7 @@ import { useCrossTabRefresh } from '@/lib/useCrossTabRefresh'
 import { seedDemoData } from '@/lib/seed'
 import { formatCurrency, getFinancialYear, toISODate, MONTH_NAMES } from '@/lib/utils'
 import { computeUnbilledWork } from '@/lib/unbilledWork'
+import { xeroSalesExtra } from '@/lib/xeroSales'
 import { computeCompanyBreakeven, type CompanyPnlMonth } from '@/lib/companyPnl'
 import { getEstimateTotals, variationContractValue } from '@/lib/estimateCalculations'
 import { getProposalPhases, phasesTotal } from '@/lib/proposalPhases'
@@ -331,6 +332,7 @@ export default function DashboardPage() {
       forecastFinalCost: apiRow?.mapped ? apiRow.forecast_final_cost : null,
       ganttCost: pGantt.length ? ganttCostTotal(pGantt) : null,
       hasForecastOverrides: !!apiRow?.has_overrides,
+      xeroSales: (apiRow?.sales ?? []).map(s => ({ invoiceNumber: s.invoice_number, totalEx: s.total_ex_gst })),
     })
   })
   const liveJobsLastSync = Array.from(liveJobCosts.values())
@@ -347,7 +349,9 @@ export default function DashboardPage() {
   const unbilledTotal = formationProjects.reduce((s, p) => {
     const entries = allGantt.filter(g => g.projectId === p.id)
     if (entries.length === 0) return s
-    return s + computeUnbilledWork(entries, loadProgressClaims(p.id), todayIso).unbilled
+    const claims = loadProgressClaims(p.id)
+    const sales = (liveJobCosts.get(p.id)?.sales ?? []).map(x => ({ invoiceNumber: x.invoice_number, totalEx: x.total_ex_gst }))
+    return s + computeUnbilledWork(entries, claims, todayIso, xeroSalesExtra(sales, claims)).unbilled
   }, 0)
 
   // ── Booked ahead: secured future revenue expressed as weeks of work at the breakeven

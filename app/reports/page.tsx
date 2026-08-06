@@ -6,6 +6,7 @@ import { formatCurrency, toISODate } from '@/lib/utils'
 import { loadLiveJobs, type LoadedLiveJobs } from '@/lib/loadLiveJobs'
 import { loadProjects, loadGanttEntries, loadProgressClaims, loadProgressPaymentStages, loadEstimates } from '@/lib/storage'
 import { computeUnbilledWork } from '@/lib/unbilledWork'
+import { xeroSalesExtra } from '@/lib/xeroSales'
 import { computeDebtors, type DebtorSummary } from '@/lib/debtors'
 import { computeDisciplineConsumption, type DisciplineSummary } from '@/lib/disciplineCosts'
 import { costBreakdown, activeLineItems } from '@/lib/estimateCalculations'
@@ -41,7 +42,9 @@ export default function ReportsPage() {
       for (const r of d.rows) {
         const gantt = loadGanttEntries(r.projectId)
         if (gantt.length === 0) continue
-        map.set(r.projectId, computeUnbilledWork(gantt, loadProgressClaims(r.projectId), todayIso).unbilled)
+        const claims = loadProgressClaims(r.projectId)
+        const sales = (d.apiById.get(r.projectId)?.sales ?? []).map(x => ({ invoiceNumber: x.invoice_number, totalEx: x.total_ex_gst }))
+        map.set(r.projectId, computeUnbilledWork(gantt, claims, todayIso, xeroSalesExtra(sales, claims)).unbilled)
       }
       setUnbilledByProject(map)
       // Portfolio cost consumption by discipline (budget from estimates, spend from Xero).

@@ -6,6 +6,7 @@ import { runProgressSnapshots } from '@/lib/runProgressSnapshots'
 import { captureServerSnapshots } from '@/lib/serverSnapshots'
 import { runCompanyPnlSync } from '@/lib/xeroPnlSync'
 import { runCloseoutBackstop } from '@/lib/serverCloseouts'
+import { runSalesSync } from '@/lib/xeroSalesSync'
 
 export const runtime = 'nodejs'
 // Vercel function timeout — initial 24-month backfill can take ~60-90s. Allow margin.
@@ -81,11 +82,17 @@ export async function POST(request: NextRequest) {
       ok: false as const, checked: 0, captured: 0,
       error: e instanceof Error ? e.message : 'closeouts_failed',
     }))
+    // Sales (ACCREC) invoices - fills invoiced-to-date for pre-platform jobs.
+    const sales = await runSalesSync().catch(e => ({
+      ok: false as const, invoices_processed: 0, rows_written: 0, projects_updated: 0,
+      error: e instanceof Error ? e.message : 'sales_sync_failed',
+    }))
     // Pre-setup state: no service role key. Skip quietly like the cost sync does.
     const fadeOk = fadeSnapshots.ok || fadeSnapshots.error === 'supabase_admin_not_configured'
     const closeoutsOk = closeouts.ok || closeouts.error === 'supabase_admin_not_configured'
-    const extrasOk = hours.ok && safetyChase.ok && snapshots.ok && fadeOk && closeoutsOk
-    return NextResponse.json({ ok: extrasOk, hours, safetyChase, snapshots, fadeSnapshots, closeouts },
+    const salesOk = sales.ok || sales.error === 'supabase_admin_not_configured' || sales.error === 'no_xero_tokens'
+    const extrasOk = hours.ok && safetyChase.ok && snapshots.ok && fadeOk && closeoutsOk && salesOk
+    return NextResponse.json({ ok: extrasOk, hours, safetyChase, snapshots, fadeSnapshots, closeouts, sales },
       { status: extrasOk ? 200 : 502 })
   }
 

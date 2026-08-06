@@ -5,6 +5,8 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ProjectCostsTab } from '@/components/ProjectCostsTab'
 import { getTargetMarginPct } from '@/lib/projectHealth'
 import { ganttCostTotal } from '@/lib/liveJobs'
+import { getProjectCosts } from '@/lib/xero'
+import { xeroSalesExtra, type XeroSaleRow } from '@/lib/xeroSales'
 import Link from 'next/link'
 import {
   loadProjects, loadWeeklyRevenue, loadEstimates, saveEstimate,
@@ -308,6 +310,9 @@ interface PositionProps {
   revenueEntries: WeeklyRevenue[]
   progressClaims: ProgressClaim[]
   subcontractors: SubcontractorPackage[]
+  /** Invoiced dollars from Xero sales invoices the claims don't cover (deduped by invoice
+   *  number) - jobs whose sales invoicing predates the platform. */
+  salesExtra: number
   onAddEstimate: () => void
   onSetupGantt: () => void
 }
@@ -344,7 +349,7 @@ function GanttAutoRedirect({ projectId, ganttEntries }: { projectId: string; gan
 }
 
 function ProjectFinancialPosition({
-  project, estimates, ganttEntries, actuals, revenueEntries, progressClaims, subcontractors, onAddEstimate, onSetupGantt,
+  project, estimates, ganttEntries, actuals, revenueEntries, progressClaims, subcontractors, salesExtra, onAddEstimate, onSetupGantt,
 }: PositionProps) {
   const contractValue = project.contractValue || 0
 
@@ -373,6 +378,7 @@ function ProjectFinancialPosition({
   const claimsInvoiced = progressClaims
     .filter(c => c.status === 'sent' || c.status === 'paid')
     .reduce((sum, c) => sum + c.subtotalEx, 0)
+    + salesExtra   // Xero sales invoices the claims don't cover (pre-platform invoicing)
   // Defensive `?? 0` — legacy WeeklyRevenue rows in localStorage can lack actualInvoiced;
   // a single missing field cascades NaN through currentGP and silently disables alerts.
   const manualInvoiced = revenueEntries.reduce((sum, r) => sum + (r.actualInvoiced ?? 0), 0)
@@ -1029,6 +1035,15 @@ export default function ProjectDetailPage() {
   const [progressClaims, setProgressClaims] = useState<ProgressClaim[]>([])
   const [stages, setStages] = useState<ProgressPaymentStage[]>([])
   const [subcontractors, setSubcontractors] = useState<SubcontractorPackage[]>([])
+  // Xero sales invoices matched to this project (pre-platform invoicing). Deduped against
+  // claims by invoice number before adding to any invoiced figure (lib/xeroSales).
+  const [xeroSales, setXeroSales] = useState<XeroSaleRow[]>([])
+  useEffect(() => {
+    if (!id) return
+    getProjectCosts(id).then(cr => {
+      setXeroSales((cr.sales ?? []).map(s => ({ invoiceNumber: s.invoice_number, totalEx: s.total_ex_gst })))
+    }).catch(() => { /* offline - claims-only figures stand */ })
+  }, [id])
   // Seed from ?tab= so deep links from the dashboard Live Jobs row land on the right tab.
   // Falls back to 'overview' if no/invalid tab param.
   const tabFromUrl = searchParams?.get('tab') as TabId | null
@@ -1471,11 +1486,14 @@ export default function ProjectDetailPage() {
               </div>
             )}
 
-            {/* Invoice summary — contract / invoiced / remaining */}
+            {/* Invoice summary — contract / invoiced / remaining. Includes Xero sales invoices
+                the claims don't cover (pre-platform invoicing, deduped by invoice number). */}
             {(() => {
+              const salesExtra = xeroSalesExtra(xeroSales, progressClaims)
               const invoicedToDate = progressClaims
                 .filter(c => c.status === 'sent' || c.status === 'paid')
                 .reduce((s, c) => s + c.subtotalEx, 0)
+                + salesExtra
               const remaining = Math.max(0, revisedContract - invoicedToDate)
               return (
                 <div className="grid grid-cols-3 gap-3 mt-4">
@@ -1487,6 +1505,7 @@ export default function ProjectDetailPage() {
                   <div className="bg-fg-bg border border-fg-border rounded-sm p-4">
                     <p className="text-2xs text-fg-muted tracking-wide uppercase mb-1">Invoiced to Date</p>
                     <p className="text-lg font-light text-fg-heading">{formatCurrency(invoicedToDate)}</p>
+                    {salesExtra > 0 && <p className="text-2xs text-fg-muted/70 mt-0.5">incl. {formatCurrency(salesExtra)} invoiced directly in Xero</p>}
                   </div>
                   <div className="bg-fg-bg border border-fg-border rounded-sm p-4">
                     <p className="text-2xs text-fg-muted tracking-wide uppercase mb-1">Remaining</p>
@@ -1736,6 +1755,7 @@ export default function ProjectDetailPage() {
             revenueEntries={revenueEntries}
             progressClaims={progressClaims}
             subcontractors={subcontractors}
+            salesExtra={xeroSalesExtra(xeroSales, progressClaims)}
             onAddEstimate={() => router.push(`/estimates/new?projectId=${id}`)}
             onSetupGantt={() => router.push(`/projects/${id}/gantt`)}
           />

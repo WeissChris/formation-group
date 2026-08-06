@@ -42,6 +42,7 @@ export async function loadLiveJobs(): Promise<LoadedLiveJobs> {
       forecastFinalCost: hasLiveCost ? apiRow!.forecast_final_cost : null,
       ganttCost: gantt.length ? ganttCostTotal(gantt) : null,
       hasForecastOverrides: !!apiRow?.has_overrides,
+      xeroSales: (apiRow?.sales ?? []).map(s => ({ invoiceNumber: s.invoice_number, totalEx: s.total_ex_gst })),
     })
   })
 

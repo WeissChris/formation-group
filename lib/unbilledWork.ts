@@ -22,6 +22,9 @@ export function computeUnbilledWork(
   entries: GanttEntry[],
   claims: ProgressClaim[],
   todayIso: string,
+  /** Invoiced dollars the claims don't cover - Xero sales invoices from before the platform
+   *  (already deduped by invoice number via lib/xeroSales.xeroSalesExtra). */
+  extraInvoiced = 0,
 ): UnbilledWork {
   const fri = toISODate(snapToFriday(new Date(`${todayIso}T00:00:00`)))
   let earned = 0
@@ -29,6 +32,7 @@ export function computeUnbilledWork(
   const invoiced = claims
     .filter(c => c.status === 'sent' || c.status === 'paid')
     .reduce((s, c) => s + (c.subtotalEx ?? 0), 0)
+    + extraInvoiced
   const diff = earned - invoiced
   return {
     earnedToDate: round2(earned),

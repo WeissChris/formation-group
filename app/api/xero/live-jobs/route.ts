@@ -30,11 +30,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ items: [], configured: false })
   }
 
-  const [{ data: costs }, { data: forecasts }, { data: mappings }] = await Promise.all([
+  const [{ data: costs }, { data: forecasts }, { data: mappings }, { data: salesRows }] = await Promise.all([
     supabaseAdmin.from('fg_xero_project_costs').select('project_id, account_code, account_name, amount_ex_gst, pulled_at'),
     supabaseAdmin.from('fg_project_cost_forecast').select('project_id, account_code, forecast_final'),
     supabaseAdmin.from('fg_project_xero_mapping').select('project_id, tracking_option_name'),
+    supabaseAdmin.from('fg_xero_project_sales').select('project_id, invoice_number, total_ex_gst'),
   ])
+
+  // Sales (ACCREC) invoices per project - the client dedupes against platform claims by
+  // invoice number (lib/xeroSales), so pass the per-invoice rows through, not just a total.
+  const salesByProject = new Map<string, Array<{ invoice_number: string | null; total_ex_gst: number }>>()
+  for (const s of salesRows || []) {
+    const pid = s.project_id as string
+    const list = salesByProject.get(pid) ?? []
+    list.push({ invoice_number: (s.invoice_number as string | null) ?? null, total_ex_gst: Number(s.total_ex_gst) || 0 })
+    salesByProject.set(pid, list)
+  }
 
   // Aggregate cost-to-date per project, and per-account so forecast overrides work.
   // Also split by discipline (labour / subbies / materials+equipment) via the account name -
@@ -86,6 +97,7 @@ export async function GET(request: NextRequest) {
       last_pulled_at: slot.lastPulled,
       mapped: true,
       has_overrides: overrideProjects.has(projectId),
+      sales: salesByProject.get(projectId) ?? [],
     }
   })
 
@@ -93,7 +105,7 @@ export async function GET(request: NextRequest) {
   for (const m of mappings || []) {
     const pid = m.project_id as string
     if (!items.find(i => i.project_id === pid)) {
-      items.push({ project_id: pid, cost_to_date: 0, forecast_final_cost: 0, cost_labour: 0, cost_subbies: 0, cost_materials: 0, last_pulled_at: null, mapped: true, has_overrides: overrideProjects.has(pid) })
+      items.push({ project_id: pid, cost_to_date: 0, forecast_final_cost: 0, cost_labour: 0, cost_subbies: 0, cost_materials: 0, last_pulled_at: null, mapped: true, has_overrides: overrideProjects.has(pid), sales: salesByProject.get(pid) ?? [] })
     }
   }
 

@@ -34,7 +34,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
   const projectId = params.id
 
-  const [{ data: costs }, { data: mapping }, { data: forecasts }] = await Promise.all([
+  const [{ data: costs }, { data: mapping }, { data: forecasts }, { data: salesRows }] = await Promise.all([
     supabaseAdmin
       .from('fg_xero_project_costs')
       .select('*')
@@ -49,6 +49,11 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       .from('fg_project_cost_forecast')
       .select('*')
       .eq('project_id', projectId),
+    supabaseAdmin
+      .from('fg_xero_project_sales')
+      .select('invoice_number, invoice_date, status, total_ex_gst')
+      .eq('project_id', projectId)
+      .order('invoice_date', { ascending: true }),
   ])
 
   const forecastByAccount = new Map<string, { forecast_final: number | null; comment: string | null }>()
@@ -82,5 +87,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     mapped: !!mapping,
     mapping: mapping ?? null,
     last_pulled_at: lastPulledAt,
+    // ACCREC (sales) invoices matched to this project - readers dedupe against platform claims
+    // by invoice number (lib/xeroSales) before adding to invoiced-to-date.
+    sales: (salesRows || []).map(s => ({
+      invoice_number: (s.invoice_number as string | null) ?? null,
+      invoice_date: (s.invoice_date as string | null) ?? null,
+      status: (s.status as string | null) ?? null,
+      total_ex_gst: Number(s.total_ex_gst) || 0,
+    })),
   })
 }
