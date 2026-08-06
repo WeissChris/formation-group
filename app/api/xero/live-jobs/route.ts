@@ -34,16 +34,16 @@ export async function GET(request: NextRequest) {
     supabaseAdmin.from('fg_xero_project_costs').select('project_id, account_code, account_name, amount_ex_gst, pulled_at'),
     supabaseAdmin.from('fg_project_cost_forecast').select('project_id, account_code, forecast_final'),
     supabaseAdmin.from('fg_project_xero_mapping').select('project_id, tracking_option_name'),
-    supabaseAdmin.from('fg_xero_project_sales').select('project_id, invoice_number, total_ex_gst'),
+    supabaseAdmin.from('fg_xero_project_sales').select('project_id, invoice_number, invoice_date, total_ex_gst'),
   ])
 
   // Sales (ACCREC) invoices per project - the client dedupes against platform claims by
   // invoice number (lib/xeroSales), so pass the per-invoice rows through, not just a total.
-  const salesByProject = new Map<string, Array<{ invoice_number: string | null; total_ex_gst: number }>>()
+  const salesByProject = new Map<string, Array<{ invoice_number: string | null; invoice_date: string | null; total_ex_gst: number }>>()
   for (const s of salesRows || []) {
     const pid = s.project_id as string
     const list = salesByProject.get(pid) ?? []
-    list.push({ invoice_number: (s.invoice_number as string | null) ?? null, total_ex_gst: Number(s.total_ex_gst) || 0 })
+    list.push({ invoice_number: (s.invoice_number as string | null) ?? null, invoice_date: (s.invoice_date as string | null) ?? null, total_ex_gst: Number(s.total_ex_gst) || 0 })
     salesByProject.set(pid, list)
   }
 

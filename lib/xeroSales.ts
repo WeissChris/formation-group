@@ -22,8 +22,9 @@ export function normInvoiceNo(s: string | null | undefined): string {
 }
 
 /** The Xero sales rows NOT already represented by a platform claim (any status - a draft claim
- *  with the same number is still the same invoice). */
-export function unmatchedXeroSales(sales: XeroSaleRow[], claims: ProgressClaim[]): XeroSaleRow[] {
+ *  with the same number is still the same invoice). Generic so callers carrying extra fields
+ *  (e.g. invoice dates for the monthly report) keep them through the filter. */
+export function unmatchedXeroSales<T extends XeroSaleRow>(sales: T[], claims: ProgressClaim[]): T[] {
   const claimed = new Set<string>()
   for (const c of claims) {
     const a = normInvoiceNo(c.invoiceNumber)

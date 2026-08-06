@@ -357,7 +357,7 @@ export interface LiveJobRow {
   mapped: boolean
   /** ACCREC (sales) invoices matched to this project by tracking - per-invoice so the client
    *  can dedupe against platform claims by invoice number (lib/xeroSales). */
-  sales?: Array<{ invoice_number: string | null; total_ex_gst: number }>
+  sales?: Array<{ invoice_number: string | null; invoice_date: string | null; total_ex_gst: number }>
 }
 
 export async function getLiveJobs(): Promise<{ items: LiveJobRow[]; configured: boolean }> {
