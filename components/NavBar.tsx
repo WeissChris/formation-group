@@ -15,6 +15,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Projects',    href: '/projects' },
   { label: 'Financials',  href: '/revenue' },
   { label: 'Programme',   href: '/programme' },
+  { label: 'Foremen',     href: '/supervisors' },
   { label: 'Safety',      href: '/safety' },
   { label: 'Reports',     href: '/reports' },
   { label: 'Company',     href: '/company' },
