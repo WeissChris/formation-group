@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { entrySegments, entryClaimSegments, segmentWeekShare } from '@/lib/ganttForecast'
-import { activeLineItems, estimateLabourHours, STD_LABOUR_RATE } from '@/lib/estimateCalculations'
+import { activeLineItems, estimateLabourHours, STD_LABOUR_RATE, variationClientPrice } from '@/lib/estimateCalculations'
 import { computeScorecard, type ScoreStatus } from '@/lib/siteScorecard'
 import { isVicPublicHoliday, vicPublicHolidayName } from '@/lib/publicHolidays'
 import {
@@ -347,7 +347,8 @@ function VariationsCard({ projectId, variations, refresh }: {
 
   const hrs = parseFloat(hours) || 0
   const mat = parseFloat(materials) || 0
-  const cost = Math.round((hrs * STD_LABOUR_RATE + mat) * 100) / 100
+  const priced = variationClientPrice(hrs, mat)
+  const cost = priced.cost
 
   const reset = () => { setDescription(''); setHours(''); setMaterials(''); setOpen(false); setEditing(null) }
 
@@ -426,9 +427,21 @@ function VariationsCard({ projectId, variations, refresh }: {
             </div>
           </div>
           {cost > 0 && (
-            <p className="text-xs text-fg-heading tabular-nums">
-              Cost: {money(cost)}{hrs > 0 ? ` (${hrs}h labour${mat > 0 ? ` + ${money(mat)} materials` : ''})` : ''}
-            </p>
+            <div className="rounded-lg bg-fg-card/40 px-3 py-2 space-y-0.5">
+              {hrs > 0 && (
+                <p className="text-xs text-fg-muted tabular-nums">
+                  Labour: {hrs}h &rarr; {money(priced.labourPrice)}
+                </p>
+              )}
+              {mat > 0 && (
+                <p className="text-xs text-fg-muted tabular-nums">
+                  Materials: {money(mat)} &rarr; {money(priced.materialsPrice)}
+                </p>
+              )}
+              <p className="text-sm font-medium text-fg-heading tabular-nums">
+                Variation amount: {money(priced.total)} ex GST
+              </p>
+            </div>
           )}
           {error && <p className="text-xs text-red-600">{error}</p>}
           <button onClick={submit} disabled={busy || !description.trim() || !(cost > 0)}
@@ -436,8 +449,8 @@ function VariationsCard({ projectId, variations, refresh }: {
             {busy ? 'Sending...' : editing ? 'Resend draft to office' : 'Send draft'}
           </button>
           <p className="text-[10px] text-fg-muted">
-            Enter your real labour hours and material costs - it keeps the job tracking accurate. The office
-            adds the margin and sends it on; the client then gets a link to approve or decline.
+            Enter your real labour hours and material costs - the price is worked out automatically. It goes
+            to the office first; once approved, the client gets a link to approve or decline.
           </p>
         </div>
       )}
@@ -466,9 +479,10 @@ function VariationsCard({ projectId, variations, refresh }: {
                 )}
                 <div className="flex items-center justify-between gap-3 mt-1 flex-wrap">
                   <span className="text-xs text-fg-muted tabular-nums">
+                    {money(v.amount)} ex GST
                     {(v.labourHours ?? 0) > 0 || (v.materialsCost ?? 0) > 0
-                      ? `${v.labourHours || 0}h labour · ${money(v.materialsCost || 0)} materials`
-                      : `${money(v.amount)} ex GST`}
+                      ? ` · ${v.labourHours || 0}h labour + ${money(v.materialsCost || 0)} materials`
+                      : ''}
                   </span>
                   <div className="flex items-center gap-3">
                     {editable && (

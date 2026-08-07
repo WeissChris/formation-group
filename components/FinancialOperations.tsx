@@ -1296,18 +1296,14 @@ function VariationsSubTab({
   // Foreman-raised variations waiting on Chris. Nothing has left the building until he approves one.
   const awaiting = variations.filter(isAwaitingOffice)
 
-  // Client price per queued variation. Breakdown variations arrive priced AT COST (the foreman's
-  // hours + materials); prefill at the 40% GP price so approving without touching it still carries
-  // margin, and show the implied GP live as Chris edits.
+  // Client price per queued variation. Breakdown variations arrive AUTO-PRICED (labour +75%,
+  // materials +45% - variationClientPrice), so the prefill is simply the stored amount; Chris can
+  // still override it, with the implied GP recomputing live as he edits.
   const [priceById, setPriceById] = useState<Record<string, string>>({})
   const variationCost = (v: Estimate): number =>
     Math.round(((v.variationLabourHours ?? 0) * STD_LABOUR_RATE + (v.variationMaterialsCost ?? 0)) * 100) / 100
   const hasBreakdown = (v: Estimate): boolean => variationCost(v) > 0
-  const defaultPrice = (v: Estimate): number => {
-    const cost = variationCost(v)
-    if (cost > 0) return Math.round(cost / (1 - 0.4))   // 40% GP over the foreman's cost
-    return variationContractValue(v)
-  }
+  const defaultPrice = (v: Estimate): number => variationContractValue(v)
   const priceOf = (v: Estimate): number => {
     const raw = priceById[v.id]
     if (raw === undefined) return defaultPrice(v)
@@ -1469,7 +1465,7 @@ function VariationsSubTab({
                           type="number" inputMode="decimal" min={0}
                           value={priceById[v.id] ?? String(defaultPrice(v))}
                           onChange={e => setPriceById(p => ({ ...p, [v.id]: e.target.value }))}
-                          title="Client price ex GST - prefilled at 40% GP over the foreman's cost"
+                          title="Client price ex GST - auto-priced from the foreman's inputs (labour +75%, materials +45%); edit to override"
                           className="w-24 text-right text-xs font-light tabular-nums bg-transparent border-b border-fg-border focus:border-fg-heading outline-none text-green-400/90"
                         />
                       </div>

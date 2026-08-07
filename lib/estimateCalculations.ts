@@ -64,6 +64,38 @@ export function optionCategories(estimate: Estimate, kind: 'upgrade' | 'value_ma
  *  derive from the labour dollar value, never from the unit of measure. */
 export const STD_LABOUR_RATE = 68
 
+// Foreman variation auto-pricing (Chris's standing rates): labour at STD_LABOUR_RATE + 75%,
+// materials at cost + 45%. The cockpit shows the crew this price live, the site API stamps it
+// on the variation, and the office queue prefills from it - one formula, three readers.
+export const VARIATION_LABOUR_MARKUP_PCT = 75
+export const VARIATION_MATERIALS_MARKUP_PCT = 45
+
+export interface VariationPrice {
+  labourCost: number
+  materialsCost: number
+  cost: number
+  labourPrice: number
+  materialsPrice: number
+  total: number
+}
+
+/** Client price for a foreman variation from its labour hours + materials cost. */
+export function variationClientPrice(labourHours: number, materialsCost: number): VariationPrice {
+  const r2 = (n: number) => Math.round(n * 100) / 100
+  const labourCost = r2((labourHours || 0) * STD_LABOUR_RATE)
+  const matCost = r2(materialsCost || 0)
+  const labourPrice = r2(labourCost * (1 + VARIATION_LABOUR_MARKUP_PCT / 100))
+  const materialsPrice = r2(matCost * (1 + VARIATION_MATERIALS_MARKUP_PCT / 100))
+  return {
+    labourCost,
+    materialsCost: matCost,
+    cost: r2(labourCost + matCost),
+    labourPrice,
+    materialsPrice,
+    total: r2(labourPrice + materialsPrice),
+  }
+}
+
 /**
  * Equivalent labour hours for a set of line items.
  *

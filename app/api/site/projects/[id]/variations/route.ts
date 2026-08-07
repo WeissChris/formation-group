@@ -4,7 +4,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { siteSessionFrom, loadOwnedProjectRow } from '@/lib/siteServer'
 import { sendSafetyEmail } from '@/lib/safetyChase'
 import { isForemanEditable } from '@/lib/variationStatus'
-import { STD_LABOUR_RATE } from '@/lib/estimateCalculations'
+import { STD_LABOUR_RATE, VARIATION_LABOUR_MARKUP_PCT, VARIATION_MATERIALS_MARKUP_PCT, variationClientPrice } from '@/lib/estimateCalculations'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -46,26 +46,29 @@ function mapRow(v: Record<string, unknown>) {
 const r2 = (n: number) => Math.round(n * 100) / 100
 
 /**
- * Labour + materials cost lines for a breakdown variation - the foreman's real inputs become
- * proper typed line items so job tracking (cost budget by discipline, labour-hour allowance)
- * counts the variation correctly. Revenue starts AT cost; the office sets the client price at
- * approval, which scales these proportionally (see /api/variations/[id]/approve).
+ * Labour + materials lines for a breakdown variation - the foreman's real inputs become proper
+ * typed line items so job tracking (cost budget by discipline, labour-hour allowance) counts the
+ * variation correctly. Revenue carries the standing auto-markup (labour +75%, materials +45% -
+ * lib/estimateCalculations.variationClientPrice), so the variation arrives PRICED; the office can
+ * still override the total at approval, which rescales these proportionally.
  */
 function breakdownLines(estimateId: string, description: string, hours: number, materials: number) {
+  const price = variationClientPrice(hours, materials)
   const lines: Record<string, unknown>[] = []
   if (hours > 0) {
     lines.push({
       id: randomUUID(), estimateId, displayOrder: '1', category: 'Variation',
       description: `${description} - labour`, type: 'Labour', units: hours, uom: 'HR',
-      unitCost: STD_LABOUR_RATE, total: r2(hours * STD_LABOUR_RATE),
-      markupPercent: 0, revenue: r2(hours * STD_LABOUR_RATE), crewType: 'Formation',
+      unitCost: STD_LABOUR_RATE, total: price.labourCost,
+      markupPercent: VARIATION_LABOUR_MARKUP_PCT, revenue: price.labourPrice, crewType: 'Formation',
     })
   }
   if (materials > 0) {
     lines.push({
       id: randomUUID(), estimateId, displayOrder: '2', category: 'Variation',
       description: `${description} - materials`, type: 'Material', units: 1, uom: 'EA',
-      unitCost: materials, total: materials, markupPercent: 0, revenue: materials, crewType: 'Formation',
+      unitCost: materials, total: price.materialsCost,
+      markupPercent: VARIATION_MATERIALS_MARKUP_PCT, revenue: price.materialsPrice, crewType: 'Formation',
     })
   }
   return lines
@@ -115,9 +118,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const description = (body.description || '').trim().slice(0, 1000)
   const labourHours = r2(Math.max(0, Number(body.labourHours) || 0))
   const materialsCost = r2(Math.max(0, Number(body.materialsCost) || 0))
-  const breakdownCost = r2(labourHours * STD_LABOUR_RATE + materialsCost)
-  // Breakdown (hours + materials) is the standard path; a bare amount is kept for legacy callers.
-  const amount = breakdownCost > 0 ? breakdownCost : Math.round((Number(body.amount) || 0) * 100) / 100
+  const priced = variationClientPrice(labourHours, materialsCost)
+  const breakdownCost = priced.cost
+  // Breakdown (hours + materials) is the standard path - the amount is the AUTO-PRICED client
+  // total (labour +75%, materials +45%). A bare amount is kept for legacy callers.
+  const amount = breakdownCost > 0 ? priced.total : Math.round((Number(body.amount) || 0) * 100) / 100
   if (!description) return NextResponse.json({ ok: false, error: 'description_required' }, { status: 400 })
   if (!(amount > 0)) return NextResponse.json({ ok: false, error: 'amount_required' }, { status: 400 })
 
@@ -201,9 +206,9 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const labourHours = body.labourHours != null ? r2(Math.max(0, Number(body.labourHours) || 0)) : null
   const materialsCost = body.materialsCost != null ? r2(Math.max(0, Number(body.materialsCost) || 0)) : null
   const breakdownCost = labourHours != null || materialsCost != null
-    ? r2((labourHours ?? 0) * STD_LABOUR_RATE + (materialsCost ?? 0)) : null
+    ? variationClientPrice(labourHours ?? 0, materialsCost ?? 0).cost : null
   const amount = breakdownCost != null
-    ? breakdownCost
+    ? variationClientPrice(labourHours ?? 0, materialsCost ?? 0).total
     : body.amount != null ? Math.round((Number(body.amount) || 0) * 100) / 100 : null
   if (body.description != null && !description) return NextResponse.json({ ok: false, error: 'description_required' }, { status: 400 })
   if (amount != null && !(amount > 0)) return NextResponse.json({ ok: false, error: 'amount_required' }, { status: 400 })
@@ -278,7 +283,7 @@ async function notifyOffice(input: {
   const verb = input.resubmitted ? 'updated and resent' : 'raised'
   const hasBreakdown = (input.labourHours ?? 0) > 0 || (input.materialsCost ?? 0) > 0
   const costLine = hasBreakdown
-    ? `${input.labourHours || 0}h labour (${money((input.labourHours || 0) * STD_LABOUR_RATE)}) + ${money(input.materialsCost || 0)} materials = <strong>${money(input.amount)}</strong> COST ex GST - add your margin when you approve it`
+    ? `${input.labourHours || 0}h labour (${money((input.labourHours || 0) * STD_LABOUR_RATE)} cost) + ${money(input.materialsCost || 0)} materials = <strong>${money(input.amount)}</strong> ex GST auto-priced (labour +${VARIATION_LABOUR_MARKUP_PCT}%, materials +${VARIATION_MATERIALS_MARKUP_PCT}%) - adjust it when you approve if needed`
     : `<strong>${money(input.amount)}</strong> ex GST`
   await sendSafetyEmail(
     OFFICE_EMAIL(),

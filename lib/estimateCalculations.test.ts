@@ -11,6 +11,8 @@ import {
   activeLineItems,
   optionLineItems,
   optionCategories,
+  variationClientPrice,
+  STD_LABOUR_RATE,
 } from './estimateCalculations'
 import type { Estimate, EstimateLineItem } from '@/types'
 
@@ -316,5 +318,22 @@ describe('option categories (upgrade / value management)', () => {
     expect(up.cost).toBe(500)
     const [vm] = optionCategories(est(), 'value_management')
     expect(vm.value).toBe(280 + 200 * 0.10)   // 300
+  })
+})
+
+describe('variationClientPrice', () => {
+  it('marks labour up 75% at the standard rate and materials up 45%', () => {
+    const p = variationClientPrice(10, 1000)
+    expect(p.labourCost).toBe(10 * STD_LABOUR_RATE)          // 680
+    expect(p.labourPrice).toBe(10 * STD_LABOUR_RATE * 1.75)  // 1190
+    expect(p.materialsPrice).toBe(1450)
+    expect(p.cost).toBe(1680)
+    expect(p.total).toBe(1190 + 1450)
+  })
+
+  it('handles labour-only, materials-only and zero inputs', () => {
+    expect(variationClientPrice(4, 0).total).toBe(4 * STD_LABOUR_RATE * 1.75)
+    expect(variationClientPrice(0, 200).total).toBe(290)
+    expect(variationClientPrice(0, 0).total).toBe(0)
   })
 })
