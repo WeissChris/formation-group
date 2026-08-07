@@ -211,7 +211,8 @@ async function notifyOffice(input: {
   projectName: string; projectId: string; variationNumber: number
   description: string; amount: number; raisedBy: string; resubmitted?: boolean
 }): Promise<void> {
-  const link = `${APP_URL()}/projects/${input.projectId}`
+  // Deep-link to the Invoicing tab - that's where the approval queue renders.
+  const link = `${APP_URL()}/projects/${input.projectId}?tab=operations`
   const verb = input.resubmitted ? 'updated and resent' : 'raised'
   await sendSafetyEmail(
     OFFICE_EMAIL(),

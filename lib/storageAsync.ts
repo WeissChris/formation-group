@@ -504,7 +504,9 @@ export async function reconcileVariations(): Promise<number> {
   const remote = await getEstimates()
   const byId = new Map(remote.map(e => [e.id, e]))
   let changed = 0
+  const localIds = new Set<string>()
   for (const local of loadEstimates()) {
+    localIds.add(local.id)
     if (!local.parentEstimateId) continue
     const r = byId.get(local.id)
     if (!r) continue
@@ -515,6 +517,15 @@ export async function reconcileVariations(): Promise<number> {
       saveEstimate({ ...local, status: r.status, archived: true, declinedAt: r.declinedAt, declinedByName: r.declinedByName })
       changed++
     }
+  }
+  // Add-missing: a foreman-raised variation is born SERVER-side (the cockpit API inserts straight
+  // into fg_estimates), so no browser has a local copy and the office approval queue - which reads
+  // local estimates - never showed it. Same branch reconcileProposals has for cross-device adds.
+  // Deletes reach Supabase (deleteEstimateAsync), so this cannot resurrect a deleted estimate.
+  for (const r of remote) {
+    if (!r.parentEstimateId || r.archived || localIds.has(r.id)) continue
+    saveEstimate(r)
+    changed++
   }
   return changed
 }
