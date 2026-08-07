@@ -208,6 +208,8 @@ export interface Estimate {
   variationNumber?: number    // 1, 2, 3… for VMO-1, VMO-2 etc
   variationReason?: string    // brief description of why the variation exists
   variationAmount?: number    // net change to contract value (positive or negative)
+  variationLabourHours?: number   // cost breakdown entered on site: labour hours at STD_LABOUR_RATE
+  variationMaterialsCost?: number // cost breakdown entered on site: materials $ ex GST
   // Variation client-approval workflow (mirrors proposals)
   acceptanceToken?: string    // token for the public approval link
   sendMessage?: string        // editable cover message shown to the client + used in the send email

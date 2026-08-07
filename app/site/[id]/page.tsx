@@ -338,22 +338,26 @@ function VariationsCard({ projectId, variations, refresh }: {
 }) {
   const [open, setOpen] = useState(false)
   const [description, setDescription] = useState('')
-  const [amount, setAmount] = useState('')
+  const [hours, setHours] = useState('')
+  const [materials, setMaterials] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
 
-  const amt = parseFloat(amount) || 0
+  const hrs = parseFloat(hours) || 0
+  const mat = parseFloat(materials) || 0
+  const cost = Math.round((hrs * STD_LABOUR_RATE + mat) * 100) / 100
 
-  const reset = () => { setDescription(''); setAmount(''); setOpen(false); setEditing(null) }
+  const reset = () => { setDescription(''); setHours(''); setMaterials(''); setOpen(false); setEditing(null) }
 
   const submit = async () => {
-    if (!description.trim() || !(amt > 0)) return
+    if (!description.trim() || !(cost > 0)) return
     setBusy(true); setError(''); setMsg('')
+    const payload = { description: description.trim(), labourHours: hrs, materialsCost: mat }
     const res = editing
-      ? await updateSiteVariation(projectId, { id: editing, description: description.trim(), amount: amt })
-      : await createSiteVariation(projectId, { description: description.trim(), amount: amt })
+      ? await updateSiteVariation(projectId, { id: editing, ...payload })
+      : await createSiteVariation(projectId, payload)
     setBusy(false)
     if (res.ok) {
       reset()
@@ -369,7 +373,13 @@ function VariationsCard({ projectId, variations, refresh }: {
   }
 
   const startEdit = (v: SiteVariation) => {
-    setEditing(v.id); setDescription(v.reason); setAmount(String(v.amount || '')); setOpen(true); setMsg(''); setError('')
+    setEditing(v.id)
+    setDescription(v.reason)
+    // Legacy amount-only drafts: seed materials with the old amount so nothing is lost; the
+    // foreman splits it properly before resending.
+    setHours(v.labourHours ? String(v.labourHours) : '')
+    setMaterials(v.materialsCost ? String(v.materialsCost) : (!v.labourHours && v.amount ? String(v.amount) : ''))
+    setOpen(true); setMsg(''); setError('')
   }
 
   const bin = async (v: SiteVariation) => {
@@ -401,17 +411,33 @@ function VariationsCard({ projectId, variations, refresh }: {
           <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
             placeholder="What's the change? (e.g. Extra drainage run behind the western wall - 6lm ag pipe + gravel)"
             className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
-          <input value={amount} onChange={e => setAmount(e.target.value)} type="number" inputMode="decimal" min={0}
-            placeholder="Price ex GST ($)"
-            className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-fg-muted block mb-0.5">Labour (hours)</label>
+              <input value={hours} onChange={e => setHours(e.target.value)} type="number" inputMode="decimal" min={0}
+                placeholder="e.g. 12"
+                className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
+            </div>
+            <div>
+              <label className="text-[10px] text-fg-muted block mb-0.5">Materials cost ($ ex GST)</label>
+              <input value={materials} onChange={e => setMaterials(e.target.value)} type="number" inputMode="decimal" min={0}
+                placeholder="e.g. 1445"
+                className="w-full border border-fg-border rounded-lg px-3 py-2.5 text-base bg-white" />
+            </div>
+          </div>
+          {cost > 0 && (
+            <p className="text-xs text-fg-heading tabular-nums">
+              Cost: {money(cost)}{hrs > 0 ? ` (${hrs}h labour${mat > 0 ? ` + ${money(mat)} materials` : ''})` : ''}
+            </p>
+          )}
           {error && <p className="text-xs text-red-600">{error}</p>}
-          <button onClick={submit} disabled={busy || !description.trim() || !(amt > 0)}
+          <button onClick={submit} disabled={busy || !description.trim() || !(cost > 0)}
             className="w-full rounded-lg bg-fg-heading text-white py-2.5 text-sm font-medium disabled:opacity-40">
             {busy ? 'Sending...' : editing ? 'Resend draft to office' : 'Send draft'}
           </button>
           <p className="text-[10px] text-fg-muted">
-            It goes to the office first. Once Chris approves it, the client gets a link to approve or decline
-            and you&apos;ll see the result here.
+            Enter your real labour hours and material costs - it keeps the job tracking accurate. The office
+            adds the margin and sends it on; the client then gets a link to approve or decline.
           </p>
         </div>
       )}
@@ -439,7 +465,11 @@ function VariationsCard({ projectId, variations, refresh }: {
                   <p className="text-xs text-amber-700 mt-1">Sent {waiting} days ago - the client hasn&apos;t opened it yet.</p>
                 )}
                 <div className="flex items-center justify-between gap-3 mt-1 flex-wrap">
-                  <span className="text-xs text-fg-muted tabular-nums">{money(v.amount)} ex GST</span>
+                  <span className="text-xs text-fg-muted tabular-nums">
+                    {(v.labourHours ?? 0) > 0 || (v.materialsCost ?? 0) > 0
+                      ? `${v.labourHours || 0}h labour · ${money(v.materialsCost || 0)} materials`
+                      : `${money(v.amount)} ex GST`}
+                  </span>
                   <div className="flex items-center gap-3">
                     {editable && (
                       <>

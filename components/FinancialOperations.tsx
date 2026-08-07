@@ -13,7 +13,7 @@ import { syncInvoicedRevenueRows } from '@/lib/claimRevenue'
 import { upsertEstimate, upsertProgressClaim, deleteProgressClaimAsync } from '@/lib/storageAsync'
 import { createXeroDraftInvoice } from '@/lib/xero'
 import { formatCurrency, formatCurrencyCents, generateId } from '@/lib/utils'
-import { getEstimateTotals, getEstimateContract, readLineItemRevenue, activeLineItems, lineContractValue, variationContractValue } from '@/lib/estimateCalculations'
+import { getEstimateTotals, getEstimateContract, readLineItemRevenue, activeLineItems, lineContractValue, variationContractValue, STD_LABOUR_RATE } from '@/lib/estimateCalculations'
 import { variationStage, isAwaitingOffice, type VariationStage } from '@/lib/variationStatus'
 import type { ProgressPaymentStage, Estimate, WeeklyActual, ProgressClaim, ProgressClaimLineItem, EntityType } from '@/types'
 import { Plus, X, FileText, Receipt, GitBranch, Eye, Check, ChevronRight, ArrowLeft, Send } from 'lucide-react'
@@ -1296,6 +1296,24 @@ function VariationsSubTab({
   // Foreman-raised variations waiting on Chris. Nothing has left the building until he approves one.
   const awaiting = variations.filter(isAwaitingOffice)
 
+  // Client price per queued variation. Breakdown variations arrive priced AT COST (the foreman's
+  // hours + materials); prefill at the 40% GP price so approving without touching it still carries
+  // margin, and show the implied GP live as Chris edits.
+  const [priceById, setPriceById] = useState<Record<string, string>>({})
+  const variationCost = (v: Estimate): number =>
+    Math.round(((v.variationLabourHours ?? 0) * STD_LABOUR_RATE + (v.variationMaterialsCost ?? 0)) * 100) / 100
+  const hasBreakdown = (v: Estimate): boolean => variationCost(v) > 0
+  const defaultPrice = (v: Estimate): number => {
+    const cost = variationCost(v)
+    if (cost > 0) return Math.round(cost / (1 - 0.4))   // 40% GP over the foreman's cost
+    return variationContractValue(v)
+  }
+  const priceOf = (v: Estimate): number => {
+    const raw = priceById[v.id]
+    if (raw === undefined) return defaultPrice(v)
+    return parseFloat(raw) || 0
+  }
+
   /** Patch the local copy so the table reflects the server write without waiting for a sync pull. */
   const patchLocal = (id: string, patch: Partial<Estimate>) => {
     const all = loadEstimates()
@@ -1307,10 +1325,12 @@ function VariationsSubTab({
 
   /** Approve + release to the client: mints the token, sends the branded email, flips to 'sent'. */
   const handleApproveAndSend = async (v: Estimate) => {
-    if (!confirm(`Approve VMO-${v.variationNumber ?? '?'} and email it to the client for approval?`)) return
+    const price = priceOf(v)
+    if (!(price > 0)) { setQueueMsg('Set a client price before sending.'); return }
+    if (!confirm(`Approve VMO-${v.variationNumber ?? '?'} at ${formatCurrency(price)} ex GST and email it to the client for approval?`)) return
     setBusyId(v.id); setQueueMsg('')
     const res = await fetch(`/api/variations/${v.id}/approve`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: price }),
     })
     const body = await res.json().catch(() => ({}))
     setBusyId(null)
@@ -1323,6 +1343,7 @@ function VariationsSubTab({
     patchLocal(v.id, {
       status: 'sent', sentAt: body.officeApprovedAt, officeApprovedAt: body.officeApprovedAt,
       acceptanceToken: body.acceptanceToken, officeRejectedAt: undefined, officeRejectReason: undefined,
+      variationAmount: price,
     })
     setQueueMsg(body.emailed
       ? `Sent to ${body.clientEmail} for approval.`
@@ -1431,11 +1452,37 @@ function VariationsSubTab({
                       {v.submittedAt ? <span className="text-fg-muted"> &middot; {formatDateShort(v.submittedAt)}</span> : null}
                     </p>
                     <p className="text-xs font-light text-fg-muted mt-1">{v.variationReason || v.name || '-'}</p>
+                    {hasBreakdown(v) && (
+                      <p className="text-2xs font-light tabular-nums text-fg-muted mt-1">
+                        Cost {formatCurrency(variationCost(v))}
+                        {' '}({(v.variationLabourHours ?? 0) > 0 ? `${v.variationLabourHours}h labour @ $${STD_LABOUR_RATE}` : ''}
+                        {(v.variationLabourHours ?? 0) > 0 && (v.variationMaterialsCost ?? 0) > 0 ? ' + ' : ''}
+                        {(v.variationMaterialsCost ?? 0) > 0 ? `${formatCurrency(v.variationMaterialsCost!)} materials` : ''})
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs font-light tabular-nums text-green-400/80">
-                      +{formatCurrency(variationContractValue(v))}
-                    </span>
+                    <div className="text-right">
+                      <div className="flex items-baseline gap-1 justify-end">
+                        <span className="text-2xs text-fg-muted">$</span>
+                        <input
+                          type="number" inputMode="decimal" min={0}
+                          value={priceById[v.id] ?? String(defaultPrice(v))}
+                          onChange={e => setPriceById(p => ({ ...p, [v.id]: e.target.value }))}
+                          title="Client price ex GST - prefilled at 40% GP over the foreman's cost"
+                          className="w-24 text-right text-xs font-light tabular-nums bg-transparent border-b border-fg-border focus:border-fg-heading outline-none text-green-400/90"
+                        />
+                      </div>
+                      {hasBreakdown(v) && (() => {
+                        const price = priceOf(v)
+                        const gp = price > 0 ? ((price - variationCost(v)) / price) * 100 : 0
+                        return (
+                          <p className={`text-2xs font-light tabular-nums mt-0.5 ${gp >= 38 ? 'text-green-500/80' : gp >= 25 ? 'text-amber-400/90' : 'text-red-400/90'}`}>
+                            {gp.toFixed(0)}% GP
+                          </p>
+                        )
+                      })()}
+                    </div>
                     <Link
                       href={`/estimates/${v.id}`}
                       className="flex items-center gap-1 text-2xs font-light tracking-wide uppercase text-fg-muted border border-fg-border px-2 py-0.5 hover:text-fg-heading hover:border-fg-heading transition-colors whitespace-nowrap"

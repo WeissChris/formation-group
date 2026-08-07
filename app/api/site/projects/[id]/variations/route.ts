@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin'
 import { siteSessionFrom, loadOwnedProjectRow } from '@/lib/siteServer'
 import { sendSafetyEmail } from '@/lib/safetyChase'
 import { isForemanEditable } from '@/lib/variationStatus'
+import { STD_LABOUR_RATE } from '@/lib/estimateCalculations'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -16,7 +17,7 @@ function esc(s: string): string { return s.replace(/&/g, '&amp;').replace(/</g, 
 
 const SELECT = 'id, variation_number, variation_reason, variation_amount, status, accepted_by_name, ' +
   'accepted_at, declined_at, acceptance_token, archived, raised_by, submitted_at, office_approved_at, ' +
-  'office_rejected_at, office_reject_reason, first_viewed_at'
+  'office_rejected_at, office_reject_reason, first_viewed_at, variation_labour_hours, variation_materials_cost'
 
 function mapRow(v: Record<string, unknown>) {
   return {
@@ -34,10 +35,40 @@ function mapRow(v: Record<string, unknown>) {
     officeRejectedAt: (v.office_rejected_at as string | null) || null,
     officeRejectReason: (v.office_reject_reason as string | null) || '',
     firstViewedAt: (v.first_viewed_at as string | null) || null,
+    labourHours: v.variation_labour_hours != null ? Number(v.variation_labour_hours) : null,
+    materialsCost: v.variation_materials_cost != null ? Number(v.variation_materials_cost) : null,
     // Only worth sharing once the office has actually released it to the client.
     approvalUrl: v.acceptance_token && v.office_approved_at && v.status !== 'accepted' && v.status !== 'declined'
       ? `${APP_URL()}/variation/${v.acceptance_token}` : null,
   }
+}
+
+const r2 = (n: number) => Math.round(n * 100) / 100
+
+/**
+ * Labour + materials cost lines for a breakdown variation - the foreman's real inputs become
+ * proper typed line items so job tracking (cost budget by discipline, labour-hour allowance)
+ * counts the variation correctly. Revenue starts AT cost; the office sets the client price at
+ * approval, which scales these proportionally (see /api/variations/[id]/approve).
+ */
+function breakdownLines(estimateId: string, description: string, hours: number, materials: number) {
+  const lines: Record<string, unknown>[] = []
+  if (hours > 0) {
+    lines.push({
+      id: randomUUID(), estimateId, displayOrder: '1', category: 'Variation',
+      description: `${description} - labour`, type: 'Labour', units: hours, uom: 'HR',
+      unitCost: STD_LABOUR_RATE, total: r2(hours * STD_LABOUR_RATE),
+      markupPercent: 0, revenue: r2(hours * STD_LABOUR_RATE), crewType: 'Formation',
+    })
+  }
+  if (materials > 0) {
+    lines.push({
+      id: randomUUID(), estimateId, displayOrder: '2', category: 'Variation',
+      description: `${description} - materials`, type: 'Material', units: 1, uom: 'EA',
+      unitCost: materials, total: materials, markupPercent: 0, revenue: materials, crewType: 'Formation',
+    })
+  }
+  return lines
 }
 
 /** Shared session + ownership gate. Returns the project row, or a response to bail with. */
@@ -80,9 +111,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (g.bail) return g.bail
   const { session, project } = g
 
-  const body = await request.json().catch(() => ({})) as { description?: string; amount?: number }
+  const body = await request.json().catch(() => ({})) as { description?: string; amount?: number; labourHours?: number; materialsCost?: number }
   const description = (body.description || '').trim().slice(0, 1000)
-  const amount = Math.round((Number(body.amount) || 0) * 100) / 100
+  const labourHours = r2(Math.max(0, Number(body.labourHours) || 0))
+  const materialsCost = r2(Math.max(0, Number(body.materialsCost) || 0))
+  const breakdownCost = r2(labourHours * STD_LABOUR_RATE + materialsCost)
+  // Breakdown (hours + materials) is the standard path; a bare amount is kept for legacy callers.
+  const amount = breakdownCost > 0 ? breakdownCost : Math.round((Number(body.amount) || 0) * 100) / 100
   if (!description) return NextResponse.json({ ok: false, error: 'description_required' }, { status: 400 })
   if (!(amount > 0)) return NextResponse.json({ ok: false, error: 'amount_required' }, { status: 400 })
 
@@ -98,11 +133,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const variationNumber = all.filter(e => e.parent_estimate_id === parent.id).length + 1
   const id = randomUUID()
   const nowIso = new Date().toISOString()
-  const lineItem = {
-    id: randomUUID(), estimateId: id, displayOrder: '1', category: 'Variation',
-    description, type: 'Labour', units: 1, uom: 'EA', unitCost: 0, total: 0,
-    markupPercent: 0, revenue: amount, crewType: 'Formation',
-  }
+  const lineItems = breakdownCost > 0
+    ? breakdownLines(id, description, labourHours, materialsCost)
+    : [{
+        id: randomUUID(), estimateId: id, displayOrder: '1', category: 'Variation',
+        description, type: 'Labour', units: 1, uom: 'EA', unitCost: 0, total: 0,
+        markupPercent: 0, revenue: amount, crewType: 'Formation',
+      }]
 
   const { error } = await supabaseAdmin!.from('fg_estimates').insert({
     id,
@@ -113,12 +150,14 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     status: 'draft',
     default_markup_formation: Number(parent.default_markup_formation) || 0,
     default_markup_subcontractor: Number(parent.default_markup_subcontractor) || 0,
-    line_items: [lineItem],
+    line_items: lineItems,
     category_notes: {},
     parent_estimate_id: parent.id,
     variation_number: variationNumber,
     variation_reason: description,
     variation_amount: amount,
+    variation_labour_hours: breakdownCost > 0 ? labourHours : null,
+    variation_materials_cost: breakdownCost > 0 ? materialsCost : null,
     project_markups: [],
     raised_by: session!.name,
     submitted_at: nowIso,
@@ -127,7 +166,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   })
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
 
-  await notifyOffice({ projectName: (project!.name as string) || 'a project', projectId: params.id, variationNumber, description, amount, raisedBy: session!.name })
+  await notifyOffice({
+    projectName: (project!.name as string) || 'a project', projectId: params.id, variationNumber,
+    description, amount, raisedBy: session!.name,
+    labourHours: breakdownCost > 0 ? labourHours : null, materialsCost: breakdownCost > 0 ? materialsCost : null,
+  })
 
   return NextResponse.json({
     ok: true,
@@ -144,7 +187,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (g.bail) return g.bail
   const { session, project } = g
 
-  const body = await request.json().catch(() => ({})) as { id?: string; description?: string; amount?: number }
+  const body = await request.json().catch(() => ({})) as { id?: string; description?: string; amount?: number; labourHours?: number; materialsCost?: number }
   const vid = (body.id || '').trim()
   if (!vid) return NextResponse.json({ ok: false, error: 'id_required' }, { status: 400 })
 
@@ -155,7 +198,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (!isForemanEditable(mapRow(row))) return NextResponse.json({ ok: false, error: 'locked' }, { status: 409 })
 
   const description = typeof body.description === 'string' ? body.description.trim().slice(0, 1000) : ''
-  const amount = body.amount != null ? Math.round((Number(body.amount) || 0) * 100) / 100 : null
+  const labourHours = body.labourHours != null ? r2(Math.max(0, Number(body.labourHours) || 0)) : null
+  const materialsCost = body.materialsCost != null ? r2(Math.max(0, Number(body.materialsCost) || 0)) : null
+  const breakdownCost = labourHours != null || materialsCost != null
+    ? r2((labourHours ?? 0) * STD_LABOUR_RATE + (materialsCost ?? 0)) : null
+  const amount = breakdownCost != null
+    ? breakdownCost
+    : body.amount != null ? Math.round((Number(body.amount) || 0) * 100) / 100 : null
   if (body.description != null && !description) return NextResponse.json({ ok: false, error: 'description_required' }, { status: 400 })
   if (amount != null && !(amount > 0)) return NextResponse.json({ ok: false, error: 'amount_required' }, { status: 400 })
 
@@ -164,14 +213,24 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     // Resubmitting clears the office's bounce, so the stage falls back to "with office".
     submitted_at: nowIso, office_rejected_at: null, office_reject_reason: null, updated_at: nowIso,
   }
-  if (description) {
-    patch.variation_reason = description
-    patch.line_items = [{
-      id: randomUUID(), estimateId: vid, displayOrder: '1', category: 'Variation',
-      description, type: 'Labour', units: 1, uom: 'EA', unitCost: 0, total: 0,
-      markupPercent: 0, revenue: amount ?? (Number(row.variation_amount) || 0), crewType: 'Formation',
-    }]
+  const desc = description || (row.variation_reason as string) || ''
+  if (breakdownCost != null) {
+    patch.variation_labour_hours = labourHours ?? 0
+    patch.variation_materials_cost = materialsCost ?? 0
+    patch.line_items = breakdownLines(vid, desc, labourHours ?? 0, materialsCost ?? 0)
+  } else if (description) {
+    // Description-only edit: keep the stored breakdown lines if the variation has one.
+    const storedH = row.variation_labour_hours != null ? Number(row.variation_labour_hours) : null
+    const storedM = row.variation_materials_cost != null ? Number(row.variation_materials_cost) : null
+    patch.line_items = (storedH ?? 0) > 0 || (storedM ?? 0) > 0
+      ? breakdownLines(vid, description, storedH ?? 0, storedM ?? 0)
+      : [{
+          id: randomUUID(), estimateId: vid, displayOrder: '1', category: 'Variation',
+          description, type: 'Labour', units: 1, uom: 'EA', unitCost: 0, total: 0,
+          markupPercent: 0, revenue: amount ?? (Number(row.variation_amount) || 0), crewType: 'Formation',
+        }]
   }
+  if (description) patch.variation_reason = description
   if (amount != null) patch.variation_amount = amount
 
   const { error } = await supabaseAdmin!.from('fg_estimates').update(patch).eq('id', vid)
@@ -183,6 +242,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     description: description || (row.variation_reason as string) || '',
     amount: amount ?? (Number(row.variation_amount) || 0),
     raisedBy: session!.name, resubmitted: true,
+    labourHours: labourHours ?? (row.variation_labour_hours != null ? Number(row.variation_labour_hours) : null),
+    materialsCost: materialsCost ?? (row.variation_materials_cost != null ? Number(row.variation_materials_cost) : null),
   })
   return NextResponse.json({ ok: true })
 }
@@ -210,10 +271,15 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 async function notifyOffice(input: {
   projectName: string; projectId: string; variationNumber: number
   description: string; amount: number; raisedBy: string; resubmitted?: boolean
+  labourHours?: number | null; materialsCost?: number | null
 }): Promise<void> {
   // Deep-link to the Invoicing tab - that's where the approval queue renders.
   const link = `${APP_URL()}/projects/${input.projectId}?tab=operations`
   const verb = input.resubmitted ? 'updated and resent' : 'raised'
+  const hasBreakdown = (input.labourHours ?? 0) > 0 || (input.materialsCost ?? 0) > 0
+  const costLine = hasBreakdown
+    ? `${input.labourHours || 0}h labour (${money((input.labourHours || 0) * STD_LABOUR_RATE)}) + ${money(input.materialsCost || 0)} materials = <strong>${money(input.amount)}</strong> COST ex GST - add your margin when you approve it`
+    : `<strong>${money(input.amount)}</strong> ex GST`
   await sendSafetyEmail(
     OFFICE_EMAIL(),
     `Variation VMO-${input.variationNumber} needs your approval - ${input.projectName}`,
@@ -221,7 +287,7 @@ async function notifyOffice(input: {
     <div style="font-family:Arial,sans-serif;font-size:14px;color:#1a1a1a;max-width:560px">
       <p>${esc(input.raisedBy)} has ${verb} a variation on <strong>${esc(input.projectName)}</strong>.</p>
       <p style="border-left:3px solid #3D5A3A;padding-left:12px">${esc(input.description)}</p>
-      <p><strong>${money(input.amount)}</strong> ex GST</p>
+      <p>${costLine}</p>
       <p><a href="${link}" style="display:inline-block;background:#3D5A3A;color:#fff;padding:10px 18px;
       text-decoration:none;border-radius:6px">Review it</a></p>
       <p style="color:#6b6660;font-size:12px">Financial Operations -&gt; Variations. Nothing has gone to

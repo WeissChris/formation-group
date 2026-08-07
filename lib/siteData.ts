@@ -180,13 +180,17 @@ export interface SiteVariation {
   officeRejectedAt?: string | null
   officeRejectReason?: string
   firstViewedAt?: string | null
+  /** Cost breakdown entered on site - hours at the standard rate + materials. Null on legacy
+   *  amount-only variations. The office prices the client amount up from these at approval. */
+  labourHours?: number | null
+  materialsCost?: number | null
   approvalUrl?: string | null
 }
 export async function getSiteVariations(id: string): Promise<SiteVariation[]> {
   const d = await getJson<{ ok: boolean; variations: SiteVariation[] }>(`/api/site/projects/${id}/variations`)
   return d?.variations ?? []
 }
-export async function createSiteVariation(id: string, payload: { description: string; amount: number }): Promise<
+export async function createSiteVariation(id: string, payload: { description: string; amount?: number; labourHours?: number; materialsCost?: number }): Promise<
   { ok: true; variation: SiteVariation } | { ok: false; error: string }
 > {
   const res = await fetch(`/api/site/projects/${id}/variations`, {
@@ -197,7 +201,7 @@ export async function createSiteVariation(id: string, payload: { description: st
 }
 /** Edit + resend a draft the office bounced back. Refused once the office has released it. */
 export async function updateSiteVariation(
-  id: string, payload: { id: string; description?: string; amount?: number },
+  id: string, payload: { id: string; description?: string; amount?: number; labourHours?: number; materialsCost?: number },
 ): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch(`/api/site/projects/${id}/variations`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),

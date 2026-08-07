@@ -34,10 +34,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   if (!rl.allowed) return NextResponse.json({ ok: false, error: 'rate_limited' }, { status: 429, headers: { 'Retry-After': String(rl.retryAfterSeconds) } })
   if (!supabaseAdmin) return NextResponse.json({ ok: false, error: 'not_configured' }, { status: 503 })
 
-  const body = await request.json().catch(() => ({})) as { message?: string; ccEmails?: string }
+  const body = await request.json().catch(() => ({})) as { message?: string; ccEmails?: string; amount?: number }
 
   const { data: row } = await supabaseAdmin.from('fg_estimates')
-    .select('id, project_id, project_name, variation_number, variation_reason, variation_amount, status, acceptance_token, office_approved_at, parent_estimate_id, send_message')
+    .select('id, project_id, project_name, variation_number, variation_reason, variation_amount, status, acceptance_token, office_approved_at, parent_estimate_id, send_message, line_items')
     .eq('id', params.id).maybeSingle()
   if (!row) return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 })
   if (!row.parent_estimate_id) return NextResponse.json({ ok: false, error: 'not_a_variation' }, { status: 400 })
@@ -57,7 +57,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const message = typeof body.message === 'string' && body.message.trim()
     ? body.message.trim() : (row.send_message as string | null) || undefined
 
-  const { error } = await supabaseAdmin.from('fg_estimates').update({
+  // The office prices the variation here: the client amount replaces the foreman's raw cost, and
+  // the cost lines' revenue scales proportionally so contract/GP readers see the margin.
+  const priced = body.amount != null && Number(body.amount) > 0
+    ? Math.round(Number(body.amount) * 100) / 100 : null
+  const update: Record<string, unknown> = {
     status: 'sent',
     acceptance_token: token,
     sent_at: nowIso,
@@ -67,11 +71,25 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     send_message: message ?? null,
     archived: false,
     updated_at: nowIso,
-  }).eq('id', params.id)
+  }
+  if (priced != null) {
+    update.variation_amount = priced
+    const lines = Array.isArray(row.line_items) ? row.line_items as Array<Record<string, unknown>> : []
+    const costTotal = lines.reduce((s, l) => s + (Number(l.total) || 0), 0)
+    if (lines.length > 0) {
+      update.line_items = lines.map(l => ({
+        ...l,
+        revenue: costTotal > 0
+          ? Math.round((Number(l.total) || 0) / costTotal * priced * 100) / 100
+          : Math.round(priced / lines.length * 100) / 100,
+      }))
+    }
+  }
+  const { error } = await supabaseAdmin.from('fg_estimates').update(update).eq('id', params.id)
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
 
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://formation-group.vercel.app').replace(/\/+$/, '')
-  const amount = row.variation_amount != null ? Number(row.variation_amount) : 0
+  const amount = priced ?? (row.variation_amount != null ? Number(row.variation_amount) : 0)
   const result = await sendVariationEmail({
     to: clientEmail,
     clientName: (project?.client_name as string | null) || '',
